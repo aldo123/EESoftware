@@ -1,0 +1,139 @@
+{
+  "cp": "02",
+  "nodes": [
+    {
+      "config": {
+        "device": "Product",
+        "fieldKey": "Product_SN"
+      },
+      "id": "n1782667521184_2",
+      "type": "scan_input",
+      "x": 160.39584350585938,
+      "y": 72
+    },
+    {
+      "config": {
+        "cp_col": "cp_number",
+        "cp_number": "",
+        "sn_col": "chassis_sn",
+        "sn_source": "Product_SN",
+        "sn_table": "interlock"
+      },
+      "id": "n1782700315070_26",
+      "type": "check_cp",
+      "x": 141.64584350585938,
+      "y": 203.64584350585938
+    },
+    {
+      "config": {
+        "source": "field_key",
+        "target_field": "Chassis",
+        "value_source": "Product_SN"
+      },
+      "id": "n1782700321630_29",
+      "type": "update_field",
+      "x": 142.64584350585938,
+      "y": 322.6458435058594
+    },
+    {
+      "config": {
+        "color": "red",
+        "source": "static",
+        "text": "The SN Not Belong to This CP ",
+        "widget": "w10"
+      },
+      "id": "n1782703368519_38",
+      "type": "update_instruction",
+      "x": 397.6666564941406,
+      "y": 203.64584350585938
+    },
+    {
+      "config": {
+        "source": "static",
+        "text": "Please Scan PCBA SN",
+        "widget": "w10"
+      },
+      "id": "n1782703434413_41",
+      "type": "update_instruction",
+      "x": 132.64584350585938,
+      "y": 459.6666564941406
+    },
+    {
+      "config": {
+        "color": "#22C55E",
+        "field_key": "Product_SN",
+        "message": "",
+        "source": "field_key"
+      },
+      "id": "n1782703540535_44",
+      "type": "log_message",
+      "x": 162.64584350585938,
+      "y": 568.6666564941406
+    },
+    {
+      "config": {
+        "device": "Part",
+        "fieldKey": "Part_SN"
+      },
+      "id": "n1782709134669_1",
+      "type": "scan_input",
+      "x": 404.6666564941406,
+      "y": 350
+    },
+    {
+      "config": {
+        "source": "field_key",
+        "target_field": "Part",
+        "value_source": "Part_SN"
+      },
+      "id": "n1782709145216_4",
+      "type": "update_field",
+      "x": 416.6666564941406,
+      "y": 481
+    }
+  ],
+  "connections": [
+    {
+      "fromId": "n1782667521184_2",
+      "fromPort": "next",
+      "id": "n1782700317927_28",
+      "toId": "n1782700315070_26"
+    },
+    {
+      "fromId": "n1782700315070_26",
+      "fromPort": "true",
+      "id": "n1782700323389_31",
+      "toId": "n1782700321630_29"
+    },
+    {
+      "fromId": "n1782700315070_26",
+      "fromPort": "false",
+      "id": "n1782703374138_40",
+      "toId": "n1782703368519_38"
+    },
+    {
+      "fromId": "n1782700321630_29",
+      "fromPort": "next",
+      "id": "n1782703437849_43",
+      "toId": "n1782703434413_41"
+    },
+    {
+      "fromId": "n1782703434413_41",
+      "fromPort": "next",
+      "id": "n1782703549601_45",
+      "toId": "n1782703540535_44"
+    },
+    {
+      "fromId": "n1782703540535_44",
+      "fromPort": "next",
+      "id": "n1782709137050_3",
+      "toId": "n1782709134669_1"
+    },
+    {
+      "fromId": "n1782709134669_1",
+      "fromPort": "next",
+      "id": "n1782709148382_6",
+      "toId": "n1782709145216_4"
+    }
+  ]
+}

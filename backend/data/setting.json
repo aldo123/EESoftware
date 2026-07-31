@@ -1,0 +1,68 @@
+{
+    "Message": {
+        "OK Color": "Green",
+        "OK Font": "Arial 24 Bold",
+        "NOK Color": "Red",
+        "NOK Font": "Arial 24 Bold"
+    },
+    "Product Matrix Mapping": {
+        "Part Matrix": "55",
+        "PN": "1-10",
+        "Vendor": "11-18",
+        "Voltage": "19-22",
+        "HW Ver": "23-27",
+        "FW Ver": "28-35",
+        "ESP FW": "36-43",
+        "Date": "44-49",
+        "Serial Number": "50-55"
+    },
+    "SN Chassis Mapping": {
+        "Product Matrix": "19",
+        "Date": "1-5",
+        "Type": "6-8",
+        "Line": "9",
+        "Serial Number": "10-13",
+        "Partner": "14",
+        "Voltage": "15",
+        "Plug": "16",
+        "Color": "17-18"
+    },
+    "Product Rules": {
+        "_table": [
+            {
+                "Part Voltage": "127V",
+                "Product": "1"
+            },
+            {
+                "Part Voltage": "240V",
+                "Product": "2"
+            },
+            {
+                "Part Voltage": "240V",
+                "Product": "3"
+            }
+        ]
+    },
+    "Communication Devices": {
+        "_table": [
+            {
+                "Device Name": "Part",
+                "Type": "COM",
+                "COM Port": "COM5",
+                "Baudrate": "9600",
+                "Parity": "None",
+                "Data Bits": "8",
+                "Stop Bits": "1"
+            },
+            {
+                "Device Name": "Product",
+                "Type": "COM",
+                "COM Port": "COM6",
+                "Baudrate": "9600",
+                "Parity": "None",
+                "Data Bits": "8",
+                "Stop Bits": "1"
+            }
+        ]
+    }
+}

@@ -1,0 +1,53 @@
+{
+    "01": [
+        {
+            "key": "date_time",
+            "label": "Date Time",
+            "width": 140
+        },
+        {
+            "key": "chassis_sn",
+            "label": "Chassis SN",
+            "width": 140
+        }
+    ],
+    "02": [
+        {
+            "key": "date_time",
+            "label": "Date Time",
+            "width": 140
+        },
+        {
+            "key": "chassis_sn",
+            "label": "Chassis SN (WU# Code 1)",
+            "width": 140
+        },
+        {
+            "key": "main_pcba",
+            "label": "Main PCBA (SU# Code F)",
+            "width": 140
+        },
+        {
+            "key": "mac_address",
+            "label": "Mac Address (SU# Code F)",
+            "width": 140
+        },
+        {
+            "key": "app_version",
+            "label": "App Version",
+            "width": 140
+        }
+    ],
+    "03": [
+        {
+            "key": "date_time",
+            "label": "date_time",
+            "width": 150
+        },
+        {
+            "key": "chassis",
+            "label": "Chassis SN",
+            "width": 140
+        }
+    ]
+}

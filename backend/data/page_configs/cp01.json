@@ -1,0 +1,189 @@
+{
+  "cp": "01",
+  "widgets": [
+    {
+      "id": "w1",
+      "props": {
+        "fieldKey": "field_w1",
+        "height": 40,
+        "label": "Label",
+        "placeholder": "Scan here…",
+        "readOnly": false,
+        "showLabel": true,
+        "source": "scanner_a",
+        "width": 280
+      },
+      "type": "textbox",
+      "x": 75,
+      "y": 100
+    },
+    {
+      "id": "w2",
+      "props": {
+        "action": "reset",
+        "color": "#22C55E",
+        "height": 40,
+        "plcAddress": "",
+        "text": "Button",
+        "textColor": "#052E16",
+        "width": 140
+      },
+      "type": "button",
+      "x": 55,
+      "y": 205
+    },
+    {
+      "id": "w3",
+      "props": {
+        "height": 160,
+        "placeholder": "[ Product Image ]",
+        "width": 200
+      },
+      "type": "picture",
+      "x": 590,
+      "y": 50
+    },
+    {
+      "id": "w2",
+      "props": {
+        "fieldKey": "field_w2",
+        "height": 32,
+        "label": "Check me",
+        "width": 200
+      },
+      "type": "checkbox",
+      "x": 635,
+      "y": 300
+    },
+    {
+      "id": "w5",
+      "props": {
+        "fieldKey": "field_w5",
+        "height": 44,
+        "label": "Select",
+        "options": [
+          {
+            "label": "Option 1",
+            "value": "opt1"
+          },
+          {
+            "label": "Option 2",
+            "value": "opt2"
+          }
+        ],
+        "showLabel": true,
+        "width": 220
+      },
+      "type": "dropdown",
+      "x": 40,
+      "y": 470
+    },
+    {
+      "id": "w6",
+      "props": {
+        "color": "#22C55E",
+        "fieldKey": "field_w6",
+        "height": 170,
+        "max": 100,
+        "min": 0,
+        "title": "Value",
+        "unit": "%",
+        "width": 180
+      },
+      "type": "gauge",
+      "x": 445,
+      "y": 395
+    },
+    {
+      "id": "w7",
+      "type": "progressbar",
+      "x": 840,
+      "y": 400,
+      "props": {
+        "title": "Progress",
+        "fieldKey": "field_w7",
+        "min": 0,
+        "max": 100,
+        "unit": "%",
+        "color": "#22C55E",
+        "width": 320,
+        "height": 56
+      }
+    },
+    {
+      "id": "w8",
+      "type": "statuslight",
+      "x": 45,
+      "y": 605,
+      "props": {
+        "title": "Status",
+        "fieldKey": "field_w8",
+        "onValue": "PASS",
+        "onColor": "#22C55E",
+        "offColor": "#334155",
+        "width": 160,
+        "height": 60
+      }
+    },
+    {
+      "id": "w9",
+      "type": "counter",
+      "x": 315,
+      "y": 605,
+      "props": {
+        "title": "Total Pass",
+        "fieldKey": "field_w9",
+        "suffix": "",
+        "color": "#22C55E",
+        "width": 200,
+        "height": 100
+      }
+    },
+    {
+      "id": "w10",
+      "type": "chart",
+      "x": 640,
+      "y": 440,
+      "props": {
+        "title": "Chart",
+        "chartType": "line",
+        "dataSource": "static",
+        "fieldKey": "field_w10",
+        "staticData": [
+          {
+            "name": "Mon",
+            "value": 10
+          },
+          {
+            "name": "Tue",
+            "value": 20
+          },
+          {
+            "name": "Wed",
+            "value": 15
+          },
+          {
+            "name": "Thu",
+            "value": 28
+          }
+        ],
+        "color": "#22C55E",
+        "width": 440,
+        "height": 260
+      }
+    },
+    {
+      "id": "w11",
+      "type": "clock",
+      "x": 155,
+      "y": 320,
+      "props": {
+        "format": "24h",
+        "showDate": true,
+        "color": "#22C55E",
+        "width": 220,
+        "height": 64
+      }
+    }
+  ]
+}

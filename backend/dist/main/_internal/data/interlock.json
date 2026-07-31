@@ -1,0 +1,23 @@
+{
+    "Control Point": {
+        "Control Point Code": "BM01-VM01-CP20",
+        "Control Point Family": "CP20 V-Mini",
+        "Control Point Name": "CP20 - Pallet Label Printing",
+        "Data Point": "CP20 V-Mini",
+        "Interlock ByPass": "No",
+        "Process": "CP02"
+    },
+    "Documents": {
+        "Max Document Size": "10485760"
+    },
+    "Tester": {
+        "Max Retest Number": "1"
+    },
+    "Traceability Server": {
+        "Database Server": "127.0.0.1",
+        "TraceabilityCatalog": "interlock",
+        "TraceabilityPassword": "1234",
+        "TraceabilitySslMode": "REQUIRED",
+        "TraceabilityUserId": "root"
+    }
+}

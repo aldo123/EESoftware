@@ -1,0 +1,136 @@
+﻿import os
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+
+# ── Shared DB singleton ────────────────────────────────────────
+from db_manager import db
+
+# ── Blueprints ─────────────────────────────────────────────────
+from routes.interlock   import interlock_bp,   init_interlock
+from routes.setting     import setting_bp,     init_settings
+from routes.maintenance import maintenance_bp, init_maintenance_db
+from routes.snlist      import snlist_bp
+from routes.reference import reference_bp
+from routes.page_config import page_config_bp
+from routes.page_config import page_config_bp
+from routes.logic_config import logic_config_bp
+from routes.logic_engine import logic_engine_bp
+from rs232 import rs232_bp
+# ── App setup ──────────────────────────────────────────────────
+app = Flask(__name__)
+CORS(app)
+
+# Pastikan folder data/ ada
+DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# ── One-time init ──────────────────────────────────────────────
+init_interlock()
+init_settings()
+init_maintenance_db()
+
+# ── Register blueprints ────────────────────────────────────────
+app.register_blueprint(interlock_bp)
+app.register_blueprint(setting_bp)
+app.register_blueprint(maintenance_bp)
+app.register_blueprint(snlist_bp)
+app.register_blueprint(reference_bp)
+app.register_blueprint(page_config_bp)
+app.register_blueprint(logic_config_bp)
+app.register_blueprint(logic_engine_bp)
+app.register_blueprint(rs232_bp)
+
+# ══════════════════════════════════════════════════════════════
+# Routes yang tetap di main.py (butuh db MySQL langsung)
+# ══════════════════════════════════════════════════════════════
+
+# ── GET /api/health ───────────────────────────────────────────
+@app.get("/api/health")
+def health():
+    db.connect()
+    return jsonify({
+        "status":       "ok",
+        "db_connected": db.is_connected(),
+        "host":         db.get_host(),
+        "database":     db.get_database_name(),
+    })
+
+
+# ── POST /api/login/card ──────────────────────────────────────
+@app.post("/api/login/card")
+def login_card():
+    body    = request.get_json() or {}
+    id_card = body.get("id_card", "").strip()
+    if not id_card:
+        return jsonify({"detail": "Card number required"}), 400
+    user = db.fetch_one(
+        "SELECT username, role, id_card FROM users WHERE id_card = %s LIMIT 1",
+        (id_card,)
+    )
+    if not user:
+        return jsonify({"detail": "Card number not registered"}), 401
+    return jsonify({"success": True, "user": user})
+
+
+# ── POST /api/login/password ──────────────────────────────────
+@app.post("/api/login/password")
+def login_password():
+    body     = request.get_json() or {}
+    username = body.get("username", "").strip()
+    password = body.get("password", "").strip()
+    if not username or not password:
+        return jsonify({"detail": "Username and password required"}), 400
+    user = db.fetch_one(
+        "SELECT username, role, id_card FROM users WHERE username = %s AND password = %s LIMIT 1",
+        (username, password)
+    )
+    if not user:
+        return jsonify({"detail": "Invalid username or password"}), 401
+    return jsonify({"success": True, "user": user})
+
+
+# ── POST /api/test-connection ─────────────────────────────────
+@app.post("/api/test-connection")
+def test_connection():
+    try:
+        body = request.get_json() or {}
+        ts   = body.get("Traceability Server", {})
+        import mysql.connector
+        conn = mysql.connector.connect(
+            host=ts.get("Database Server", ""),
+            user=ts.get("TraceabilityUserId", ""),
+            password=ts.get("TraceabilityPassword", ""),
+            database=ts.get("TraceabilityCatalog", ""),
+            connection_timeout=5,
+        )
+        conn.close()
+        return jsonify({
+            "success": True,
+            "message": f"Connected to {ts.get('Database Server')}/{ts.get('TraceabilityCatalog')}"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)})
+
+
+# ── POST /api/users/change-password ──────────────────────────
+@app.post("/api/users/change-password")
+def change_password():
+    body     = request.get_json() or {}
+    username = body.get("username", "").strip()
+    password = body.get("password", "").strip()
+    if not username or not password:
+        return jsonify({"detail": "Username and password required"}), 400
+    try:
+        db.execute(
+            "UPDATE users SET password = %s WHERE username = %s",
+            (password, username)
+        )
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"detail": str(e)}), 500
+
+
+# ══════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    print("[START] Server running on http://0.0.0.0:8000")
+    app.run(host="0.0.0.0", port=8000, debug=False)

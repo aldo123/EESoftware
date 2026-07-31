@@ -1,0 +1,34 @@
+{
+  "cp": "01",
+  "nodes": [
+    {
+      "id": "n1782709425693_12",
+      "type": "scan_input",
+      "x": 239.66665649414062,
+      "y": 69.66665649414062,
+      "config": {
+        "device": "Product",
+        "fieldKey": "Product_SN"
+      }
+    },
+    {
+      "id": "n1782709428278_13",
+      "type": "update_field",
+      "x": 266.6666564941406,
+      "y": 196.66665649414062,
+      "config": {
+        "target_field": "po",
+        "value_source": "Product_SN",
+        "source": "field_key"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "n1782709444097_15",
+      "fromId": "n1782709425693_12",
+      "fromPort": "next",
+      "toId": "n1782709428278_13"
+    }
+  ]
+}

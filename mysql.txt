@@ -1,0 +1,57 @@
+A. Lihat daftar semua tabel di database
+
+;
+SHOW TABLES;
+
+B. Lihat struktur/kolom tabel
+
+sql
+DESCRIBE nama_tabel; -- Misal: DESCRIBE snlist_cp02;
+
+C. Lihat isi data tabel
+
+sql
+SELECT * FROM nama_tabel; -- Melihat semua data
+
+2. Cara Membuat Tabel (CREATE TABLE)
+Gunakan perintah CREATE TABLE. Pastikan Anda sudah memilih database yang benar sebelumnya.
+
+sql
+CREATE TABLE IF NOT EXISTS nama_tabel (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    kolom_1 VARCHAR(50) NOT NULL,
+    kolom_2 VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+A. Hapus tabel secara permanen
+
+sql
+DROP TABLE nama_tabel; 
+-- atau lebih aman:
+DROP TABLE IF EXISTS nama_tabel; 
+
+B. Jika Anda hanya ingin menghapus datanya saja, tapi menyimpan struktur tabelnya
+
+sql
+TRUNCATE TABLE nama_tabel; 
+
+UPDATE snlist_cp02 
+SET main_pcba = 'PART_X', mac_address = '00:11:22:33:44:55' 
+WHERE chassis_sn = '26042MD1p001373E20F';
+
+Contoh update data di snlist_cp02
+
+sql
+UPDATE snlist_cp02 
+SET main_pcba = 'SN_PART_BARU_9999' 
+WHERE id = 5;
+
+Query Insert:
+
+sql
+INSERT INTO snlist_cp02 (chassis_sn, main_pcba, mac_address, app_version) 
+VALUES ('26042MD1p001373E20F', 'SN_PART_ABC123', '00:11:22:33:44:55', 'V1.0.2');
+
+INSERT INTO snlist_cp02 (chassis_sn, main_pcba) 
+VALUES ('26042MD1p001373E07F', '1350114300IT500605240VHW5.0MCU3.3.4ESP3.9.1241101000496');
