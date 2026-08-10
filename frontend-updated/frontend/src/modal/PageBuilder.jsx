@@ -861,34 +861,52 @@ function WidgetPreview({ widget, onUpdate }) {
             );
           })}
 
-          {/* Center information: icon centered above title */}
+          {/* Gauge header — icon LEFT of title, locked as one centered group */}
           {(p.showIcon !== false || p.showTitle !== false) && (
-            <g>
-              {p.showIcon !== false && (
-                <g
-                  transform={`translate(${cx - (Number(p.iconSize ?? 18) / 2)} 72)`}
-                >
-                  <GaugeTypeIcon
-                    type={gaugeType}
-                    color={p.iconColor || accent}
-                    size={Number(p.iconSize ?? 18)}
-                  />
-                </g>
-              )}
+            <g transform={`translate(${cx} 88)`}>
+              {(() => {
+                const iconSize = Math.max(12, Number(p.iconSize ?? 18));
+                const titleSize = Math.max(7, Number(p.titleSize ?? 8));
+                const gap = Math.max(4, Number(p.iconGap ?? 7));
 
-              {p.showTitle !== false && (
-                <text
-                  x={cx}
-                  y={p.showIcon !== false ? "101" : "88"}
-                  textAnchor="middle"
-                  fill={textColor}
-                  fontSize={Number(p.titleSize ?? 8)}
-                  fontWeight="600"
-                  letterSpacing="1.1"
-                >
-                  {title}
-                </text>
-              )}
+                // SVG text width is approximate, so use a conservative estimate
+                // and center the COMPLETE icon + title group around x=0.
+                const titleWidth = p.showTitle !== false
+                  ? Math.max(24, String(title).length * titleSize * 0.60)
+                  : 0;
+                const iconWidth = p.showIcon !== false ? iconSize : 0;
+                const totalWidth = iconWidth + (iconWidth && titleWidth ? gap : 0) + titleWidth;
+                const left = -totalWidth / 2;
+
+                return (
+                  <g>
+                    {p.showIcon !== false && (
+                      <g transform={`translate(${left} ${-iconSize / 2})`}>
+                        <GaugeTypeIcon
+                          type={gaugeType}
+                          color={p.iconColor || accent}
+                          size={iconSize}
+                        />
+                      </g>
+                    )}
+
+                    {p.showTitle !== false && (
+                      <text
+                        x={left + iconWidth + (iconWidth ? gap : 0) + titleWidth / 2}
+                        y={0}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill={textColor}
+                        fontSize={titleSize}
+                        fontWeight="700"
+                        letterSpacing="0.7"
+                      >
+                        {title}
+                      </text>
+                    )}
+                  </g>
+                );
+              })()}
             </g>
           )}
 

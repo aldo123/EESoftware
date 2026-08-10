@@ -47,6 +47,83 @@ const getVisual = (props) => {
 //  END OF DESIGN SYSTEM
 // ──────────────────────────────────────────────────────────────────
 
+function GaugeTypeIcon({ type = "temp", color = "#00BFFF", size = 28 }) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: color,
+    strokeWidth: 1.8,
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  };
+
+  if (type === "power") return (
+    <svg {...common}>
+      <path d="M12 2v8" />
+      <path d="M7.05 4.93a9 9 0 1 0 9.9 0" />
+      <path d="M12 12l-2 4h3l-1 6 4-7h-3l2-3z" />
+    </svg>
+  );
+
+  if (type === "water") return (
+    <svg {...common}>
+      <path d="M12 2.8S6.5 9.3 6.5 13.5a5.5 5.5 0 0 0 11 0C17.5 9.3 12 2.8 12 2.8z" />
+      <path d="M9 14.5c.4 1.2 1.3 2 2.8 2.3" />
+    </svg>
+  );
+
+  if (type === "pressure") return (
+    <svg {...common}>
+      <circle cx="12" cy="13" r="8" />
+      <path d="M7.5 13a4.5 4.5 0 0 1 9 0" />
+      <path d="M12 13l3.2-3.2" />
+      <path d="M5 5l1.7 1.7M19 5l-1.7 1.7" />
+    </svg>
+  );
+
+  if (type === "flow") return (
+    <svg {...common}>
+      <path d="M3 7h12" />
+      <path d="m11 4 4 3-4 3" />
+      <path d="M21 17H9" />
+      <path d="m13 14-4 3 4 3" />
+      <path d="M4 12h5" />
+    </svg>
+  );
+
+  if (type === "level") return (
+    <svg {...common}>
+      <path d="M7 3v18M17 3v18" />
+      <path d="M7 7h10M7 17h10" />
+      <path d="M9.5 12c1.2-1.2 1.8-1.2 3 0s1.8 1.2 3 0" />
+    </svg>
+  );
+
+  if (type === "speed") return (
+    <svg {...common}>
+      <path d="M4.5 16a8 8 0 1 1 15 0" />
+      <path d="M12 12l4-4" />
+      <path d="M6 18h12" />
+    </svg>
+  );
+
+  if (type === "current") return (
+    <svg {...common}>
+      <path d="M7 3v7a5 5 0 0 0 10 0V3" />
+      <path d="M9 21h6M12 15v6M9 3h6" />
+    </svg>
+  );
+
+  return (
+    <svg {...common}>
+      <path d="M14 14.7V5a2 2 0 0 0-4 0v9.7a4.5 4.5 0 1 0 4 0z" />
+      <path d="M12 11v6" />
+    </svg>
+  );
+}
+
 // ── RUNTIME WIDGETS ──────────────────────────────────────────────
 
 function RuntimeButton({ widget, value, onChange }) {
@@ -314,201 +391,330 @@ function RuntimeTextBox({ widget, value }) {
 
 function RuntimeGauge({ widget, value }) {
   const p = widget.props || {};
-  const v = getVisual(p);
+    const min = Number(p.min ?? 0);
+    const maxRaw = Number(p.max ?? 100);
+    const max = maxRaw === min ? min + 1 : maxRaw;
 
-  const min = Number(p.min ?? 0);
-  const maxRaw = Number(p.max ?? 100);
-  const max = maxRaw === min ? min + 1 : maxRaw;
+    const rawValue = value === undefined || value === null || value === ""
+      ? (p.simulationValue ?? min)
+      : Number(value);
 
-  const rawValue = value === undefined || value === null || value === ""
-    ? (p.simulationValue ?? min)
-    : Number(value);
+    const previewValue = Math.min(
+      max,
+      Math.max(min, Number.isFinite(Number(rawValue)) ? Number(rawValue) : min)
+    );
 
-  const gaugeValue = Number.isFinite(rawValue)
-    ? Math.min(max, Math.max(min, rawValue))
-    : min;
+    const progress = (previewValue - min) / (max - min);
+    const start = Number(p.startAngle ?? -135);
+    const end = Number(p.endAngle ?? 135);
+    const angle = start + progress * (end - start);
 
-  const progress = (gaugeValue - min) / (max - min);
-  const start = Number(p.startAngle ?? -135);
-  const end = Number(p.endAngle ?? 135);
-  const angle = start + progress * (end - start);
+    const unit = p.unit || "";
+    const decimals = Math.max(0, Number(p.decimals ?? 0));
+    const title = p.title || "VALUE";
+    const gaugeType = p.gaugeType || "temp";
 
-  const decimals = Math.max(0, Number(p.decimals ?? 0));
-  const unit = p.unit || "";
-  const title = p.title || "VALUE";
+    const accent = p.progressColor || "#00BFFF";
+    const track = p.trackColor || "#1A2C3D";
+    const textColor = p.textColor || "#FFFFFF";
+    const labelColor = p.labelColor || "#71879B";
 
-  const center = 100;
-  const radius = 72;
+    const gaugeId = `gauge-${widget.id}`;
+    const cx = 100;
+    const cy = 108;
 
-  const polar = (a, r = radius) => {
-    const rad = (a - 90) * Math.PI / 180;
-    return {
-      x: center + r * Math.cos(rad),
-      y: center + r * Math.sin(rad)
+    // Main arc radius and inner decorative radius.
+    const radius = 72;
+
+    const polar = (a, r = radius) => {
+      const rad = (a - 90) * Math.PI / 180;
+      return {
+        x: cx + r * Math.cos(rad),
+        y: cy + r * Math.sin(rad)
+      };
     };
-  };
 
-  const arcPath = (a1, a2, r = radius) => {
-    const s = polar(a1, r);
-    const e = polar(a2, r);
-    const large = Math.abs(a2 - a1) > 180 ? 1 : 0;
-    const sweep = a2 > a1 ? 1 : 0;
-    return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} ${sweep} ${e.x} ${e.y}`;
-  };
+    const arcPath = (a1, a2, r = radius) => {
+      const s = polar(a1, r);
+      const e = polar(a2, r);
+      const large = Math.abs(a2 - a1) > 180 ? 1 : 0;
+      const sweep = a2 > a1 ? 1 : 0;
+      return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} ${sweep} ${e.x} ${e.y}`;
+    };
 
-  const needlePoint = polar(angle, 58);
-  const gaugeId = `gauge-${widget.id}`;
-
-  return (
-    <div
-      className="absolute flex items-center justify-center overflow-hidden"
-      style={{
-        left: widget.x,
-        top: widget.y,
-        width: p.width,
-        height: p.height
-      }}
-    >
-      <svg
-        viewBox="0 0 200 200"
-        className="w-full h-full"
-        style={{ overflow: "visible" }}
+    return (
+      <div
+        className="absolute flex items-center justify-center overflow-hidden"
+        style={{
+          left: widget.x,
+          top: widget.y,
+          width: p.width,
+          height: p.height
+        }}
       >
-        <defs>
-          <filter
-            id={gaugeId}
-            x="-50%"
-            y="-50%"
-            width="200%"
-            height="200%"
-          >
-            <feGaussianBlur stdDeviation="3" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
-        {/* Background track */}
-        <path
-          d={arcPath(start, end)}
-          fill="none"
-          stroke={p.trackColor || v.borderColor || "#1E293B"}
-          strokeWidth="13"
-          strokeLinecap="round"
-        />
-
-        {/* Live value arc */}
-        <path
-          d={arcPath(start, angle)}
-          fill="none"
-          stroke={p.progressColor || v.accentColor || "#00BFFF"}
-          strokeWidth="13"
-          strokeLinecap="round"
-          filter={p.glow !== false ? `url(#${gaugeId})` : undefined}
-        />
-
-        {/* Scale */}
-        {p.showScale !== false && [0, 0.25, 0.5, 0.75, 1].map((t, i) => {
-          const a = start + t * (end - start);
-          const a1 = polar(a, 58);
-          const a2 = polar(a, 65);
-
-          return (
-            <line
-              key={i}
-              x1={a1.x}
-              y1={a1.y}
-              x2={a2.x}
-              y2={a2.y}
-              stroke={p.labelColor || v.secondaryTextColor || "#64748B"}
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          );
-        })}
-
-        {/* Needle */}
-        <line
-          x1={center}
-          y1={center}
-          x2={needlePoint.x}
-          y2={needlePoint.y}
-          stroke={p.needleColor || "#FFFFFF"}
-          strokeWidth="3"
-          strokeLinecap="round"
-        />
-
-        <circle
-          cx={center}
-          cy={center}
-          r="7"
-          fill={p.needleColor || "#FFFFFF"}
-        />
-
-        <circle
-          cx={center}
-          cy={center}
-          r="3"
-          fill={p.progressColor || v.accentColor || "#00BFFF"}
-        />
-
-        {/* Numeric value */}
-        {p.showValue !== false && (
-          <text
-            x={center}
-            y="128"
-            textAnchor="middle"
-            fill={p.textColor || v.textColor || "#FFFFFF"}
-            fontSize="20"
-            fontWeight="700"
-          >
-            {gaugeValue.toFixed(decimals)}{unit}
-          </text>
-        )}
-
-        {/* Title */}
-        <text
-          x={center}
-          y="148"
-          textAnchor="middle"
-          fill={p.labelColor || v.secondaryTextColor || "#64748B"}
-          fontSize="8"
-          fontWeight="600"
-          letterSpacing="1.5"
+        <svg
+          viewBox="0 0 200 200"
+          className="w-full h-full"
+          style={{ overflow: "visible" }}
         >
-          {title}
-        </text>
-
-        {/* Min / Max */}
-        {p.showMinMax !== false && (
-          <>
-            <text
-              x="38"
-              y="166"
-              textAnchor="middle"
-              fill={p.labelColor || v.secondaryTextColor || "#64748B"}
-              fontSize="7"
+          <defs>
+            <filter
+              id={gaugeId}
+              x="-70%"
+              y="-70%"
+              width="240%"
+              height="240%"
             >
-              {min}
-            </text>
+              <feGaussianBlur stdDeviation="3.5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
 
-            <text
-              x="162"
-              y="166"
-              textAnchor="middle"
-              fill={p.labelColor || v.secondaryTextColor || "#64748B"}
-              fontSize="7"
+            <linearGradient
+              id={`${gaugeId}-arc`}
+              x1="0%"
+              y1="100%"
+              x2="100%"
+              y2="0%"
             >
-              {max}
+              <stop offset="0%" stopColor={accent} stopOpacity="0.72" />
+              <stop offset="100%" stopColor={accent} />
+            </linearGradient>
+
+            <radialGradient id={`${gaugeId}-face`} cx="50%" cy="45%" r="70%">
+              <stop offset="0%" stopColor={p.backgroundColor || "#102133"} />
+              <stop offset="72%" stopColor={p.backgroundColor || "#071421"} />
+              <stop offset="100%" stopColor={p.backgroundColor || "#050D16"} />
+            </radialGradient>
+
+            <filter
+              id={`${gaugeId}-glow`}
+              x="-100%"
+              y="-100%"
+              width="300%"
+              height="300%"
+              colorInterpolationFilters="sRGB"
+            >
+              <feGaussianBlur stdDeviation="5" result="blur1" />
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blur2" />
+              <feMerge>
+                <feMergeNode in="blur1" />
+                <feMergeNode in="blur2" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Dark instrument face */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r="88"
+            fill={`url(#${gaugeId}-face)`}
+            stroke={p.borderColor || "#18334A"}
+            strokeWidth="1"
+          />
+
+          {/* Outer technical ring */}
+          <path
+            d={arcPath(start, end, 84)}
+            fill="none"
+            stroke="#24445C"
+            strokeWidth="2"
+            strokeDasharray="1 4"
+          />
+
+          {/* Main inactive arc */}
+          <path
+            d={arcPath(start, end, 72)}
+            fill="none"
+            stroke={track}
+            strokeWidth="15"
+            strokeLinecap="round"
+          />
+
+          {/* Soft halo behind active arc */}
+          {p.glow !== false && (
+            <path
+              d={arcPath(start, angle, 72)}
+              fill="none"
+              stroke={accent}
+              strokeWidth="22"
+              strokeLinecap="round"
+              opacity="0.28"
+              filter={`url(#${gaugeId}-glow)`}
+            />
+          )}
+
+          {/* Active colored arc */}
+          <path
+            d={arcPath(start, angle, 72)}
+            fill="none"
+            stroke={`url(#${gaugeId}-arc)`}
+            strokeWidth="15"
+            strokeLinecap="round"
+            filter={p.glow !== false ? `url(#${gaugeId}-glow)` : undefined}
+          />
+
+          {/* Inner arc highlight */}
+          <path
+            d={arcPath(start, angle, 64)}
+            fill="none"
+            stroke={accent}
+            strokeWidth="1.5"
+            opacity="0.28"
+          />
+
+          {/* Dense industrial ticks */}
+          {p.showScale !== false && Array.from({ length: 41 }, (_, i) => {
+            const t = i / 40;
+            const a = start + t * (end - start);
+
+            const outer = polar(a, 86);
+            const inner = polar(a, i % 5 === 0 ? 78 : 82);
+
+            return (
+              <line
+                key={i}
+                x1={outer.x}
+                y1={outer.y}
+                x2={inner.x}
+                y2={inner.y}
+                stroke={t <= progress ? accent : labelColor}
+                strokeWidth={i % 5 === 0 ? 1.7 : 0.8}
+                opacity={t <= progress ? 0.95 : 0.42}
+              />
+            );
+          })}
+
+          {/* Major scale values */}
+          {p.showScale !== false && [0, 0.25, 0.5, 0.75, 1].map((t, i) => {
+            const a = start + t * (end - start);
+            const pos = polar(a, 89);
+            const val = min + t * (max - min);
+
+            return (
+              <text
+                key={i}
+                x={pos.x}
+                y={pos.y + 2}
+                textAnchor="middle"
+                fill={t <= progress ? accent : labelColor}
+                fontSize="6.5"
+                fontWeight="600"
+              >
+                {Number(val).toFixed(decimals > 0 ? 0 : 0)}
+              </text>
+            );
+          })}
+
+          {/* Gauge header — icon LEFT of title, locked as one centered group */}
+          {(p.showIcon !== false || p.showTitle !== false) && (
+            <g transform={`translate(${cx} 88)`}>
+              {(() => {
+                const iconSize = Math.max(12, Number(p.iconSize ?? 18));
+                const titleSize = Math.max(7, Number(p.titleSize ?? 8));
+                const gap = Math.max(4, Number(p.iconGap ?? 7));
+
+                // SVG text width is approximate, so use a conservative estimate
+                // and center the COMPLETE icon + title group around x=0.
+                const titleWidth = p.showTitle !== false
+                  ? Math.max(24, String(title).length * titleSize * 0.60)
+                  : 0;
+                const iconWidth = p.showIcon !== false ? iconSize : 0;
+                const totalWidth = iconWidth + (iconWidth && titleWidth ? gap : 0) + titleWidth;
+                const left = -totalWidth / 2;
+
+                return (
+                  <g>
+                    {p.showIcon !== false && (
+                      <g transform={`translate(${left} ${-iconSize / 2})`}>
+                        <GaugeTypeIcon
+                          type={gaugeType}
+                          color={p.iconColor || accent}
+                          size={iconSize}
+                        />
+                      </g>
+                    )}
+
+                    {p.showTitle !== false && (
+                      <text
+                        x={left + iconWidth + (iconWidth ? gap : 0) + titleWidth / 2}
+                        y={0}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill={textColor}
+                        fontSize={titleSize}
+                        fontWeight="700"
+                        letterSpacing="0.7"
+                      >
+                        {title}
+                      </text>
+                    )}
+                  </g>
+                );
+              })()}
+            </g>
+          )}
+
+          {/* Value */}
+          {p.showValue !== false && (
+            <text
+              x={cx}
+              y="132"
+              textAnchor="middle"
+              fill={textColor}
+              fontSize="20"
+              fontWeight="700"
+              letterSpacing="-0.4"
+            >
+              {previewValue.toFixed(decimals)}
             </text>
-          </>
-        )}
-      </svg>
-    </div>
-  );
-}
+          )}
+
+          {/* Unit - same size as title */}
+          <text
+            x={cx}
+            y="145"
+            textAnchor="middle"
+            fill={p.unitColor || accent}
+            fontSize={Number(p.titleSize ?? 8)}
+            fontWeight="600"
+            letterSpacing="1.1"
+          >
+            {unit}
+          </text>
+
+          {/* Bottom technical labels */}
+          {p.showMinMax !== false && (
+            <>
+              <text
+                x="31"
+                y="172"
+                textAnchor="middle"
+                fill={labelColor}
+                fontSize="6.5"
+              >
+                MIN {min}
+              </text>
+
+              <text
+                x="169"
+                y="172"
+                textAnchor="middle"
+                fill={labelColor}
+                fontSize="6.5"
+              >
+                MAX {max}
+              </text>
+            </>
+          )}
+        </svg>
+      </div>
+    );
+ }
 
 export default function DynamicCPPage({ cpNumber, user }) {
   const [widgets, setWidgets] = useState([]);
