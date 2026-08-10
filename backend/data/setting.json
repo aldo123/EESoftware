@@ -48,7 +48,7 @@
             {
                 "Device Name": "Part",
                 "Type": "COM",
-                "COM Port": "COM9",
+                "COM Port": "COM5",
                 "Baudrate": "115200",
                 "Parity": "None",
                 "Data Bits": "8",
@@ -65,7 +65,7 @@
             },
             {
                 "Device Name": "PLC",
-                "IP Address": "192.168.108.1",
+                "IP Address": "192.168.1.1",
                 "Port": "9004",
                 "Type": "TCP"
             }
