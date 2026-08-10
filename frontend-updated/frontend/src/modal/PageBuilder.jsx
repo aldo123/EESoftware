@@ -1067,6 +1067,400 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
       <PropInput label="Height" type="number" min={24} value={p.height} onChange={v => set("height", snap(v))} />
     </div></PropSection>
 
+    {/* ── BUTTON SETTINGS ───────────────────────────────────────────── */}
+    {type === "button" && (
+      <>
+        <PropSection title="Data Binding">
+          <PropInput
+            label="Variable"
+            value={p.variable || ""}
+            onChange={v => set("variable", v)}
+          />
+          <div className="text-[8px] text-[#64748B] mt-0.5">
+            Button writes 1 when ON and 0 when OFF to the Logic Builder variable.
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Value ON"
+              type="number"
+              value={p.valueOn ?? 1}
+              onChange={v => set("valueOn", Number(v))}
+            />
+            <PropInput
+              label="Value OFF"
+              type="number"
+              value={p.valueOff ?? 0}
+              onChange={v => set("valueOff", Number(v))}
+            />
+          </div>
+        </PropSection>
+
+        <PropSection title="Simulation State">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => set("builderState", 1)}
+              className="h-8 rounded-lg border text-[9px] font-bold transition-all"
+              style={{
+                background: isOn ? "#00BFFF" : "#0F172A",
+                borderColor: isOn ? "#00BFFF" : "#334155",
+                color: isOn ? "#06111F" : "#64748B",
+                boxShadow: isOn ? "0 0 12px rgba(0,191,255,0.25)" : "none"
+              }}
+            >
+              ● ON
+            </button>
+            <button
+              type="button"
+              onClick={() => set("builderState", 0)}
+              className="h-8 rounded-lg border text-[9px] font-bold transition-all"
+              style={{
+                background: !isOn ? "#1E293B" : "#0F172A",
+                borderColor: !isOn ? "#64748B" : "#334155",
+                color: !isOn ? "#FFFFFF" : "#64748B"
+              }}
+            >
+              ○ OFF
+            </button>
+          </div>
+          <div className="text-[8px] text-[#64748B] mt-1">
+            Builder preview only. Runtime value comes from the bound variable/device.
+          </div>
+        </PropSection>
+
+        <PropSection title="Button">
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Label ON"
+              value={p.labelOn || "BUTTON ON"}
+              onChange={v => set("labelOn", v)}
+            />
+            <PropInput
+              label="Label OFF"
+              value={p.labelOff || "BUTTON OFF"}
+              onChange={v => set("labelOff", v)}
+            />
+          </div>
+
+          <PropInput
+            label="Variant"
+            options={[
+              { value: "neon", label: "Neon" },
+              { value: "solid", label: "Solid" }
+            ]}
+            value={p.variant || "neon"}
+            onChange={v => set("variant", v)}
+          />
+
+          <PropInput
+            label="Font Size"
+            type="number"
+            min={8}
+            max={48}
+            value={p.fontSize ?? 18}
+            onChange={v => set("fontSize", Number(v))}
+          />
+        </PropSection>
+
+        <PropSection title="ON State Appearance">
+          <PropInput
+            label="Background"
+            type="color"
+            value={p.onBackground || "#00BFFF"}
+            onChange={v => set("onBackground", v)}
+          />
+          <PropInput
+            label="Border"
+            type="color"
+            value={p.onBorder || "#00BFFF"}
+            onChange={v => set("onBorder", v)}
+          />
+          <PropInput
+            label="Text"
+            type="color"
+            value={p.onTextColor || "#FFFFFF"}
+            onChange={v => set("onTextColor", v)}
+          />
+        </PropSection>
+
+        <PropSection title="OFF State Appearance">
+          <PropInput
+            label="Background"
+            type="color"
+            value={p.offBackground || "#0F172A"}
+            onChange={v => set("offBackground", v)}
+          />
+          <PropInput
+            label="Border"
+            type="color"
+            value={p.offBorder || "#123B5A"}
+            onChange={v => set("offBorder", v)}
+          />
+          <PropInput
+            label="Text"
+            type="color"
+            value={p.offTextColor || "#7F9DB8"}
+            onChange={v => set("offTextColor", v)}
+          />
+        </PropSection>
+      </>
+    )}
+
+    {/* ── LIGHT SETTINGS ─────────────────────────────────────────────── */}
+    {type === "light" && (
+      <>
+        <PropSection title="Data Binding">
+          <PropInput
+            label="Variable"
+            value={p.variable || ""}
+            onChange={v => set("variable", v)}
+          />
+          <div className="text-[8px] text-[#64748B] mt-0.5">
+            Light reads the Logic Builder variable. 1 = ON, 0 = OFF.
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Value ON"
+              type="number"
+              value={p.valueOn ?? 1}
+              onChange={v => set("valueOn", Number(v))}
+            />
+            <PropInput
+              label="Value OFF"
+              type="number"
+              value={p.valueOff ?? 0}
+              onChange={v => set("valueOff", Number(v))}
+            />
+          </div>
+        </PropSection>
+
+        <PropSection title="Simulation State">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => set("builderState", 1)}
+              className="h-8 rounded-lg border text-[9px] font-bold transition-all"
+              style={{
+                background: isOn ? "#00BFFF" : "#0F172A",
+                borderColor: isOn ? "#00BFFF" : "#334155",
+                color: isOn ? "#06111F" : "#64748B",
+                boxShadow: isOn ? "0 0 12px rgba(0,191,255,0.25)" : "none"
+              }}
+            >
+              ● ON
+            </button>
+            <button
+              type="button"
+              onClick={() => set("builderState", 0)}
+              className="h-8 rounded-lg border text-[9px] font-bold transition-all"
+              style={{
+                background: !isOn ? "#1E293B" : "#0F172A",
+                borderColor: !isOn ? "#64748B" : "#334155",
+                color: !isOn ? "#FFFFFF" : "#64748B"
+              }}
+            >
+              ○ OFF
+            </button>
+          </div>
+          <div className="text-[8px] text-[#64748B] mt-1">
+            Builder preview only. Runtime value comes from the bound variable/device.
+          </div>
+        </PropSection>
+
+        <PropSection title="Light">
+          <PropInput
+            label="Shape"
+            options={[
+              { value: "circle", label: "Circle" },
+              { value: "square", label: "Square" }
+            ]}
+            value={p.shape || "circle"}
+            onChange={v => set("shape", v)}
+          />
+          <PropInput
+            label="Show Label"
+            type="checkbox"
+            value={p.showLabel !== false}
+            onChange={v => set("showLabel", v)}
+          />
+          {p.showLabel !== false && (
+            <PropInput
+              label="Label"
+              value={p.label || "STATUS"}
+              onChange={v => set("label", v)}
+            />
+          )}
+        </PropSection>
+
+        <PropSection title="ON State Appearance">
+          <PropInput
+            label="Color ON"
+            type="color"
+            value={p.onColor || "#00BFFF"}
+            onChange={v => set("onColor", v)}
+          />
+        </PropSection>
+
+        <PropSection title="OFF State Appearance">
+          <PropInput
+            label="Color OFF"
+            type="color"
+            value={p.offColor || "#1E293B"}
+            onChange={v => set("offColor", v)}
+          />
+        </PropSection>
+      </>
+    )}
+
+    {/* ── TEXT BOX SETTINGS ──────────────────────────────────────────── */}
+    {type === "textbox" && (
+      <>
+        <PropSection title="Data Binding">
+          <PropInput
+            label="Variable"
+            value={p.variable || ""}
+            onChange={v => set("variable", v)}
+          />
+          <div className="text-[8px] text-[#64748B] mt-0.5">
+            When a variable is assigned, runtime displays its current value.
+          </div>
+          <PropInput
+            label="Default Text"
+            value={p.text || "TEXT"}
+            onChange={v => set("text", v)}
+          />
+        </PropSection>
+
+        <PropSection title="Icon">
+          <PropInput
+            label="Icon"
+            options={TEXTBOX_ICONS.map(item => ({
+              value: item.value,
+              label: item.icon ? `${item.icon}  ${item.label}` : item.label
+            }))}
+            value={p.icon || ""}
+            onChange={v => set("icon", v)}
+          />
+          <PropInput
+            label="Position"
+            options={[
+              { value: "left", label: "Left" },
+              { value: "center", label: "Center" },
+              { value: "right", label: "Right" }
+            ]}
+            value={p.iconPosition || "left"}
+            onChange={v => set("iconPosition", v)}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Icon Size"
+              type="number"
+              min={8}
+              max={64}
+              value={p.iconSize ?? 20}
+              onChange={v => set("iconSize", Number(v))}
+            />
+            <PropInput
+              label="Icon Gap"
+              type="number"
+              min={0}
+              max={40}
+              value={p.iconGap ?? 8}
+              onChange={v => set("iconGap", Number(v))}
+            />
+          </div>
+        </PropSection>
+
+        <PropSection title="Text">
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Font Size"
+              type="number"
+              min={8}
+              max={72}
+              value={p.fontSize ?? 18}
+              onChange={v => set("fontSize", Number(v))}
+            />
+            <PropInput
+              label="Weight"
+              options={[
+                { value: "400", label: "Normal" },
+                { value: "500", label: "Medium" },
+                { value: "600", label: "Semi Bold" },
+                { value: "700", label: "Bold" }
+              ]}
+              value={p.fontWeight || "600"}
+              onChange={v => set("fontWeight", v)}
+            />
+          </div>
+
+          <PropInput
+            label="Alignment"
+            options={[
+              { value: "left", label: "Left" },
+              { value: "center", label: "Center" },
+              { value: "right", label: "Right" }
+            ]}
+            value={p.textAlign || "center"}
+            onChange={v => set("textAlign", v)}
+          />
+        </PropSection>
+
+        <PropSection title="Appearance">
+          <PropInput
+            label="Text Color"
+            type="color"
+            value={p.textColor || "#FFFFFF"}
+            onChange={v => set("textColor", v)}
+          />
+          <PropInput
+            label="Icon Color"
+            type="color"
+            value={p.iconColor || "#FFFFFF"}
+            onChange={v => set("iconColor", v)}
+          />
+          <PropInput
+            label="Background"
+            type="color"
+            value={p.backgroundColor || "#07111F"}
+            onChange={v => set("backgroundColor", v)}
+          />
+          <PropInput
+            label="Border"
+            type="color"
+            value={p.borderColor || "#123B5A"}
+            onChange={v => set("borderColor", v)}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Border Width"
+              type="number"
+              min={0}
+              max={20}
+              value={p.borderWidth ?? 0}
+              onChange={v => set("borderWidth", Number(v))}
+            />
+            <PropInput
+              label="Radius"
+              type="number"
+              min={0}
+              max={50}
+              value={p.radius ?? 6}
+              onChange={v => set("radius", Number(v))}
+            />
+          </div>
+          <PropInput
+            label="Padding"
+            type="number"
+            min={0}
+            max={40}
+            value={p.padding ?? 8}
+            onChange={v => set("padding", Number(v))}
+          />
+        </PropSection>
+      </>
+    )}
+
     {type === "gauge" && (
       <>
         <PropSection title="Data Binding">
