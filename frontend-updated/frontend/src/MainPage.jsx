@@ -10,6 +10,7 @@ import LogicBuilder from "./modal/LogicBuilder";
 import { API } from "./service/api";
 import DynamicCPPage from "./pages/DynamicCPPage";
 import { useRS232Scanner } from "./hooks/useRS232Scanner";
+import { useTCPPLC } from "./hooks/useTCPPLC";
 
 // ── Icons ─────────────────────────────────────────────────────
 const IconGear = () => (
@@ -395,22 +396,68 @@ export default function MainPage({ user: initialUser, onLogout }) {
       .catch(() => { });
   }, []);
 
-    // ── Comm devices ──────────────────────────────────────────
+  // ── Comm devices ──────────────────────────────────────────
   useEffect(() => {
-    const check = () =>
-      fetch(`${API}/api/comm-status`)
-        .then(r => r.json())
-        .then(d => {
-          const newDevices = d.devices || [];
-          // ✅ Optimasi: Hanya update state jika data benar-benar berubah (connected / disconnected)
-          setCommDevices(prev => {
-             if (JSON.stringify(prev) === JSON.stringify(newDevices)) return prev;
-             return newDevices;
-          });
-        })
-        .catch(() => { });
+    const check = async () => {
+      try {
+        const [rs232Res, tcpRes] = await Promise.all([
+          fetch(`${API}/api/comm-status`),
+          fetch(`${API}/api/tcp/status`)
+        ]);
+
+        const rs232Data = rs232Res.ok
+          ? await rs232Res.json()
+          : { devices: [] };
+
+        const tcpData = tcpRes.ok
+          ? await tcpRes.json()
+          : {};
+
+        // RS232 devices
+        const rs232Devices = (rs232Data.devices || []).map(dev => ({
+          name: dev.name,
+          type: "RS232",
+          connected: !!dev.connected
+        }));
+
+        // TCP devices
+        const tcpDevices = Object.entries(tcpData).map(
+          ([name, dev]) => ({
+            name,
+            type: "TCP",
+            connected: !!dev.connected
+          })
+        );
+
+        // Gabungkan RS232 + TCP
+        const newDevices = [
+          ...rs232Devices,
+          ...tcpDevices
+        ];
+
+        setCommDevices(prev => {
+          if (
+            JSON.stringify(prev) ===
+            JSON.stringify(newDevices)
+          ) {
+            return prev;
+          }
+
+          return newDevices;
+        });
+
+      } catch (err) {
+        console.error(
+          "[COMM DEVICE] Failed to load device status:",
+          err
+        );
+      }
+    };
+
     check();
+
     const t = setInterval(check, 3000);
+
     return () => clearInterval(t);
   }, []);
 
@@ -418,7 +465,11 @@ export default function MainPage({ user: initialUser, onLogout }) {
   // 🟢 Aktifkan polling saat halaman Main aktif dan cpNumber tersedia
   const cpNumber = processCode.replace(/[^0-9]/g, "");
   const isCpActive = activeMenu === "Main" && !!cpNumber;
+  // RS232 Scanner
   useRS232Scanner(cpNumber, isCpActive);
+
+  // TCP/IP PLC
+  useTCPPLC(cpNumber, isCpActive);
 
   // ── Helpers ───────────────────────────────────────────────
   const fmtTime = d => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
@@ -534,7 +585,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
     { icon: <IconSetting2 />, label: "Setting", action: () => setShowSetting(true) },
     { icon: <IconLogic />, label: "Logic Builder", action: () => setShowLogic(true) },
     { icon: <span>🎨</span>, label: "Page Builder", action: () => setShowBuilder(true) },
-    
+
 
   ];
 
