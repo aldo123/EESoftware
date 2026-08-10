@@ -211,6 +211,305 @@ function RuntimeShape({ widget }) {
   );
 }
 
+
+function RuntimeTextBox({ widget, value }) {
+  const p = widget.props || {};
+  const v = getVisual(p);
+
+  const displayText =
+    value === undefined || value === null
+      ? (p.text ?? "TEXT")
+      : String(value);
+
+  const icon = p.icon || "";
+  const iconPosition = p.iconPosition || "left";
+  const iconSize = Number(p.iconSize ?? 20);
+  const fontSize = Number(p.fontSize ?? 18);
+  const fontWeight = p.fontWeight || "600";
+  const textColor = p.textColor || v.textColor || "#FFFFFF";
+  const iconColor = p.iconColor || textColor;
+  const textAlign = p.textAlign || "center";
+  const backgroundColor = p.backgroundColor || "transparent";
+  const borderColor = p.borderColor || "transparent";
+  const borderWidth = Math.max(0, Number(p.borderWidth ?? 0));
+  const radius = Math.max(0, Number(p.radius ?? 6));
+  const padding = Math.max(0, Number(p.padding ?? 8));
+  const rotation = Number(p.rotation ?? 0);
+
+  const textJustify =
+    textAlign === "left" ? "flex-start" :
+    textAlign === "right" ? "flex-end" : "center";
+
+  return (
+    <div
+      className="absolute relative"
+      style={{
+        left: widget.x,
+        top: widget.y,
+        width: p.width,
+        height: p.height,
+        background: backgroundColor,
+        border: `${borderWidth}px solid ${borderColor}`,
+        borderRadius: `${radius}px`,
+        transform: `rotate(${rotation}deg)`,
+        boxSizing: "border-box",
+        overflow: "hidden"
+      }}
+    >
+      <div
+        className="absolute inset-0 flex items-center pointer-events-none"
+        style={{
+          justifyContent: textJustify,
+          padding: `${padding}px`,
+          boxSizing: "border-box"
+        }}
+      >
+        <span
+          style={{
+            color: textColor,
+            fontSize: `${fontSize}px`,
+            fontWeight,
+            lineHeight: 1.2,
+            textAlign,
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word"
+          }}
+        >
+          {displayText}
+        </span>
+      </div>
+
+      {icon && iconPosition === "left" && (
+        <div
+          className="absolute inset-y-0 left-0 flex items-center pointer-events-none"
+          style={{ paddingLeft: `${padding}px` }}
+        >
+          <span style={{ color: iconColor, fontSize: `${iconSize}px`, lineHeight: 1 }}>
+            {icon}
+          </span>
+        </div>
+      )}
+
+      {icon && iconPosition === "right" && (
+        <div
+          className="absolute inset-y-0 right-0 flex items-center pointer-events-none"
+          style={{ paddingRight: `${padding}px` }}
+        >
+          <span style={{ color: iconColor, fontSize: `${iconSize}px`, lineHeight: 1 }}>
+            {icon}
+          </span>
+        </div>
+      )}
+
+      {icon && iconPosition === "center" && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <span style={{ color: iconColor, fontSize: `${iconSize}px`, lineHeight: 1 }}>
+            {icon}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RuntimeGauge({ widget, value }) {
+  const p = widget.props || {};
+  const v = getVisual(p);
+
+  const min = Number(p.min ?? 0);
+  const maxRaw = Number(p.max ?? 100);
+  const max = maxRaw === min ? min + 1 : maxRaw;
+
+  const rawValue = value === undefined || value === null || value === ""
+    ? (p.simulationValue ?? min)
+    : Number(value);
+
+  const gaugeValue = Number.isFinite(rawValue)
+    ? Math.min(max, Math.max(min, rawValue))
+    : min;
+
+  const progress = (gaugeValue - min) / (max - min);
+  const start = Number(p.startAngle ?? -135);
+  const end = Number(p.endAngle ?? 135);
+  const angle = start + progress * (end - start);
+
+  const decimals = Math.max(0, Number(p.decimals ?? 0));
+  const unit = p.unit || "";
+  const title = p.title || "VALUE";
+
+  const center = 100;
+  const radius = 72;
+
+  const polar = (a, r = radius) => {
+    const rad = (a - 90) * Math.PI / 180;
+    return {
+      x: center + r * Math.cos(rad),
+      y: center + r * Math.sin(rad)
+    };
+  };
+
+  const arcPath = (a1, a2, r = radius) => {
+    const s = polar(a1, r);
+    const e = polar(a2, r);
+    const large = Math.abs(a2 - a1) > 180 ? 1 : 0;
+    const sweep = a2 > a1 ? 1 : 0;
+    return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} ${sweep} ${e.x} ${e.y}`;
+  };
+
+  const needlePoint = polar(angle, 58);
+  const gaugeId = `gauge-${widget.id}`;
+
+  return (
+    <div
+      className="absolute flex items-center justify-center overflow-hidden"
+      style={{
+        left: widget.x,
+        top: widget.y,
+        width: p.width,
+        height: p.height
+      }}
+    >
+      <svg
+        viewBox="0 0 200 200"
+        className="w-full h-full"
+        style={{ overflow: "visible" }}
+      >
+        <defs>
+          <filter
+            id={gaugeId}
+            x="-50%"
+            y="-50%"
+            width="200%"
+            height="200%"
+          >
+            <feGaussianBlur stdDeviation="3" result="blur" />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+
+        {/* Background track */}
+        <path
+          d={arcPath(start, end)}
+          fill="none"
+          stroke={p.trackColor || v.borderColor || "#1E293B"}
+          strokeWidth="13"
+          strokeLinecap="round"
+        />
+
+        {/* Live value arc */}
+        <path
+          d={arcPath(start, angle)}
+          fill="none"
+          stroke={p.progressColor || v.accentColor || "#00BFFF"}
+          strokeWidth="13"
+          strokeLinecap="round"
+          filter={p.glow !== false ? `url(#${gaugeId})` : undefined}
+        />
+
+        {/* Scale */}
+        {p.showScale !== false && [0, 0.25, 0.5, 0.75, 1].map((t, i) => {
+          const a = start + t * (end - start);
+          const a1 = polar(a, 58);
+          const a2 = polar(a, 65);
+
+          return (
+            <line
+              key={i}
+              x1={a1.x}
+              y1={a1.y}
+              x2={a2.x}
+              y2={a2.y}
+              stroke={p.labelColor || v.secondaryTextColor || "#64748B"}
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          );
+        })}
+
+        {/* Needle */}
+        <line
+          x1={center}
+          y1={center}
+          x2={needlePoint.x}
+          y2={needlePoint.y}
+          stroke={p.needleColor || "#FFFFFF"}
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+
+        <circle
+          cx={center}
+          cy={center}
+          r="7"
+          fill={p.needleColor || "#FFFFFF"}
+        />
+
+        <circle
+          cx={center}
+          cy={center}
+          r="3"
+          fill={p.progressColor || v.accentColor || "#00BFFF"}
+        />
+
+        {/* Numeric value */}
+        {p.showValue !== false && (
+          <text
+            x={center}
+            y="128"
+            textAnchor="middle"
+            fill={p.textColor || v.textColor || "#FFFFFF"}
+            fontSize="20"
+            fontWeight="700"
+          >
+            {gaugeValue.toFixed(decimals)}{unit}
+          </text>
+        )}
+
+        {/* Title */}
+        <text
+          x={center}
+          y="148"
+          textAnchor="middle"
+          fill={p.labelColor || v.secondaryTextColor || "#64748B"}
+          fontSize="8"
+          fontWeight="600"
+          letterSpacing="1.5"
+        >
+          {title}
+        </text>
+
+        {/* Min / Max */}
+        {p.showMinMax !== false && (
+          <>
+            <text
+              x="38"
+              y="166"
+              textAnchor="middle"
+              fill={p.labelColor || v.secondaryTextColor || "#64748B"}
+              fontSize="7"
+            >
+              {min}
+            </text>
+
+            <text
+              x="162"
+              y="166"
+              textAnchor="middle"
+              fill={p.labelColor || v.secondaryTextColor || "#64748B"}
+              fontSize="7"
+            >
+              {max}
+            </text>
+          </>
+        )}
+      </svg>
+    </div>
+  );
+}
+
 export default function DynamicCPPage({ cpNumber, user }) {
   const [widgets, setWidgets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -363,6 +662,26 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
             if (type === "shape") {
               return <RuntimeShape key={id} widget={widget} />;
+            }
+
+            if (type === "textbox") {
+              return (
+                <RuntimeTextBox
+                  key={id}
+                  widget={widget}
+                  value={fieldValues[variableName]}
+                />
+              );
+            }
+
+            if (type === "gauge") {
+              return (
+                <RuntimeGauge
+                  key={id}
+                  widget={widget}
+                  value={fieldValues[variableName]}
+                />
+              );
             }
 
             return null;

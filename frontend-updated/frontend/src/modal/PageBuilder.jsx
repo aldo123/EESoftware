@@ -105,6 +105,98 @@ const TEXTBOX_ICONS = [
   { value: "⚙️", label: "Machine", icon: "⚙️" },
 ];
 
+// ── GAUGE TYPE / ICON LIBRARY ────────────────────────────────────────
+// Used by Page Builder and persisted in widget.props.gaugeType.
+// Runtime can render the same type using its own SVG icon renderer.
+const GAUGE_TYPES = [
+  { value: "temp", label: "Temperature", icon: "🌡", unit: "°C" },
+  { value: "power", label: "Power", icon: "⚡", unit: "kW" },
+  { value: "water", label: "Water", icon: "💧", unit: "L/min" },
+  { value: "pressure", label: "Pressure", icon: "◉", unit: "bar" },
+  { value: "flow", label: "Flow", icon: "➜", unit: "L/min" },
+  { value: "level", label: "Level", icon: "▥", unit: "%" },
+  { value: "speed", label: "Speed", icon: "◔", unit: "RPM" },
+  { value: "current", label: "Current", icon: "∿", unit: "A" },
+];
+
+function GaugeTypeIcon({ type = "temp", color = "#00BFFF", size = 28 }) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: color,
+    strokeWidth: 1.8,
+    strokeLinecap: "round",
+    strokeLinejoin: "round"
+  };
+
+  if (type === "power") return (
+    <svg {...common}>
+      <path d="M12 2v8" />
+      <path d="M7.05 4.93a9 9 0 1 0 9.9 0" />
+      <path d="M12 12l-2 4h3l-1 6 4-7h-3l2-3z" />
+    </svg>
+  );
+
+  if (type === "water") return (
+    <svg {...common}>
+      <path d="M12 2.8S6.5 9.3 6.5 13.5a5.5 5.5 0 0 0 11 0C17.5 9.3 12 2.8 12 2.8z" />
+      <path d="M9 14.5c.4 1.2 1.3 2 2.8 2.3" />
+    </svg>
+  );
+
+  if (type === "pressure") return (
+    <svg {...common}>
+      <circle cx="12" cy="13" r="8" />
+      <path d="M7.5 13a4.5 4.5 0 0 1 9 0" />
+      <path d="M12 13l3.2-3.2" />
+      <path d="M5 5l1.7 1.7M19 5l-1.7 1.7" />
+    </svg>
+  );
+
+  if (type === "flow") return (
+    <svg {...common}>
+      <path d="M3 7h12" />
+      <path d="m11 4 4 3-4 3" />
+      <path d="M21 17H9" />
+      <path d="m13 14-4 3 4 3" />
+      <path d="M4 12h5" />
+    </svg>
+  );
+
+  if (type === "level") return (
+    <svg {...common}>
+      <path d="M7 3v18M17 3v18" />
+      <path d="M7 7h10M7 17h10" />
+      <path d="M9.5 12c1.2-1.2 1.8-1.2 3 0s1.8 1.2 3 0" />
+    </svg>
+  );
+
+  if (type === "speed") return (
+    <svg {...common}>
+      <path d="M4.5 16a8 8 0 1 1 15 0" />
+      <path d="M12 12l4-4" />
+      <path d="M6 18h12" />
+    </svg>
+  );
+
+  if (type === "current") return (
+    <svg {...common}>
+      <path d="M7 3v7a5 5 0 0 0 10 0V3" />
+      <path d="M9 21h6M12 15v6M9 3h6" />
+    </svg>
+  );
+
+  return (
+    <svg {...common}>
+      <path d="M14 14.7V5a2 2 0 0 0-4 0v9.7a4.5 4.5 0 1 0 4 0z" />
+      <path d="M12 11v6" />
+    </svg>
+  );
+}
+
+
 // 🔴 DUA KOMPONEN DENGAN VARIABLE (BUKAN FIELDKEY)
 const COMPONENT_TYPES = [
   {
@@ -200,6 +292,51 @@ const COMPONENT_TYPES = [
       visual: { ...DEFAULT_VISUAL }
     }
   },
+  {
+    type: "gauge",
+    label: "Gauge",
+    icon: "◔",
+    desc: "Industrial analog value gauge",
+    defaultProps: {
+      variable: "",
+      simulationValue: 50,
+
+      // Gauge semantic type / icon
+      gaugeType: "temp",
+      title: "TEMPERATURE",
+      unit: "°C",
+
+      // Value range
+      min: 0,
+      max: 100,
+      decimals: 1,
+
+      // Visual behavior
+      showValue: true,
+      showScale: true,
+      showMinMax: true,
+      showIcon: true,
+      showTitle: true,
+      titleSize: 10,
+      iconSize: 25,
+
+      // Needle / arc
+      startAngle: -135,
+      endAngle: 135,
+      trackColor: "#172B3F",
+      progressColor: "#00BFFF",
+      backgroundColor: "#071421",
+      textColor: "#FFFFFF",
+      iconColor: "#00BFFF",
+      unitColor: "#00BFFF",
+      labelColor: "#7F9DB8",
+      glow: true,
+
+      width: 220,
+      height: 190,
+      visual: { ...DEFAULT_VISUAL }
+    }
+  }
 ];
 
 const snap = (v) => Math.round(v / GRID) * GRID;
@@ -415,7 +552,6 @@ function WidgetPreview({ widget, onUpdate }) {
     const icon = p.icon || "";
     const iconPosition = p.iconPosition || "left";
     const iconSize = Number(p.iconSize ?? 20);
-    const iconGap = Number(p.iconGap ?? 8);
     const fontSize = Number(p.fontSize ?? 18);
     const fontWeight = p.fontWeight || "600";
     const textColor = p.textColor || "#FFFFFF";
@@ -428,21 +564,14 @@ function WidgetPreview({ widget, onUpdate }) {
     const padding = Math.max(0, Number(p.padding ?? 8));
     const rotation = Number(p.rotation ?? 0);
 
-    const justifyContent =
+    const textJustify =
       textAlign === "left" ? "flex-start" :
       textAlign === "right" ? "flex-end" : "center";
 
-    const alignItems = "center";
-
-    const isIconCentered = iconPosition === "center";
-    const isVerticalIcon = iconPosition === "top" || iconPosition === "bottom";
-
     return (
       <div
-        className="w-full h-full flex"
+        className="relative w-full h-full"
         style={{
-          alignItems,
-          justifyContent,
           background: backgroundColor,
           border: `${borderWidth}px solid ${borderColor}`,
           borderRadius: `${radius}px`,
@@ -452,89 +581,370 @@ function WidgetPreview({ widget, onUpdate }) {
           overflow: "hidden"
         }}
       >
-        {isIconCentered ? (
-          // Center icon is independent of text alignment.
-          <div className="relative w-full h-full flex items-center justify-center">
-            <span
-              style={{
-                color: iconColor,
-                fontSize: `${iconSize}px`,
-                lineHeight: 1,
-                flexShrink: 0
-              }}
-            >
-              {icon}
-            </span>
-
-            <span
-              className="absolute inset-0 flex items-center"
-              style={{
-                justifyContent: justifyContent,
-                color: textColor,
-                fontSize: `${fontSize}px`,
-                fontWeight,
-                lineHeight: 1.2,
-                textAlign,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                pointerEvents: "none"
-              }}
-            >
-              {textValue}
-            </span>
-          </div>
-        ) : (
-          <div
-            className="flex w-full h-full"
+        <div
+          className="absolute inset-0 flex items-center pointer-events-none"
+          style={{
+            justifyContent: textJustify,
+            padding: `${padding}px`,
+            boxSizing: "border-box"
+          }}
+        >
+          <span
             style={{
-              flexDirection: isVerticalIcon ? "column" : "row",
-              alignItems: isVerticalIcon ? "center" : "center",
-              justifyContent: justifyContent,
-              gap: `${iconGap}px`
+              color: textColor,
+              fontSize: `${fontSize}px`,
+              fontWeight,
+              lineHeight: 1.2,
+              textAlign,
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word"
             }}
           >
-            {(iconPosition === "left" || iconPosition === "top") && icon && (
-              <span
-                style={{
-                  color: iconColor,
-                  fontSize: `${iconSize}px`,
-                  lineHeight: 1,
-                  flexShrink: 0
-                }}
-              >
-                {icon}
-              </span>
-            )}
+            {textValue}
+          </span>
+        </div>
 
-            <span
-              style={{
-                color: textColor,
-                fontSize: `${fontSize}px`,
-                fontWeight,
-                lineHeight: 1.2,
-                textAlign,
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                flexShrink: 0
-              }}
-            >
-              {textValue}
+        {icon && iconPosition === "left" && (
+          <div
+            className="absolute inset-y-0 left-0 flex items-center pointer-events-none"
+            style={{ paddingLeft: `${padding}px` }}
+          >
+            <span style={{
+              color: iconColor,
+              fontSize: `${iconSize}px`,
+              lineHeight: 1
+            }}>
+              {icon}
             </span>
-
-            {(iconPosition === "right" || iconPosition === "bottom") && icon && (
-              <span
-                style={{
-                  color: iconColor,
-                  fontSize: `${iconSize}px`,
-                  lineHeight: 1,
-                  flexShrink: 0
-                }}
-              >
-                {icon}
-              </span>
-            )}
           </div>
         )}
+
+        {icon && iconPosition === "right" && (
+          <div
+            className="absolute inset-y-0 right-0 flex items-center pointer-events-none"
+            style={{ paddingRight: `${padding}px` }}
+          >
+            <span style={{
+              color: iconColor,
+              fontSize: `${iconSize}px`,
+              lineHeight: 1
+            }}>
+              {icon}
+            </span>
+          </div>
+        )}
+
+        {icon && iconPosition === "center" && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <span style={{
+              color: iconColor,
+              fontSize: `${iconSize}px`,
+              lineHeight: 1
+            }}>
+              {icon}
+            </span>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── PREVIEW GAUGE ─────────────────────────────────────────────────
+  if (type === "gauge") {
+    const min = Number(p.min ?? 0);
+    const maxRaw = Number(p.max ?? 100);
+    const max = maxRaw === min ? min + 1 : maxRaw;
+
+    const previewValue = Math.min(
+      max,
+      Math.max(min, Number(p.simulationValue ?? min))
+    );
+
+    const progress = (previewValue - min) / (max - min);
+    const start = Number(p.startAngle ?? -135);
+    const end = Number(p.endAngle ?? 135);
+    const angle = start + progress * (end - start);
+
+    const unit = p.unit || "";
+    const decimals = Math.max(0, Number(p.decimals ?? 0));
+    const title = p.title || "VALUE";
+    const gaugeType = p.gaugeType || "temp";
+
+    const accent = p.progressColor || "#00BFFF";
+    const track = p.trackColor || "#1A2C3D";
+    const textColor = p.textColor || "#FFFFFF";
+    const labelColor = p.labelColor || "#71879B";
+    const needleColor = p.needleColor || "#FFFFFF";
+
+    const gaugeId = `dialGauge-${widget.id || "preview"}`;
+    const cx = 100;
+    const cy = 108;
+
+    // Main arc radius and inner decorative radius.
+    const radius = 72;
+
+    const polar = (a, r = radius) => {
+      const rad = (a - 90) * Math.PI / 180;
+      return {
+        x: cx + r * Math.cos(rad),
+        y: cy + r * Math.sin(rad)
+      };
+    };
+
+    const arcPath = (a1, a2, r = radius) => {
+      const s = polar(a1, r);
+      const e = polar(a2, r);
+      const large = Math.abs(a2 - a1) > 180 ? 1 : 0;
+      const sweep = a2 > a1 ? 1 : 0;
+      return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} ${sweep} ${e.x} ${e.y}`;
+    };
+
+    const needlePoint = polar(angle, 56);
+
+    return (
+      <div className="w-full h-full flex items-center justify-center overflow-hidden">
+        <svg
+          viewBox="0 0 200 200"
+          className="w-full h-full"
+          style={{ overflow: "visible" }}
+        >
+          <defs>
+            <filter
+              id={gaugeId}
+              x="-70%"
+              y="-70%"
+              width="240%"
+              height="240%"
+            >
+              <feGaussianBlur stdDeviation="3.5" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+
+            <linearGradient
+              id={`${gaugeId}-arc`}
+              x1="0%"
+              y1="100%"
+              x2="100%"
+              y2="0%"
+            >
+              <stop offset="0%" stopColor={accent} stopOpacity="0.72" />
+              <stop offset="100%" stopColor={accent} />
+            </linearGradient>
+
+            <radialGradient id={`${gaugeId}-face`} cx="50%" cy="45%" r="70%">
+              <stop offset="0%" stopColor={p.backgroundColor || "#102133"} />
+              <stop offset="72%" stopColor={p.backgroundColor || "#071421"} />
+              <stop offset="100%" stopColor={p.backgroundColor || "#050D16"} />
+            </radialGradient>
+
+            <filter
+              id={`${gaugeId}-glow`}
+              x="-100%"
+              y="-100%"
+              width="300%"
+              height="300%"
+              colorInterpolationFilters="sRGB"
+            >
+              <feGaussianBlur stdDeviation="5" result="blur1" />
+              <feGaussianBlur in="SourceGraphic" stdDeviation="1.5" result="blur2" />
+              <feMerge>
+                <feMergeNode in="blur1" />
+                <feMergeNode in="blur2" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {/* Dark instrument face */}
+          <circle
+            cx={cx}
+            cy={cy}
+            r="88"
+            fill={`url(#${gaugeId}-face)`}
+            stroke={p.borderColor || "#18334A"}
+            strokeWidth="1"
+          />
+
+          {/* Outer technical ring */}
+          <path
+            d={arcPath(start, end, 84)}
+            fill="none"
+            stroke="#24445C"
+            strokeWidth="2"
+            strokeDasharray="1 4"
+          />
+
+          {/* Main inactive arc */}
+          <path
+            d={arcPath(start, end, 72)}
+            fill="none"
+            stroke={track}
+            strokeWidth="15"
+            strokeLinecap="round"
+          />
+
+          {/* Soft halo behind active arc */}
+          {p.glow !== false && (
+            <path
+              d={arcPath(start, angle, 72)}
+              fill="none"
+              stroke={accent}
+              strokeWidth="22"
+              strokeLinecap="round"
+              opacity="0.28"
+              filter={`url(#${gaugeId}-glow)`}
+            />
+          )}
+
+          {/* Active colored arc */}
+          <path
+            d={arcPath(start, angle, 72)}
+            fill="none"
+            stroke={`url(#${gaugeId}-arc)`}
+            strokeWidth="15"
+            strokeLinecap="round"
+            filter={p.glow !== false ? `url(#${gaugeId}-glow)` : undefined}
+          />
+
+          {/* Inner arc highlight */}
+          <path
+            d={arcPath(start, angle, 64)}
+            fill="none"
+            stroke={accent}
+            strokeWidth="1.5"
+            opacity="0.28"
+          />
+
+          {/* Dense industrial ticks */}
+          {p.showScale !== false && Array.from({ length: 41 }, (_, i) => {
+            const t = i / 40;
+            const a = start + t * (end - start);
+
+            const outer = polar(a, 86);
+            const inner = polar(a, i % 5 === 0 ? 78 : 82);
+
+            return (
+              <line
+                key={i}
+                x1={outer.x}
+                y1={outer.y}
+                x2={inner.x}
+                y2={inner.y}
+                stroke={t <= progress ? accent : labelColor}
+                strokeWidth={i % 5 === 0 ? 1.7 : 0.8}
+                opacity={t <= progress ? 0.95 : 0.42}
+              />
+            );
+          })}
+
+          {/* Major scale values */}
+          {p.showScale !== false && [0, 0.25, 0.5, 0.75, 1].map((t, i) => {
+            const a = start + t * (end - start);
+            const pos = polar(a, 89);
+            const val = min + t * (max - min);
+
+            return (
+              <text
+                key={i}
+                x={pos.x}
+                y={pos.y + 2}
+                textAnchor="middle"
+                fill={t <= progress ? accent : labelColor}
+                fontSize="6.5"
+                fontWeight="600"
+              >
+                {Number(val).toFixed(decimals > 0 ? 0 : 0)}
+              </text>
+            );
+          })}
+
+          {/* Center information: icon centered above title */}
+          {(p.showIcon !== false || p.showTitle !== false) && (
+            <g>
+              {p.showIcon !== false && (
+                <g
+                  transform={`translate(${cx - (Number(p.iconSize ?? 18) / 2)} 72)`}
+                >
+                  <GaugeTypeIcon
+                    type={gaugeType}
+                    color={p.iconColor || accent}
+                    size={Number(p.iconSize ?? 18)}
+                  />
+                </g>
+              )}
+
+              {p.showTitle !== false && (
+                <text
+                  x={cx}
+                  y={p.showIcon !== false ? "101" : "88"}
+                  textAnchor="middle"
+                  fill={textColor}
+                  fontSize={Number(p.titleSize ?? 8)}
+                  fontWeight="600"
+                  letterSpacing="1.1"
+                >
+                  {title}
+                </text>
+              )}
+            </g>
+          )}
+
+          {/* Value */}
+          {p.showValue !== false && (
+            <text
+              x={cx}
+              y="132"
+              textAnchor="middle"
+              fill={textColor}
+              fontSize="20"
+              fontWeight="700"
+              letterSpacing="-0.4"
+            >
+              {previewValue.toFixed(decimals)}
+            </text>
+          )}
+
+          {/* Unit - same size as title */}
+          <text
+            x={cx}
+            y="145"
+            textAnchor="middle"
+            fill={p.unitColor || accent}
+            fontSize={Number(p.titleSize ?? 8)}
+            fontWeight="600"
+            letterSpacing="1.1"
+          >
+            {unit}
+          </text>
+
+          {/* Bottom technical labels */}
+          {p.showMinMax !== false && (
+            <>
+              <text
+                x="31"
+                y="172"
+                textAnchor="middle"
+                fill={labelColor}
+                fontSize="6.5"
+              >
+                MIN {min}
+              </text>
+
+              <text
+                x="169"
+                y="172"
+                textAnchor="middle"
+                fill={labelColor}
+                fontSize="6.5"
+              >
+                MAX {max}
+              </text>
+            </>
+          )}
+        </svg>
       </div>
     );
   }
@@ -639,113 +1049,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
       <PropInput label="Height" type="number" min={24} value={p.height} onChange={v => set("height", snap(v))} />
     </div></PropSection>
 
-    {type !== "shape" && type !== "textbox" && (
-      <>
-    {/* 🔴 SIMULATION STATE (WRITE TO VARIABLE) */}
-    <PropSection title="Simulation State">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-[8px] font-bold uppercase tracking-widest text-[#22C55E]">● VARIABLE WRITER</span>
-      </div>
-      <div className="flex gap-2 mb-2">
-        <button
-          onClick={() => set("builderState", 1)}
-          className="flex-1 h-8 rounded-lg border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
-          style={{
-            background: isOn ? "linear-gradient(135deg, #00BFFF, #0077AA)" : "#0F172A",
-            borderColor: isOn ? "#00BFFF" : "#334155",
-            color: isOn ? "#FFFFFF" : "#64748B",
-            boxShadow: isOn ? "0 0 14px rgba(0,191,255,0.45)" : "none"
-          }}
-        >
-          ● ON (1)
-        </button>
-        <button
-          onClick={() => set("builderState", 0)}
-          className="flex-1 h-8 rounded-lg border text-[10px] font-black uppercase tracking-wider transition-all cursor-pointer"
-          style={{
-            background: !isOn ? "#1E293B" : "#0F172A",
-            borderColor: !isOn ? "#64748B" : "#334155",
-            color: !isOn ? "#FFFFFF" : "#64748B",
-            boxShadow: !isOn ? "0 0 10px rgba(100,116,139,0.25)" : "none"
-          }}
-        >
-          ○ OFF (0)
-        </button>
-      </div>
-      <div
-        className="text-[9px] font-mono px-2 py-1.5 rounded border flex items-center justify-between"
-        style={{
-          background: isOn ? "rgba(0,191,255,0.08)" : "rgba(100,116,139,0.08)",
-          borderColor: isOn ? "rgba(0,191,255,0.25)" : "#1E293B",
-          color: isOn ? "#00BFFF" : "#64748B"
-        }}
-      >
-        <span>Variable Value:</span>
-        <span className="font-bold">{isOn ? 1 : 0}</span>
-      </div>
-    </PropSection>
-
-      </>
-    )}
-
-    {/* ── BUTTON SETTINGS ──────────────────────────────────────────── */}
-    {type === "button" && (
-      <>
-        <PropSection title="Data Binding">
-          <PropInput label="Variable Name" value={p.variable} onChange={v => set("variable", v)} />
-        </PropSection>
-
-        <PropSection title="Variant & Text">
-          <PropInput label="Variant" options={[
-            { value: "neon", label: "Neon" },
-            { value: "solid", label: "Solid" }
-          ]} value={p.variant} onChange={v => set("variant", v)} />
-          <PropInput label="Font Size" type="number" min={8} max={48} value={p.fontSize || 18} onChange={v => set("fontSize", Number(v))} />
-        </PropSection>
-
-        <PropSection title="ON State Appearance">
-          <PropInput label="Label (ON)" value={p.labelOn} onChange={v => set("labelOn", v)} />
-          <PropInput label="Background (ON)" type="color" value={p.onBackground || "#00BFFF"} onChange={v => set("onBackground", v)} />
-          <PropInput label="Border (ON)" type="color" value={p.onBorder || "#00BFFF"} onChange={v => set("onBorder", v)} />
-          <PropInput label="Text (ON)" type="color" value={p.onTextColor || "#FFFFFF"} onChange={v => set("onTextColor", v)} />
-        </PropSection>
-
-        <PropSection title="OFF State Appearance">
-          <PropInput label="Label (OFF)" value={p.labelOff} onChange={v => set("labelOff", v)} />
-          <PropInput label="Background (OFF)" type="color" value={p.offBackground || "#0F172A"} onChange={v => set("offBackground", v)} />
-          <PropInput label="Border (OFF)" type="color" value={p.offBorder || "#123B5A"} onChange={v => set("offBorder", v)} />
-          <PropInput label="Text (OFF)" type="color" value={p.offTextColor || "#7F9DB8"} onChange={v => set("offTextColor", v)} />
-        </PropSection>
-      </>
-    )}
-
-    {/* ── LIGHT INDICATOR SETTINGS ──────────────────────────────────── */}
-    {type === "light" && (
-      <>
-        <PropSection title="Data Binding">
-          <PropInput label="Variable Name" value={p.variable} onChange={v => set("variable", v)} />
-        </PropSection>
-
-        <PropSection title="Shape & Label">
-          <PropInput label="Shape" options={[
-            { value: "circle", label: "Circle" },
-            { value: "square", label: "Square" }
-          ]} value={p.shape} onChange={v => set("shape", v)} />
-          <PropInput label="Show Label" type="checkbox" value={p.showLabel !== false} onChange={v => set("showLabel", v)} />
-          {p.showLabel !== false && <PropInput label="Label Text" value={p.label} onChange={v => set("label", v)} />}
-        </PropSection>
-
-        <PropSection title="ON State Appearance">
-          <PropInput label="Color (ON)" type="color" value={p.onColor || "#00BFFF"} onChange={v => set("onColor", v)} />
-        </PropSection>
-
-        <PropSection title="OFF State Appearance">
-          <PropInput label="Color (OFF)" type="color" value={p.offColor || "#1E293B"} onChange={v => set("offColor", v)} />
-        </PropSection>
-      </>
-    )}
-
-    {type === "textbox" && (
+    {type === "gauge" && (
       <>
         <PropSection title="Data Binding">
           <PropInput
@@ -754,142 +1058,235 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             onChange={v => set("variable", v)}
           />
           <div className="text-[8px] text-[#64748B] mt-0.5">
-            Text is read from the Logic Builder variable.
+            Numeric value is read from the Logic Builder variable.
           </div>
         </PropSection>
 
-        <PropSection title="Text">
-          <PropInput label="Default Text" value={p.text ?? "TEXT"} onChange={v => set("text", v)} />
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">Icon</span>
-            <IconPicker value={p.icon || ""} onChange={v => set("icon", v)} />
+        <PropSection title="Gauge Type & Header">
+          <div className="flex flex-col gap-1">
+            <span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">
+              Instrument
+            </span>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              {GAUGE_TYPES.map(item => {
+                const active = (p.gaugeType || "temp") === item.value;
+
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => set("gaugeType", item.value)}
+                    className="h-9 rounded-lg border flex items-center gap-2 px-2 text-left transition-all"
+                    style={{
+                      background: active ? "rgba(0,191,255,0.10)" : "#0F172A",
+                      borderColor: active ? "#00BFFF" : "#334155",
+                      color: active ? "#FFFFFF" : "#94A3B8",
+                      boxShadow: active ? "0 0 10px rgba(0,191,255,0.12)" : "none"
+                    }}
+                  >
+                    <span
+                      className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                      style={{
+                        background: active ? "rgba(0,191,255,0.12)" : "#07111F",
+                        color: active ? "#00BFFF" : "#64748B"
+                      }}
+                    >
+                      <GaugeTypeIcon
+                        type={item.value}
+                        color={active ? "#00BFFF" : "#64748B"}
+                        size={17}
+                      />
+                    </span>
+
+                    <span className="text-[9px] font-bold truncate">
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          {p.icon && (
-            <>
-              <PropInput
-                label="Icon Position"
-                options={[
-                  { value: "left", label: "Left" },
-                  { value: "center", label: "Center" },
-                  { value: "right", label: "Right" },
-                  { value: "top", label: "Top" },
-                  { value: "bottom", label: "Bottom" }
-                ]}
-                value={p.iconPosition || "left"}
-                onChange={v => set("iconPosition", v)}
-              />
-              <PropInput
-                label="Icon Size"
-                type="number"
-                min={8}
-                max={64}
-                value={p.iconSize ?? 20}
-                onChange={v => set("iconSize", Number(v))}
-              />
-              <PropInput
-                label="Icon Gap"
-                type="number"
-                min={0}
-                max={40}
-                value={p.iconGap ?? 8}
-                onChange={v => set("iconGap", Number(v))}
-              />
-            </>
-          )}
+
           <PropInput
-            label="Font Size"
+            label="Title"
+            value={p.title || "VALUE"}
+            onChange={v => set("title", v)}
+          />
+
+          <PropInput
+            label="Unit"
+            value={p.unit || ""}
+            onChange={v => set("unit", v)}
+          />
+          <div className="text-[8px] text-[#64748B] -mt-1">
+            Suggested: {GAUGE_TYPES.find(g => g.value === (p.gaugeType || "temp"))?.unit || ""}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Icon Size"
+              type="number"
+              min={12}
+              max={48}
+              value={p.iconSize ?? 25}
+              onChange={v => set("iconSize", Number(v))}
+            />
+
+            <PropInput
+              label="Title Size"
+              type="number"
+              min={7}
+              max={24}
+              value={p.titleSize ?? 10}
+              onChange={v => set("titleSize", Number(v))}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Show Icon"
+              type="checkbox"
+              value={p.showIcon !== false}
+              onChange={v => set("showIcon", v)}
+            />
+
+            <PropInput
+              label="Show Title"
+              type="checkbox"
+              value={p.showTitle !== false}
+              onChange={v => set("showTitle", v)}
+            />
+          </div>
+        </PropSection>
+
+        <PropSection title="Value Range">
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Min"
+              type="number"
+              value={p.min ?? 0}
+              onChange={v => set("min", Number(v))}
+            />
+
+            <PropInput
+              label="Max"
+              type="number"
+              value={p.max ?? 100}
+              onChange={v => set("max", Number(v))}
+            />
+          </div>
+
+          <PropInput
+            label="Decimals"
             type="number"
-            min={8}
-            max={96}
-            value={p.fontSize ?? 18}
-            onChange={v => set("fontSize", Number(v))}
-          />
-          <PropInput
-            label="Font Weight"
-            options={[
-              { value: "400", label: "Regular" },
-              { value: "500", label: "Medium" },
-              { value: "600", label: "Semi Bold" },
-              { value: "700", label: "Bold" },
-              { value: "800", label: "Extra Bold" }
-            ]}
-            value={p.fontWeight || "600"}
-            onChange={v => set("fontWeight", v)}
+            min={0}
+            max={4}
+            value={p.decimals ?? 1}
+            onChange={v => set("decimals", Number(v))}
           />
         </PropSection>
 
-        <PropSection title="Alignment">
+        <PropSection title="Simulation State">
           <PropInput
-            label="Horizontal"
-            options={[
-              { value: "left", label: "Left" },
-              { value: "center", label: "Center" },
-              { value: "right", label: "Right" }
-            ]}
-            value={p.textAlign || "center"}
-            onChange={v => set("textAlign", v)}
+            label="Value"
+            type="number"
+            value={p.simulationValue ?? p.min ?? 0}
+            min={Number(p.min ?? 0)}
+            max={Number(p.max ?? 100)}
+            onChange={v => set("simulationValue", Number(v))}
           />
 
+          <div className="text-[8px] text-[#64748B] mt-0.5">
+            Builder preview only. Runtime value will come from the bound variable.
+          </div>
+        </PropSection>
+
+        <PropSection title="Display">
+          <PropInput
+            label="Show Value"
+            type="checkbox"
+            value={p.showValue !== false}
+            onChange={v => set("showValue", v)}
+          />
+
+          <PropInput
+            label="Show Scale"
+            type="checkbox"
+            value={p.showScale !== false}
+            onChange={v => set("showScale", v)}
+          />
+
+          <PropInput
+            label="Show Min / Max"
+            type="checkbox"
+            value={p.showMinMax !== false}
+            onChange={v => set("showMinMax", v)}
+          />
+
+          <PropInput
+            label="Glow"
+            type="checkbox"
+            value={p.glow !== false}
+            onChange={v => set("glow", v)}
+          />
         </PropSection>
 
         <PropSection title="Appearance">
           <PropInput
-            label="Text Color"
+            label="Gauge Background"
+            type="color"
+            value={p.backgroundColor || "#071421"}
+            onChange={v => set("backgroundColor", v)}
+          />
+
+          <PropInput
+            label="Gauge Border"
+            type="color"
+            value={p.borderColor || "#18334A"}
+            onChange={v => set("borderColor", v)}
+          />
+
+          <PropInput
+            label="Progress Color"
+            type="color"
+            value={p.progressColor || "#00BFFF"}
+            onChange={v => set("progressColor", v)}
+          />
+
+          <PropInput
+            label="Track Color"
+            type="color"
+            value={p.trackColor || "#172B3F"}
+            onChange={v => set("trackColor", v)}
+          />
+
+          <PropInput
+            label="Text / Value Color"
             type="color"
             value={p.textColor || "#FFFFFF"}
             onChange={v => set("textColor", v)}
           />
-          {p.icon && (
-            <PropInput
-              label="Icon Color"
-              type="color"
-              value={p.iconColor || "#FFFFFF"}
-              onChange={v => set("iconColor", v)}
-            />
-          )}
+
           <PropInput
-            label="Background"
+            label="Icon Color"
             type="color"
-            value={p.backgroundColor === "transparent" ? "#07111F" : (p.backgroundColor || "#07111F")}
-            onChange={v => set("backgroundColor", v)}
+            value={p.iconColor || p.progressColor || "#00BFFF"}
+            onChange={v => set("iconColor", v)}
           />
+
           <PropInput
-            label="Border"
+            label="Unit Color"
             type="color"
-            value={p.borderColor === "transparent" ? "#07111F" : (p.borderColor || "#07111F")}
-            onChange={v => set("borderColor", v)}
+            value={p.unitColor || p.progressColor || "#00BFFF"}
+            onChange={v => set("unitColor", v)}
           />
+
           <PropInput
-            label="Border Width"
-            type="number"
-            min={0}
-            max={10}
-            value={p.borderWidth ?? 0}
-            onChange={v => set("borderWidth", Number(v))}
-          />
-          <PropInput
-            label="Corner Radius"
-            type="number"
-            min={0}
-            max={50}
-            value={p.radius ?? 6}
-            onChange={v => set("radius", Number(v))}
-          />
-          <PropInput
-            label="Padding"
-            type="number"
-            min={0}
-            max={40}
-            value={p.padding ?? 8}
-            onChange={v => set("padding", Number(v))}
-          />
-          <PropInput
-            label="Rotation"
-            type="number"
-            min={-360}
-            max={360}
-            value={p.rotation ?? 0}
-            onChange={v => set("rotation", Number(v))}
+            label="Tick / Scale Color"
+            type="color"
+            value={p.labelColor || "#7F9DB8"}
+            onChange={v => set("labelColor", v)}
           />
         </PropSection>
       </>
