@@ -815,7 +815,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
       {/* BODY */}
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR KIRI (selalu tampil) */}
-        <aside className="w-[130px] bg-[#111827] border-r border-[#1E293B] flex flex-col shrink-0">
+        <aside className="w-[180px] bg-[#111827] border-r border-[#1E293B] flex flex-col shrink-0">
           <nav className="pt-2 flex flex-col gap-0.5">
             {MENU_ITEMS.map(label => {
               const disabled = (label === "Maintenance" || label === "Reference") && !isEngineer;
