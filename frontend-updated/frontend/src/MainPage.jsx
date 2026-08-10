@@ -396,56 +396,121 @@ export default function MainPage({ user: initialUser, onLogout }) {
       .catch(() => { });
   }, []);
 
-  // ── Comm devices ──────────────────────────────────────────
+  // ── Comm devices: RS232 + TCP/IP ───────────────────────────
   useEffect(() => {
+    const getConnection = (dev, type) => {
+      if (!dev) return "";
+
+      if (type === "TCP") {
+        const ip =
+          dev.ip ??
+          dev.IP ??
+          dev["IP Address"] ??
+          dev.host ??
+          "";
+        const port =
+          dev.port ??
+          dev.Port ??
+          "";
+
+        return ip && port ? `${ip}:${port}` : ip || "";
+      }
+
+      // RS232 / COM
+      return (
+        dev.com_port ??
+        dev["COM Port"] ??
+        dev.comPort ??
+        dev.port ??
+        dev.Port ??
+        dev.com ??
+        dev.COM ??
+        ""
+      );
+    };
+
     const check = async () => {
       try {
-        const [rs232Res, tcpRes] = await Promise.all([
-          fetch(`${API}/api/comm-status`),
-          fetch(`${API}/api/tcp/status`)
-        ]);
+        const [rs232Res, tcpStatusRes, tcpDevicesRes] =
+          await Promise.all([
+            fetch(`${API}/api/comm-status`),
+            fetch(`${API}/api/tcp/status`),
+            fetch(`${API}/api/tcp/devices`)
+          ]);
 
         const rs232Data = rs232Res.ok
           ? await rs232Res.json()
           : { devices: [] };
 
-        const tcpData = tcpRes.ok
-          ? await tcpRes.json()
+        const tcpStatus = tcpStatusRes.ok
+          ? await tcpStatusRes.json()
           : {};
 
-        // RS232 devices
+        const tcpDeviceData = tcpDevicesRes.ok
+          ? await tcpDevicesRes.json()
+          : { devices: [] };
+
+        // RS232 devices.
+        // Keep every property returned by /api/comm-status so that
+        // COM information is preserved when the backend provides it.
         const rs232Devices = (rs232Data.devices || []).map(dev => ({
-          name: dev.name,
+          name: dev.name ?? dev["Device Name"] ?? "RS232",
           type: "RS232",
-          connected: !!dev.connected
+          connected: !!dev.connected,
+          connection: getConnection(dev, "RS232")
         }));
 
-        // TCP devices
-        const tcpDevices = Object.entries(tcpData).map(
-          ([name, dev]) => ({
+        // TCP device configuration comes from setting.json through
+        // /api/tcp/devices, while connection state comes from
+        // /api/tcp/status.
+        const configuredTcpDevices = tcpDeviceData.devices || [];
+
+        const tcpDevices = configuredTcpDevices.map(dev => {
+          const name = dev.name ?? dev["Device Name"] ?? "TCP";
+          const status = tcpStatus[name] || {};
+
+          return {
             name,
             type: "TCP",
-            connected: !!dev.connected
-          })
+            connected: !!status.connected,
+            connection: getConnection(
+              {
+                ...dev,
+                ip: status.ip ?? dev.ip,
+                port: status.port ?? dev.port
+              },
+              "TCP"
+            )
+          };
+        });
+
+        // Also keep a TCP device if it exists in status but is not yet
+        // returned by /api/tcp/devices.
+        const configuredNames = new Set(
+          tcpDevices.map(dev => dev.name)
         );
 
-        // Gabungkan RS232 + TCP
+        Object.entries(tcpStatus).forEach(([name, status]) => {
+          if (configuredNames.has(name)) return;
+
+          tcpDevices.push({
+            name,
+            type: "TCP",
+            connected: !!status?.connected,
+            connection: getConnection(status, "TCP")
+          });
+        });
+
         const newDevices = [
           ...rs232Devices,
           ...tcpDevices
         ];
 
-        setCommDevices(prev => {
-          if (
-            JSON.stringify(prev) ===
-            JSON.stringify(newDevices)
-          ) {
-            return prev;
-          }
-
-          return newDevices;
-        });
-
+        setCommDevices(prev =>
+          JSON.stringify(prev) === JSON.stringify(newDevices)
+            ? prev
+            : newDevices
+        );
       } catch (err) {
         console.error(
           "[COMM DEVICE] Failed to load device status:",
@@ -528,11 +593,101 @@ export default function MainPage({ user: initialUser, onLogout }) {
     }
   };
 
-  const refreshCommDevices = () => {
-    fetch(`${API}/api/comm-status`)
-      .then(r => r.json())
-      .then(d => setCommDevices(d.devices || []))
-      .catch(() => { });
+  const refreshCommDevices = async () => {
+    try {
+      const [rs232Res, tcpStatusRes, tcpDevicesRes] =
+        await Promise.all([
+          fetch(`${API}/api/comm-status`),
+          fetch(`${API}/api/tcp/status`),
+          fetch(`${API}/api/tcp/devices`)
+        ]);
+
+      const rs232Data = rs232Res.ok
+        ? await rs232Res.json()
+        : { devices: [] };
+
+      const tcpStatus = tcpStatusRes.ok
+        ? await tcpStatusRes.json()
+        : {};
+
+      const tcpDeviceData = tcpDevicesRes.ok
+        ? await tcpDevicesRes.json()
+        : { devices: [] };
+
+      const getCom = dev =>
+        dev?.com_port ??
+        dev?.["COM Port"] ??
+        dev?.comPort ??
+        dev?.port ??
+        dev?.Port ??
+        dev?.com ??
+        dev?.COM ??
+        "";
+
+      const getTcp = (dev, status = {}) => {
+        const ip =
+          status.ip ??
+          status.IP ??
+          dev?.ip ??
+          dev?.IP ??
+          dev?.["IP Address"] ??
+          dev?.host ??
+          "";
+
+        const port =
+          status.port ??
+          status.Port ??
+          dev?.port ??
+          dev?.Port ??
+          "";
+
+        return ip && port ? `${ip}:${port}` : ip || "";
+      };
+
+      const rs232Devices = (rs232Data.devices || []).map(dev => ({
+        name: dev.name ?? dev["Device Name"] ?? "RS232",
+        type: "RS232",
+        connected: !!dev.connected,
+        connection: getCom(dev)
+      }));
+
+      const tcpDevices = (tcpDeviceData.devices || []).map(dev => {
+        const name = dev.name ?? dev["Device Name"] ?? "TCP";
+        const status = tcpStatus[name] || {};
+
+        return {
+          name,
+          type: "TCP",
+          connected: !!status.connected,
+          connection: getTcp(dev, status)
+        };
+      });
+
+      const configuredNames = new Set(
+        tcpDevices.map(dev => dev.name)
+      );
+
+      Object.entries(tcpStatus).forEach(([name, status]) => {
+        if (configuredNames.has(name)) return;
+
+        tcpDevices.push({
+          name,
+          type: "TCP",
+          connected: !!status?.connected,
+          connection: getTcp({}, status)
+        });
+      });
+
+      setCommDevices([
+        ...rs232Devices,
+        ...tcpDevices
+      ]);
+    } catch (err) {
+      console.error(
+        "[COMM DEVICE] Failed to refresh devices:",
+        err
+      );
+    }
   };
 
   // ── Relogin handler ────────────────────────────────────────
@@ -660,7 +815,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
       {/* BODY */}
       <div className="flex flex-1 overflow-hidden">
         {/* SIDEBAR KIRI (selalu tampil) */}
-        <aside className="w-[130px] bg-[#111827] border-r border-[#1E293B] flex flex-col shrink-0">
+        <aside className="w-[180px] bg-[#111827] border-r border-[#1E293B] flex flex-col shrink-0">
           <nav className="pt-2 flex flex-col gap-0.5">
             {MENU_ITEMS.map(label => {
               const disabled = (label === "Maintenance" || label === "Reference") && !isEngineer;
@@ -690,11 +845,34 @@ export default function MainPage({ user: initialUser, onLogout }) {
               <div className="flex flex-col gap-1">
                 {commDevices.length === 0 && <p className="text-[#E2E8F0] text-[9px] font-mono">No devices</p>}
                 {commDevices.map(dev => (
-                  <div key={dev.name} className="flex items-center gap-1.5">
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dev.connected ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} />
-                    <span className={`text-[9px] font-mono truncate ${dev.connected ? "text-[#22C55E]" : "text-[#EF4444]"}`}>
+                  <div
+                    key={`${dev.type}-${dev.name}`}
+                    className="flex items-center gap-1.5 min-w-0"
+                    title={dev.connection ? `${dev.name} — ${dev.connection}` : dev.name}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        dev.connected
+                          ? "bg-[#22C55E]"
+                          : "bg-[#EF4444]"
+                      }`}
+                    />
+
+                    <span
+                      className={`text-[9px] font-mono truncate ${
+                        dev.connected
+                          ? "text-[#22C55E]"
+                          : "text-[#EF4444]"
+                      }`}
+                    >
                       {dev.name}
                     </span>
+
+                    {dev.connection && (
+                      <span className="ml-auto pl-1 text-[8px] font-mono text-[#64748B] truncate shrink-0 max-w-[88px]">
+                        {dev.connection}
+                      </span>
+                    )}
                   </div>
                 ))}
               </div>
