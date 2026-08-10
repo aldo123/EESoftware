@@ -9,6 +9,11 @@
             "key": "chassis_sn",
             "label": "Chassis SN",
             "width": 140
+        },
+        {
+            "key": "pcba",
+            "label": "pcab_sn",
+            "width": 140
         }
     ],
     "02": [

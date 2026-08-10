@@ -16,6 +16,7 @@ from routes.page_config import page_config_bp
 from routes.logic_config import logic_config_bp
 from routes.logic_engine import logic_engine_bp
 from rs232 import rs232_bp
+from tcp_ip import tcp_ip_bp
 # ── App setup ──────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)
@@ -39,6 +40,7 @@ app.register_blueprint(page_config_bp)
 app.register_blueprint(logic_config_bp)
 app.register_blueprint(logic_engine_bp)
 app.register_blueprint(rs232_bp)
+app.register_blueprint(tcp_ip_bp)
 
 # ══════════════════════════════════════════════════════════════
 # Routes yang tetap di main.py (butuh db MySQL langsung)

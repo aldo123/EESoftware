@@ -48,20 +48,26 @@
             {
                 "Device Name": "Part",
                 "Type": "COM",
-                "COM Port": "COM5",
-                "Baudrate": "9600",
+                "COM Port": "COM9",
+                "Baudrate": "115200",
                 "Parity": "None",
                 "Data Bits": "8",
                 "Stop Bits": "1"
             },
             {
-                "Device Name": "Product",
-                "Type": "COM",
-                "COM Port": "COM6",
                 "Baudrate": "9600",
-                "Parity": "None",
+                "COM Port": "COM6",
                 "Data Bits": "8",
-                "Stop Bits": "1"
+                "Device Name": "Product",
+                "Parity": "None",
+                "Stop Bits": "1",
+                "Type": "COM"
+            },
+            {
+                "Device Name": "PLC",
+                "IP Address": "192.168.108.1",
+                "Port": "9004",
+                "Type": "TCP"
             }
         ]
     }
