@@ -1,6 +1,7 @@
 // src/pages/DynamicCPPage.jsx
 import { useState, useEffect, useRef, useCallback } from "react";
 import { API } from "../service/api";
+import { useTCPPLC } from "../hooks/useTCPPLC";
 
 // ──────────────────────────────────────────────────────────────────
 //  HMI DESIGN SYSTEM - THEME & VISUAL PROPS
@@ -722,170 +723,907 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const [error, setError] = useState("");
   const [fieldValues, setFieldValues] = useState({});
   const [logs, setLogs] = useState([]);
+  const [tcpDevices, setTcpDevices] = useState([]);
+  const [tcpDeviceError, setTcpDeviceError] = useState("");
+
   const containerRef = useRef(null);
   const [scale, setScale] = useState(1);
   const [canvasSize, setCanvasSize] = useState({ width: 1260, height: 800 });
 
+  // ============================================================
+  // TCP PLC RUNTIME
+  //
+  // Page Builder stores:
+  //   props.device
+  //   props.addressType
+  //   props.address
+  //
+  // Dynamic Page resolves the device name against
+  // /api/tcp/devices and registers Button / Light / Gauge.
+  // ============================================================
+
+  const {
+    values: tcpValues,
+    writeValue: writeTCPValue,
+    registerBinding,
+    clearBindings,
+  } = useTCPPLC({
+    devices: tcpDevices,
+    enabled: Boolean(cpNumber),
+    pollInterval: 300,
+  });
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+
+  const normalizeType = useCallback((type) => {
+    const value = String(type || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_\s-]/g, "");
+
+    if (value === "coil" || value === "coils") return "coil";
+
+    if (
+      value === "discreteinput" ||
+      value === "discreteinputs" ||
+      value === "digitalinput"
+    ) {
+      return "discrete_input";
+    }
+
+    if (
+      value === "holdingregister" ||
+      value === "holdingregisters" ||
+      value === "holding"
+    ) {
+      return "holding_register";
+    }
+
+    if (
+      value === "inputregister" ||
+      value === "inputregisters" ||
+      value === "analoginput"
+    ) {
+      return "input_register";
+    }
+
+    return "";
+  }, []);
+
+  const getTCPDevice = useCallback(
+    (deviceName) => {
+      if (!deviceName) return null;
+
+      const wanted = String(deviceName).trim().toLowerCase();
+
+      return (
+        tcpDevices.find(
+          (device) =>
+            String(device.name || "")
+              .trim()
+              .toLowerCase() === wanted
+        ) || null
+      );
+    },
+    [tcpDevices]
+  );
+
+  const hasPLCBinding = useCallback(
+    (widget) => {
+      const p = widget?.props || {};
+
+      if (!p.device) return false;
+
+      if (
+        p.address === undefined ||
+        p.address === null ||
+        String(p.address).trim() === ""
+      ) {
+        return false;
+      }
+
+      const addressType = normalizeType(p.addressType);
+
+      if (!addressType) return false;
+
+      return Boolean(getTCPDevice(p.device));
+    },
+    [getTCPDevice, normalizeType]
+  );
+
+  const getRuntimeValue = useCallback(
+    (widget) => {
+      const p = widget?.props || {};
+
+      // ----------------------------------------------------------
+      // PLC is the source of truth when Device + Address exist.
+      // Do NOT fall back to simulationValue at runtime.
+      // ----------------------------------------------------------
+      if (hasPLCBinding(widget)) {
+        return tcpValues[String(widget.id)] ?? 0;
+      }
+
+      // ----------------------------------------------------------
+      // Non-PLC widgets can still use the existing logic variable.
+      // ----------------------------------------------------------
+      const variableName = p.variable || p.fieldKey;
+
+      if (!variableName) {
+        return undefined;
+      }
+
+      return fieldValues[variableName];
+    },
+    [fieldValues, hasPLCBinding, tcpValues]
+  );
+
+  // ============================================================
+  // RESET
+  // ============================================================
+
   const resetAll = useCallback(() => {
     setFieldValues({});
     setLogs([]);
-    console.log(`[DynamicCPPage] Reset all states for CP${cpNumber}`);
+
+    console.log(
+      `[DynamicCPPage] Reset all states for CP${cpNumber}`
+    );
   }, [cpNumber]);
 
-  useEffect(() => { resetAll(); }, [cpNumber]);
-  useEffect(() => { return () => { resetAll(); }; }, [resetAll]);
   useEffect(() => {
-    const resetHandler = () => resetAll();
-    window.addEventListener("cp-reset", resetHandler);
-    return () => window.removeEventListener("cp-reset", resetHandler);
+    resetAll();
+  }, [cpNumber]);
+
+  useEffect(() => {
+    return () => {
+      resetAll();
+    };
   }, [resetAll]);
 
   useEffect(() => {
-    if (!cpNumber) { setError("CP Number is not defined."); setLoading(false); return; }
-    setLoading(true); setError("");
-    fetch(`${API}/api/page-config/${cpNumber}`)
-      .then(r => r.ok ? r.json() : { widgets: [] })
-      .then(d => {
-        const loadedWidgets = d.widgets || [];
-        setWidgets(loadedWidgets); setLoading(false);
-        let maxW = 1260, maxH = 800;
-        loadedWidgets.forEach(w => {
-          const right = w.x + (w.props?.width || 0);
-          const bottom = w.y + (w.props?.height || 0);
+    const resetHandler = () => resetAll();
+
+    window.addEventListener("cp-reset", resetHandler);
+
+    return () => {
+      window.removeEventListener(
+        "cp-reset",
+        resetHandler
+      );
+    };
+  }, [resetAll]);
+
+  // ============================================================
+  // LOAD TCP DEVICES
+  // ============================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTCPDevices = async () => {
+      try {
+        setTcpDeviceError("");
+
+        const response = await fetch(
+          `${API}/api/tcp/devices`
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+
+        const devices = Array.isArray(data)
+          ? data
+          : Array.isArray(data.devices)
+            ? data.devices
+            : [];
+
+        const normalized = devices
+          .filter(Boolean)
+          .map((device) => ({
+            ...device,
+            name:
+              device.name ||
+              device.device_name ||
+              device["Device Name"] ||
+              "",
+            host:
+              device.host ||
+              device.ip ||
+              device.IP ||
+              device["IP Address"] ||
+              "",
+            port:
+              Number(
+                device.port ||
+                device.Port ||
+                502
+              ) || 502,
+            unitId:
+              Number(
+                device.unitId ??
+                device.unit_id ??
+                device["Unit ID"] ??
+                device["Device ID"] ??
+                1
+              ) || 1,
+          }))
+          .filter((device) => device.name);
+
+        if (!cancelled) {
+          setTcpDevices(normalized);
+
+          console.log(
+            "[DynamicCPPage] TCP devices loaded:",
+            normalized
+          );
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setTcpDevices([]);
+          setTcpDeviceError(err.message);
+
+          console.error(
+            "[DynamicCPPage] TCP device load error:",
+            err
+          );
+        }
+      }
+    };
+
+    loadTCPDevices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ============================================================
+  // LOAD PAGE BUILDER CONFIG
+  // ============================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!cpNumber) {
+      setError("CP Number is not defined.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    fetch(
+      `${API}/api/page-config/${cpNumber}`
+    )
+      .then((response) =>
+        response.ok
+          ? response.json()
+          : { widgets: [] }
+      )
+      .then((data) => {
+        if (cancelled) return;
+
+        const loadedWidgets =
+          Array.isArray(data.widgets)
+            ? data.widgets
+            : [];
+
+        setWidgets(loadedWidgets);
+        setLoading(false);
+
+        let maxW = 1260;
+        let maxH = 800;
+
+        loadedWidgets.forEach((widget) => {
+          const right =
+            Number(widget.x || 0) +
+            Number(widget.props?.width || 0);
+
+          const bottom =
+            Number(widget.y || 0) +
+            Number(widget.props?.height || 0);
+
           if (right > maxW) maxW = right;
           if (bottom > maxH) maxH = bottom;
         });
-        setCanvasSize({ width: Math.max(1260, maxW + 40), height: Math.max(800, maxH + 40) });
+
+        setCanvasSize({
+          width: Math.max(
+            1260,
+            maxW + 40
+          ),
+          height: Math.max(
+            800,
+            maxH + 40
+          ),
+        });
       })
-      .catch(e => { setError("Failed to load page layout"); setLoading(false); });
+      .catch((err) => {
+        if (cancelled) return;
+
+        console.error(
+          "[DynamicCPPage] Page config error:",
+          err
+        );
+
+        setError(
+          "Failed to load page layout"
+        );
+
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [cpNumber]);
+
+  // ============================================================
+  // REGISTER PAGE BUILDER PLC BINDINGS
+  // ============================================================
+
+  useEffect(() => {
+    if (!widgets.length) {
+      clearBindings();
+      return;
+    }
+
+    /*
+     * Important:
+     *
+     * Page Builder uses:
+     *
+     * Button:
+     *   coil
+     *
+     * Light:
+     *   discrete_input
+     *
+     * Gauge:
+     *   holding_register / input_register
+     */
+
+    clearBindings();
+
+    widgets.forEach((widget) => {
+      const type = widget?.type;
+      const p = widget?.props || {};
+
+      if (
+        type !== "button" &&
+        type !== "light" &&
+        type !== "gauge"
+      ) {
+        return;
+      }
+
+      if (!p.device) {
+        return;
+      }
+
+      if (
+        p.address === undefined ||
+        p.address === null ||
+        String(p.address).trim() === ""
+      ) {
+        return;
+      }
+
+      const device = getTCPDevice(
+        p.device
+      );
+
+      if (!device) {
+        console.warn(
+          `[DynamicCPPage] Device not found for widget ${widget.id}: ${p.device}`
+        );
+        return;
+      }
+
+      const addressType =
+        normalizeType(p.addressType);
+
+      if (!addressType) {
+        console.warn(
+          `[DynamicCPPage] Invalid address type for widget ${widget.id}:`,
+          p.addressType
+        );
+        return;
+      }
+
+      registerBinding({
+        widgetId: widget.id,
+        device,
+        addressType,
+        address: p.address,
+      });
+
+      console.log(
+        `[DynamicCPPage] PLC binding: ${widget.id} -> ${device.name} / ${addressType} / ${p.address}`
+      );
+    });
+
+    /*
+     * Do not put useTCPPLC() here.
+     * registerBinding() is a normal callback.
+     */
+
+  }, [
+    widgets,
+    tcpDevices,
+    clearBindings,
+    getTCPDevice,
+    normalizeType,
+    registerBinding,
+  ]);
+
+  // ============================================================
+  // SCALE
+  // ============================================================
 
   useEffect(() => {
     const updateScale = () => {
-      if (containerRef.current) {
-        const availableWidth = containerRef.current.clientWidth;
-        let newScale = Math.max(0.4, availableWidth / canvasSize.width);
-        setScale(newScale);
-      }
-    };
-    updateScale();
-    window.addEventListener('resize', updateScale);
-    return () => window.removeEventListener('resize', updateScale);
-  }, [canvasSize.width]);
-
-  const addLog = useCallback((message, color = "#22C55E") => {
-    const time = new Date().toLocaleTimeString("en-US", { hour12: false });
-    setLogs(prev => [...prev.slice(-199), { time, message, color }]);
-  }, []);
-
-  const handleScan = useCallback(async (source, value) => {
-    console.log(`[handleScan] source=${source}, cpNumber=${cpNumber}`);
-    try {
-      const res = await fetch(`${API}/api/logic-run/${cpNumber}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          device: source,
-          value: value,
-          fields: fieldValues,
-        }),
-      });
-      const data = await res.json();
-      if (!data.success) {
-        addLog(`Logic error: ${data.message}`, "#EF4444");
+      if (!containerRef.current) {
         return;
       }
-      const commands = data.commands || [];
-      for (const cmd of commands) {
-        switch (cmd.cmd) {
-          case "set_field":
-            setFieldValues(prev => ({ ...prev, [cmd.key]: cmd.value }));
-            break;
-          case "log":
-            addLog(cmd.message, cmd.color || "#22C55E");
-            break;
-          default:
-            console.warn("Unknown command:", cmd);
+
+      const availableWidth =
+        containerRef.current.clientWidth;
+
+      const newScale = Math.max(
+        0.4,
+        availableWidth / canvasSize.width
+      );
+
+      setScale(newScale);
+    };
+
+    updateScale();
+
+    window.addEventListener(
+      "resize",
+      updateScale
+    );
+
+    return () => {
+      window.removeEventListener(
+        "resize",
+        updateScale
+      );
+    };
+  }, [canvasSize.width]);
+
+  // ============================================================
+  // LOG
+  // ============================================================
+
+  const addLog = useCallback(
+    (
+      message,
+      color = "#22C55E"
+    ) => {
+      const time =
+        new Date().toLocaleTimeString(
+          "en-US",
+          { hour12: false }
+        );
+
+      setLogs((previous) => [
+        ...previous.slice(-199),
+        {
+          time,
+          message,
+          color,
+        },
+      ]);
+    },
+    []
+  );
+
+  // ============================================================
+  // RS232 / SCANNER LOGIC
+  // ============================================================
+
+  const handleScan = useCallback(
+    async (source, value) => {
+      console.log(
+        `[handleScan] source=${source}, cpNumber=${cpNumber}`
+      );
+
+      try {
+        const response = await fetch(
+          `${API}/api/logic-run/${cpNumber}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              device: source,
+              value,
+              fields: fieldValues,
+            }),
+          }
+        );
+
+        const data =
+          await response.json();
+
+        if (!data.success) {
+          addLog(
+            `Logic error: ${data.message}`,
+            "#EF4444"
+          );
+          return;
         }
+
+        const commands =
+          data.commands || [];
+
+        for (const command of commands) {
+          switch (command.cmd) {
+            case "set_field":
+              setFieldValues(
+                (previous) => ({
+                  ...previous,
+                  [command.key]:
+                    command.value,
+                })
+              );
+              break;
+
+            case "log":
+              addLog(
+                command.message,
+                command.color ||
+                  "#22C55E"
+              );
+              break;
+
+            default:
+              console.warn(
+                "Unknown command:",
+                command
+              );
+          }
+        }
+      } catch (err) {
+        addLog(
+          `Scan error: ${err.message}`,
+          "#EF4444"
+        );
+
+        console.error(err);
       }
-    } catch (err) {
-      addLog(`Scan error: ${err.message}`, "#EF4444");
-      console.error(err);
-    }
-  }, [cpNumber, fieldValues, addLog]);
+    },
+    [
+      cpNumber,
+      fieldValues,
+      addLog,
+    ]
+  );
 
   useEffect(() => {
-    const handler = (e) => {
-      if (e.detail?.cpNumber === cpNumber) {
-        console.log(`[DynamicCPPage] Received cp-scan for ${e.detail.source} → ${e.detail.value}`);
-        handleScan(e.detail.source, e.detail.value);
+    const handler = (event) => {
+      if (
+        String(event.detail?.cpNumber) !==
+        String(cpNumber)
+      ) {
+        return;
       }
+
+      console.log(
+        `[DynamicCPPage] Received cp-scan for ${event.detail.source} → ${event.detail.value}`
+      );
+
+      handleScan(
+        event.detail.source,
+        event.detail.value
+      );
     };
-    window.addEventListener("cp-scan", handler);
-    return () => { window.removeEventListener("cp-scan", handler); console.log(`[DynamicCPPage] Removed cp-scan listener`); };
-  }, [cpNumber, handleScan]);
 
-  if (!cpNumber) return <div className="flex-1 flex items-center justify-center text-[#EF4444] text-xs font-mono">Error: No CP Number provided.</div>;
-  if (loading) return (<div className="flex-1 flex items-center justify-center"><div className="flex items-center gap-2 text-[#22C55E] text-xs"><div className="w-4 h-4 border-2 border-[#22C55E] border-t-transparent rounded-full animate-spin" /> Loading page layout…</div></div>);
-  if (error) return (<div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8"><span className="text-3xl opacity-30">⚠</span><p className="text-[#EF4444] text-sm">{error}</p><p className="text-[#475569] text-xs">Make sure you have saved a layout in the Page Builder.</p></div>);
-  if (widgets.length === 0) return (<div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8"><span className="text-4xl opacity-20">🔧</span><p className="text-white font-semibold">No layout configured for CP{cpNumber}</p><p className="text-[#475569] text-xs">Open Page Builder (Engineer → Settings) to design this CP page.</p></div>);
+    window.addEventListener(
+      "cp-scan",
+      handler
+    );
 
-  const displayWidth = canvasSize.width * scale;
-  const displayHeight = canvasSize.height * scale;
+    return () => {
+      window.removeEventListener(
+        "cp-scan",
+        handler
+      );
+    };
+  }, [
+    cpNumber,
+    handleScan,
+  ]);
+
+  // ============================================================
+  // BUTTON PLC WRITE
+  // ============================================================
+
+  const handleButtonChange =
+    useCallback(
+      async (widget, value) => {
+        const p = widget?.props || {};
+
+        /*
+         * If this button is PLC bound:
+         * write directly to configured coil.
+         */
+        if (hasPLCBinding(widget)) {
+          const device =
+            getTCPDevice(p.device);
+
+          const addressType =
+            normalizeType(
+              p.addressType
+            );
+
+          try {
+            const result =
+              await writeTCPValue({
+                widgetId: widget.id,
+                device,
+                addressType,
+                address: p.address,
+                value,
+              });
+
+            if (
+              result &&
+              result.success === false
+            ) {
+              throw new Error(
+                result.message ||
+                "PLC write failed"
+              );
+            }
+
+            console.log(
+              `[DynamicCPPage] PLC write: ${device.name} / ${addressType} / ${p.address} = ${value}`
+            );
+
+            return;
+          } catch (err) {
+            console.error(
+              `[DynamicCPPage] PLC write failed for ${widget.id}:`,
+              err
+            );
+
+            addLog(
+              `PLC write failed: ${err.message}`,
+              "#EF4444"
+            );
+
+            return;
+          }
+        }
+
+        /*
+         * If no PLC binding exists,
+         * preserve Page Builder variable behavior.
+         */
+        const variableName =
+          p.variable ||
+          p.fieldKey;
+
+        if (variableName) {
+          setFieldValues(
+            (previous) => ({
+              ...previous,
+              [variableName]:
+                value,
+            })
+          );
+        }
+      },
+      [
+        addLog,
+        getTCPDevice,
+        hasPLCBinding,
+        normalizeType,
+        writeTCPValue,
+      ]
+    );
+
+  // ============================================================
+  // RENDER STATES
+  // ============================================================
+
+  if (!cpNumber) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-[#EF4444] text-xs font-mono">
+        Error: No CP Number provided.
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-[#22C55E] text-xs">
+          <div className="w-4 h-4 border-2 border-[#22C55E] border-t-transparent rounded-full animate-spin" />
+          Loading page layout…
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
+        <span className="text-3xl opacity-30">
+          ⚠
+        </span>
+
+        <p className="text-[#EF4444] text-sm">
+          {error}
+        </p>
+
+        <p className="text-[#475569] text-xs">
+          Make sure you have saved a layout
+          in the Page Builder.
+        </p>
+      </div>
+    );
+  }
+
+  if (widgets.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
+        <span className="text-4xl opacity-20">
+          🔧
+        </span>
+
+        <p className="text-white font-semibold">
+          No layout configured for CP
+          {cpNumber}
+        </p>
+
+        <p className="text-[#475569] text-xs">
+          Open Page Builder (Engineer →
+          Settings) to design this CP page.
+        </p>
+      </div>
+    );
+  }
+
+  const displayWidth =
+    canvasSize.width * scale;
+
+  const displayHeight =
+    canvasSize.height * scale;
+
+  // ============================================================
+  // RENDER PAGE
+  // ============================================================
 
   return (
-    <div ref={containerRef} className="flex-1 bg-[#0F172A] overflow-hidden font-sans p-4 flex justify-center">
-      <div style={{ width: displayWidth, height: displayHeight, position: 'relative' }}>
-        <div className="relative origin-top-left" style={{ width: canvasSize.width, height: canvasSize.height, transform: `scale(${scale})` }}>
-          {widgets.map(widget => {
-            const { type, id, props: p } = widget;
-            
-            const variableName = p.variable || p.fieldKey;
+    <div
+      ref={containerRef}
+      className="flex-1 bg-[#0F172A] overflow-hidden font-sans p-4 flex justify-center"
+    >
+      <div
+        style={{
+          width: displayWidth,
+          height: displayHeight,
+          position: "relative",
+        }}
+      >
+        <div
+          className="relative origin-top-left"
+          style={{
+            width: canvasSize.width,
+            height: canvasSize.height,
+            transform: `scale(${scale})`,
+          }}
+        >
+          {widgets.map((widget) => {
+            const {
+              type,
+              id,
+              props: p = {},
+            } = widget;
+
+            const variableName =
+              p.variable ||
+              p.fieldKey;
+
+            /*
+             * IMPORTANT:
+             *
+             * Runtime value is resolved from:
+             *
+             * PLC binding → tcpValues[widget.id]
+             *
+             * otherwise:
+             *
+             * Logic variable → fieldValues[variable]
+             */
+            const runtimeValue =
+              getRuntimeValue(widget);
+
+            // ----------------------------------------------------
+            // BUTTON
+            // ----------------------------------------------------
 
             if (type === "button") {
               return (
                 <RuntimeButton
                   key={id}
                   widget={widget}
-                  value={fieldValues[variableName]}
-                  onChange={val => {
-                    if (!variableName) return;
-                    setFieldValues(prev => ({ ...prev, [variableName]: val }));
-                  }}
+                  value={runtimeValue}
+                  onChange={(value) =>
+                    handleButtonChange(
+                      widget,
+                      value
+                    )
+                  }
                 />
               );
             }
+
+            // ----------------------------------------------------
+            // LIGHT
+            // ----------------------------------------------------
 
             if (type === "light") {
               return (
                 <RuntimeLight
                   key={id}
                   widget={widget}
-                  value={fieldValues[variableName]}
+                  value={runtimeValue}
                 />
               );
             }
 
+            // ----------------------------------------------------
+            // SHAPE
+            // ----------------------------------------------------
+
             if (type === "shape") {
-              return <RuntimeShape key={id} widget={widget} />;
+              return (
+                <RuntimeShape
+                  key={id}
+                  widget={widget}
+                />
+              );
             }
+
+            // ----------------------------------------------------
+            // TEXT BOX
+            // ----------------------------------------------------
 
             if (type === "textbox") {
               return (
                 <RuntimeTextBox
                   key={id}
                   widget={widget}
-                  value={fieldValues[variableName]}
+                  value={runtimeValue}
                 />
               );
             }
+
+            // ----------------------------------------------------
+            // GAUGE
+            // ----------------------------------------------------
 
             if (type === "gauge") {
               return (
                 <RuntimeGauge
                   key={id}
                   widget={widget}
-                  value={fieldValues[variableName]}
+                  value={runtimeValue}
                 />
               );
             }
@@ -894,6 +1632,13 @@ export default function DynamicCPPage({ cpNumber, user }) {
           })}
         </div>
       </div>
+
+      {/* Optional communication diagnostic */}
+      {tcpDeviceError && (
+        <div className="fixed bottom-2 right-2 px-3 py-1.5 rounded-lg bg-[#1E293B]/95 border border-[#7F1D1D] text-[#FCA5A5] text-[9px] font-mono shadow-xl">
+          TCP device list: {tcpDeviceError}
+        </div>
+      )}
     </div>
   );
 }

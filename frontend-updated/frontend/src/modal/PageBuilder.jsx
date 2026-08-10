@@ -205,6 +205,9 @@ const COMPONENT_TYPES = [
     icon: "◉",
     desc: "Toggle button that writes a variable",
     defaultProps: {
+      addressType: "coil",
+      device: "",
+      address: "",
       labelOn: "BUTTON ON",
       labelOff: "BUTTON OFF",
       variable: "Button1", // 🔴 UBAH KE variable
@@ -228,6 +231,9 @@ const COMPONENT_TYPES = [
     icon: "💡",
     desc: "Status light that reads a variable",
     defaultProps: {
+      addressType: "discrete_input",
+      device: "",
+      address: "",
       label: "STATUS",
       variable: "Light1", // 🔴 UBAH KE variable
       shape: "circle",
@@ -298,6 +304,9 @@ const COMPONENT_TYPES = [
     icon: "◔",
     desc: "Industrial analog value gauge",
     defaultProps: {
+      addressType: "holding_register",
+      device: "",
+      address: "",
       variable: "",
       simulationValue: 50,
 
@@ -1042,7 +1051,7 @@ function IconPicker({ value, onChange }) {
 function PropSection({ title, children }) { return (<div className="flex flex-col gap-2 pb-3 border-b border-[#1E293B]"><span className="text-[9px] font-bold text-[#22C55E] uppercase tracking-widest pt-2">{title}</span>{children}</div>); }
 
 // ── PROPERTY PANEL ──────────────────────────────────────────────
-function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, canvasHeight }) {
+function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, canvasHeight, availableDevices = [] }) {
   if (!widget) return (<div className="flex flex-col items-center justify-center h-full text-center px-4"><span className="text-3xl opacity-20 mb-2">🖱</span><p className="text-[#475569] text-[10px]">Click a widget on the canvas to edit its properties</p></div>);
   const { type, props: p, x, y } = widget;
 
@@ -1070,7 +1079,51 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
     {/* ── BUTTON SETTINGS ───────────────────────────────────────────── */}
     {type === "button" && (
       <>
-        <PropSection title="Data Binding">
+
+        <PropSection title="Device / Address">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+                Device
+              </label>
+              <select
+                value={p.device || ""}
+                onChange={e => set("device", e.target.value)}
+                className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+              >
+                <option value="">Select device...</option>
+                {availableDevices
+                  .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                  .map((dev) => (
+                    <option
+                      key={`${dev.type || "TCP"}-${dev.name}`}
+                      value={dev.name}
+                    >
+                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <PropInput
+              label="Address"
+              value={p.address || ""}
+              onChange={v => set("address", v)}
+              placeholder="D100 / M100"
+            />
+          </div>
+        </PropSection>
+                <PropSection title="Address Type">
+          <PropInput
+              label="Address Type"
+              options={[
+                { value: "coil", label: "Coil (FC01 / FC05)" }
+              ]}
+              value={p.addressType || "coil"}
+              onChange={v => set("addressType", v)}
+            />
+        </PropSection>
+
+<PropSection title="Data Binding">
           <PropInput
             label="Variable"
             value={p.variable || ""}
@@ -1209,7 +1262,52 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
     {/* ── LIGHT SETTINGS ─────────────────────────────────────────────── */}
     {type === "light" && (
       <>
-        <PropSection title="Data Binding">
+
+        <PropSection title="Device / Address">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+                Device
+              </label>
+              <select
+                value={p.device || ""}
+                onChange={e => set("device", e.target.value)}
+                className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+              >
+                <option value="">Select device...</option>
+                {availableDevices
+                  .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                  .map((dev) => (
+                    <option
+                      key={`${dev.type || "TCP"}-${dev.name}`}
+                      value={dev.name}
+                    >
+                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <PropInput
+              label="Address"
+              value={p.address || ""}
+              onChange={v => set("address", v)}
+              placeholder="D100 / M100"
+            />
+          </div>
+        </PropSection>
+                <PropSection title="Address Type">
+          <PropInput
+              label="Address Type"
+              options={[
+                { value: "coil", label: "Coil (FC01)" },
+                { value: "discrete_input", label: "Discrete Input (FC02)" }
+              ]}
+              value={p.addressType || "discrete_input"}
+              onChange={v => set("addressType", v)}
+            />
+        </PropSection>
+
+<PropSection title="Data Binding">
           <PropInput
             label="Variable"
             value={p.variable || ""}
@@ -1463,7 +1561,53 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
 
     {type === "gauge" && (
       <>
-        <PropSection title="Data Binding">
+
+
+        <PropSection title="Device / Address">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+                Device
+              </label>
+              <select
+                value={p.device || ""}
+                onChange={e => set("device", e.target.value)}
+                className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+              >
+                <option value="">Select device...</option>
+                {availableDevices
+                  .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                  .map((dev) => (
+                    <option
+                      key={`${dev.type || "TCP"}-${dev.name}`}
+                      value={dev.name}
+                    >
+                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <PropInput
+              label="Address"
+              value={p.address || ""}
+              onChange={v => set("address", v)}
+              placeholder="D100 / M100"
+            />
+          </div>
+        </PropSection>
+                <PropSection title="Address Type">
+          <PropInput
+              label="Address Type"
+              options={[
+                { value: "holding_register", label: "Holding Register (FC03)" },
+                { value: "input_register", label: "Input Register (FC04)" }
+              ]}
+              value={p.addressType || "holding_register"}
+              onChange={v => set("addressType", v)}
+            />
+        </PropSection>
+
+<PropSection title="Data Binding">
           <PropInput
             label="Variable"
             value={p.variable || ""}
@@ -1769,7 +1913,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
   </div></div>);
 }
 
-export default function PageBuilder({ cpNumber, onClose }) {
+export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }) {
   const [canvasPreset, setCanvasPreset] = useState(CANVAS_PRESETS[0]);
   const CANVAS_W = canvasPreset.width, CANVAS_H = canvasPreset.height;
   const [widgets, setWidgets] = useState([]);
@@ -2003,6 +2147,7 @@ export default function PageBuilder({ cpNumber, onClose }) {
               onDuplicate={() => { if (!selectedWidget) return; const newId = uid(); let newX = selectedWidget.x + 16, newY = selectedWidget.y + 16; const maxX = CANVAS_W - selectedWidget.props.width, maxY = CANVAS_H - selectedWidget.props.height; newX = Math.min(newX, maxX); newY = Math.min(newY, maxY); const clone = { ...selectedWidget, id: newId, x: newX, y: newY }; setWidgets(ws => [...ws, clone]); setSelected(newId); }}
               canvasWidth={CANVAS_W}
               canvasHeight={CANVAS_H}
+               availableDevices={availableDevices}
             />
           </div>
         </div>
