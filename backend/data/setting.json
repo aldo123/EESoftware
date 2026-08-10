@@ -46,13 +46,13 @@
     "Communication Devices": {
         "_table": [
             {
-                "Device Name": "Part",
-                "Type": "COM",
-                "COM Port": "COM5",
                 "Baudrate": "115200",
-                "Parity": "None",
+                "COM Port": "COM5",
                 "Data Bits": "8",
-                "Stop Bits": "1"
+                "Device Name": "Part",
+                "Parity": "None",
+                "Stop Bits": "1",
+                "Type": "COM"
             },
             {
                 "Baudrate": "9600",
@@ -65,8 +65,8 @@
             },
             {
                 "Device Name": "PLC",
-                "IP Address": "192.168.1.1",
-                "Port": "9004",
+                "IP Address": "127.0.0.1",
+                "Port": "5020",
                 "Type": "TCP"
             }
         ]

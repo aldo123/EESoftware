@@ -1,285 +1,678 @@
-import json, os, sys, socket, threading, time
-from collections import deque
+"""
+tcp_ip.py - Modbus TCP communication layer for EE Interlock.
+
+Supported Modbus areas:
+    Coil             FC01 Read / FC05 Write Single / FC15 Write Multiple
+    Discrete Input   FC02 Read
+    Holding Register FC03 Read / FC06 Write Single / FC16 Write Multiple
+    Input Register   FC04 Read
+
+Address convention:
+    Addresses sent to this module are ZERO-BASED Modbus addresses.
+    Example:
+        Discrete Input 0  -> FC02 address 0
+        Coil 3            -> FC01/FC05 address 3
+        Holding Register 30 -> FC03 address 30
+
+TCP devices are loaded automatically from:
+    setting.json
+    -> Communication Devices
+    -> _table
+    -> Type == TCP
+"""
+
+import json
+import os
+import socket
+import struct
+import sys
+import threading
+import time
 from flask import Blueprint, request, jsonify
+
+
+# ============================================================
+# SETTINGS
+# ============================================================
 
 def _settings_path():
     if getattr(sys, "frozen", False):
-        return os.path.join(os.path.dirname(sys.executable), "_internal", "data", "setting.json")
-    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "setting.json")
+        return os.path.join(
+            os.path.dirname(sys.executable),
+            "_internal",
+            "data",
+            "setting.json",
+        )
+
+    p = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "data",
+        "setting.json",
+    )
+
     if not os.path.exists(p):
-        p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "setting.json")
+        p = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "data",
+            "setting.json",
+        )
+
     return p
 
+
 def _load_tcp_devices():
-    """
-    Load TCP devices from the SAME structure used by rs232.py:
-
-    setting.json
-      -> Communication Devices
-      -> _table
-      -> Type == TCP
-
-    Every TCP device in Setting will be loaded automatically.
-    """
     path = _settings_path()
 
     if not os.path.exists(path):
-        print(f"[TCP] [ERROR] File tidak ditemukan: {path}")
+        print(f"[MODBUS] Setting file not found: {path}")
         return []
 
     try:
         with open(path, "r", encoding="utf-8-sig") as f:
             data = json.load(f)
 
-        communication_devices = data.get(
-            "Communication Devices", {}
+        rows = (
+            data.get("Communication Devices", {})
+            .get("_table", [])
         )
-
-        devices = communication_devices.get(
-            "_table", []
-        )
-
-        if not isinstance(devices, list):
-            print(
-                "[TCP] [ERROR] "
-                "Communication Devices._table bukan list"
-            )
-            return []
 
         result = []
 
-        for dev in devices:
-            if not isinstance(dev, dict):
+        for row in rows:
+            if not isinstance(row, dict):
                 continue
 
-            device_type = str(
-                dev.get("Type", "")
-            ).strip().upper()
-
-            device_name = str(
-                dev.get("Device Name", "")
-            ).strip()
-
-            # Hanya ambil device TCP
-            if device_type != "TCP":
+            if str(row.get("Type", "")).strip().upper() != "TCP":
                 continue
 
-            if not device_name:
+            name = str(row.get("Device Name", "")).strip()
+
+            if not name:
                 continue
 
             ip = str(
-                dev.get("IP Address")
-                or dev.get("IP")
-                or dev.get("Host")
+                row.get("IP Address")
+                or row.get("IP")
+                or row.get("Host")
                 or ""
             ).strip()
 
             try:
-                port = int(
-                    dev.get("Port", 0) or 0
+                port = int(row.get("Port", 502) or 502)
+            except (TypeError, ValueError):
+                port = 502
+
+            try:
+                unit_id = int(
+                    row.get("Device ID")
+                    or row.get("Unit ID")
+                    or row.get("UnitId")
+                    or 1
                 )
             except (TypeError, ValueError):
-                port = 0
+                unit_id = 1
 
-            # Simpan semua parameter setting,
-            # lalu normalisasi field utama TCP.
-            normalized = dict(dev)
+            try:
+                timeout = float(row.get("Timeout", 1) or 1)
+            except (TypeError, ValueError):
+                timeout = 1.0
 
-            normalized["Device Name"] = device_name
-            normalized["Type"] = "TCP"
-            normalized["IP Address"] = ip
-            normalized["Port"] = port
+            item = dict(row)
+            item.update({
+                "Device Name": name,
+                "Type": "TCP",
+                "IP Address": ip,
+                "Port": port,
+                "Device ID": unit_id,
+                "Timeout": timeout,
+            })
 
-            result.append(normalized)
+            result.append(item)
 
-        print(
-            f"[TCP] Berhasil memuat "
-            f"{len(result)} perangkat TCP dari setting.json"
-        )
+        print(f"[MODBUS] Loaded {len(result)} TCP device(s)")
 
-        for dev in result:
+        for d in result:
             print(
-                f"[TCP] Device: "
-                f"{dev['Device Name']} "
-                f"-> {dev['IP Address']}:{dev['Port']}"
+                f"[MODBUS] {d['Device Name']} -> "
+                f"{d['IP Address']}:{d['Port']} "
+                f"Unit={d['Device ID']}"
             )
 
         return result
 
-    except json.JSONDecodeError as e:
-        print(
-            "[TCP] [ERROR] setting.json rusak: "
-            f"{e}"
-        )
-        return []
-
-    except UnicodeDecodeError as e:
-        print(
-            "[TCP] [ERROR] Encoding setting.json salah: "
-            f"{e}"
-        )
-        return []
-
     except Exception as e:
-        print(
-            "[TCP] [ERROR] Gagal membaca setting.json: "
-            f"{e}"
-        )
+        print(f"[MODBUS] Setting load error: {e}")
         return []
 
 
-# Alias agar mudah dipakai internal.
 _load_devices = _load_tcp_devices
 
 
-class TCPPLCClient:
+# ============================================================
+# MODBUS TCP CLIENT
+# ============================================================
+
+class ModbusTCPClient:
     def __init__(self, device):
-        self.name = device.get("Device Name", "")
-        self.ip = str(device.get("IP Address") or device.get("IP") or device.get("Host") or "").strip()
-        self.port = int(device.get("Port", 0) or 0)
-        self.timeout = float(device.get("Timeout", 1) or 1)
+        self.name = str(device.get("Device Name", ""))
+        self.ip = ""
+        self.port = 502
+        self.unit_id = 1
+        self.timeout = 1.0
+
         self.sock = None
         self.running = False
         self.lock = threading.RLock()
-        self.last_attempt = 0
+        self.last_attempt = 0.0
+        self.transaction_id = 0
 
-    def configure(self, d):
-        self.ip = str(d.get("IP Address") or d.get("IP") or d.get("Host") or "").strip()
-        self.port = int(d.get("Port", 0) or 0)
-        self.timeout = float(d.get("Timeout", 1) or 1)
+        self.configure(device)
+
+    def configure(self, device):
+        self.ip = str(
+            device.get("IP Address")
+            or device.get("IP")
+            or device.get("Host")
+            or ""
+        ).strip()
+
+        try:
+            self.port = int(device.get("Port", 502) or 502)
+        except (TypeError, ValueError):
+            self.port = 502
+
+        try:
+            self.unit_id = int(
+                device.get("Device ID")
+                or device.get("Unit ID")
+                or device.get("UnitId")
+                or 1
+            )
+        except (TypeError, ValueError):
+            self.unit_id = 1
+
+        try:
+            self.timeout = float(device.get("Timeout", 1) or 1)
+        except (TypeError, ValueError):
+            self.timeout = 1.0
+
+        self.unit_id = max(0, min(255, self.unit_id))
 
     def is_connected(self):
         return self.sock is not None and self.running
 
     def connect(self):
         with self.lock:
-            if self.is_connected(): return True
-            if not self.ip or not self.port: return False
+            if self.is_connected():
+                return True
+
+            if not self.ip or not self.port:
+                return False
+
+            s = None
+
             try:
-                self.disconnect()
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.settimeout(self.timeout)
-                print(f"[TCP] Connecting {self.name} -> {self.ip}:{self.port}")
+
+                print(
+                    f"[MODBUS] Connecting {self.name} "
+                    f"-> {self.ip}:{self.port} "
+                    f"Unit={self.unit_id}"
+                )
+
                 s.connect((self.ip, self.port))
-                s.settimeout(0.2)
+
                 self.sock = s
                 self.running = True
-                print(f"[TCP] Connected: {self.name}")
+
+                print(f"[MODBUS] Connected: {self.name}")
                 return True
+
             except Exception as e:
-                print(f"[TCP] Connect Error [{self.name}]: {e}")
-                try: s.close()
-                except: pass
+                print(
+                    f"[MODBUS] Connect error "
+                    f"[{self.name}]: {e}"
+                )
+
+                try:
+                    if s:
+                        s.close()
+                except Exception:
+                    pass
+
                 self.sock = None
+                self.running = False
                 return False
 
     def disconnect(self):
-        self.running = False
-        s, self.sock = self.sock, None
-        if s:
-            try: s.shutdown(socket.SHUT_RDWR)
-            except: pass
-            try: s.close()
-            except: pass
+        with self.lock:
+            self.running = False
 
-    def send(self, data):
-        if not self.is_connected(): return False
-        try:
-            if isinstance(data, list): data = bytes(data)
-            elif isinstance(data, bytearray): data = bytes(data)
-            elif isinstance(data, str): data = data.encode()
-            self.sock.sendall(data)
-            print(f"[TCP TX] [{self.name}] {data!r}")
-            return True
-        except Exception as e:
-            print(f"[TCP TX] [{self.name}] {e}")
-            self.disconnect()
-            return False
+            s = self.sock
+            self.sock = None
 
-    def listen(self):
-        while self.running:
+            if s:
+                try:
+                    s.shutdown(socket.SHUT_RDWR)
+                except Exception:
+                    pass
+
+                try:
+                    s.close()
+                except Exception:
+                    pass
+
+    def _next_transaction_id(self):
+        self.transaction_id = (
+            self.transaction_id + 1
+        ) & 0xFFFF
+
+        if self.transaction_id == 0:
+            self.transaction_id = 1
+
+        return self.transaction_id
+
+    @staticmethod
+    def _recv_exact(sock, size):
+        chunks = []
+        remaining = size
+
+        while remaining > 0:
+            chunk = sock.recv(remaining)
+
+            if not chunk:
+                raise ConnectionError(
+                    "Modbus TCP connection closed"
+                )
+
+            chunks.append(chunk)
+            remaining -= len(chunk)
+
+        return b"".join(chunks)
+
+    def request(self, function_code, payload=b""):
+        with self.lock:
+            if not self.is_connected():
+                if not self.connect():
+                    raise ConnectionError(
+                        f"Device {self.name} is not connected"
+                    )
+
+            transaction_id = self._next_transaction_id()
+
+            # MBAP:
+            # Transaction ID (2)
+            # Protocol ID    (2)
+            # Length         (2)
+            # Unit ID        (1)
+            pdu = bytes([function_code]) + payload
+            mbap = struct.pack(
+                ">HHHB",
+                transaction_id,
+                0,
+                len(pdu) + 1,
+                self.unit_id,
+            )
+
             try:
-                data = self.sock.recv(4096)
-                if not data:
-                    self.disconnect()
-                    break
-                with _buffers_lock:
-                    _buffers.setdefault(self.name, deque(maxlen=100)).append(data)
-                print(f"[TCP RX] [{self.name}] {data!r}")
-            except socket.timeout:
-                continue
-            except Exception as e:
-                if self.running: print(f"[TCP RX] [{self.name}] {e}")
+                self.sock.sendall(mbap + pdu)
+
+                # First read MBAP header.
+                header = self._recv_exact(
+                    self.sock,
+                    7,
+                )
+
+                rx_tid, protocol_id, length, rx_unit = (
+                    struct.unpack(">HHHB", header)
+                )
+
+                if rx_tid != transaction_id:
+                    raise ValueError(
+                        f"Transaction ID mismatch: "
+                        f"{rx_tid} != {transaction_id}"
+                    )
+
+                if protocol_id != 0:
+                    raise ValueError(
+                        f"Invalid Modbus protocol ID: "
+                        f"{protocol_id}"
+                    )
+
+                if length < 2:
+                    raise ValueError(
+                        f"Invalid Modbus length: {length}"
+                    )
+
+                # Length includes Unit ID, which is already in header.
+                pdu_length = length - 1
+                rx_pdu = self._recv_exact(
+                    self.sock,
+                    pdu_length,
+                )
+
+                rx_fc = rx_pdu[0]
+
+                # Modbus exception response.
+                if rx_fc == (function_code | 0x80):
+                    exception_code = (
+                        rx_pdu[1]
+                        if len(rx_pdu) > 1
+                        else 0
+                    )
+
+                    raise RuntimeError(
+                        f"Modbus exception "
+                        f"FC={function_code}, "
+                        f"code={exception_code}"
+                    )
+
+                if rx_fc != function_code:
+                    raise RuntimeError(
+                        f"Unexpected function code: "
+                        f"{rx_fc}, expected {function_code}"
+                    )
+
+                return rx_pdu[1:]
+
+            except Exception:
                 self.disconnect()
-                break
+                raise
+
+
+# ============================================================
+# CLIENT MANAGER
+# ============================================================
 
 _clients = {}
-_buffers = {}
 _clients_lock = threading.RLock()
-_buffers_lock = threading.RLock()
+
 
 def sync_devices():
-    devices = {d["Device Name"]: d for d in _load_tcp_devices()}
+    devices = {
+        d["Device Name"]: d
+        for d in _load_tcp_devices()
+    }
+
     with _clients_lock:
+        # Remove devices deleted from Setting.
         for name in list(_clients):
             if name not in devices:
                 _clients[name].disconnect()
                 del _clients[name]
-        for name, d in devices.items():
+
+        # Add/update devices.
+        for name, device in devices.items():
             if name not in _clients:
-                _clients[name] = TCPPLCClient(d)
-            else:
-                c = _clients[name]
-                new_ip = str(d.get("IP Address") or d.get("IP") or d.get("Host") or "").strip()
-                new_port = int(d.get("Port", 0) or 0)
-                if c.ip != new_ip or c.port != new_port:
-                    c.disconnect()
-                    c.configure(d)
+                _clients[name] = ModbusTCPClient(device)
+                continue
+
+            client = _clients[name]
+
+            old_config = (
+                client.ip,
+                client.port,
+                client.unit_id,
+                client.timeout,
+            )
+
+            client.configure(device)
+
+            new_config = (
+                client.ip,
+                client.port,
+                client.unit_id,
+                client.timeout,
+            )
+
+            if old_config != new_config:
+                client.disconnect()
+
 
 def reconnect_loop():
     while True:
         try:
             sync_devices()
-            with _clients_lock: clients = list(_clients.items())
-            for name, c in clients:
-                if not c.is_connected() and time.time() - c.last_attempt >= 3:
-                    c.last_attempt = time.time()
-                    if c.connect():
-                        threading.Thread(target=c.listen, daemon=True, name=f"TCP-RX-{name}").start()
+
+            with _clients_lock:
+                clients = list(_clients.items())
+
+            for name, client in clients:
+                if (
+                    not client.is_connected()
+                    and time.time() - client.last_attempt >= 3
+                ):
+                    client.last_attempt = time.time()
+                    client.connect()
+
         except Exception as e:
-            print("[TCP] reconnect error:", e)
+            print(f"[MODBUS] reconnect loop error: {e}")
+
         time.sleep(1)
 
-threading.Thread(target=reconnect_loop, daemon=True, name="TCP-AutoReconnect").start()
 
-tcp_ip_bp = Blueprint("tcp_ip", __name__)
+threading.Thread(
+    target=reconnect_loop,
+    daemon=True,
+    name="ModbusTCP-AutoReconnect",
+).start()
 
-@tcp_ip_bp.get("/api/tcp/config")
-def get_tcp_config():
-    """
-    Return ALL TCP devices loaded from setting.json.
-    This endpoint proves whether Setting -> TCP devices
-    are being detected, even before connection succeeds.
-    """
-    devices = _load_tcp_devices()
 
+# ============================================================
+# MODBUS HELPERS
+# ============================================================
+
+AREA_MAP = {
+    "coil": 1,
+    "coils": 1,
+    "discrete_input": 2,
+    "discrete_inputs": 2,
+    "input": 2,
+    "holding_register": 3,
+    "holding_registers": 3,
+    "input_register": 4,
+    "input_registers": 4,
+}
+
+
+def _normalize_area(value):
+    area = str(value or "").strip().lower()
+
+    aliases = {
+        "coil": "coil",
+        "coils": "coil",
+
+        "discrete input": "discrete_input",
+        "discrete_input": "discrete_input",
+        "discrete inputs": "discrete_input",
+        "discrete_inputs": "discrete_input",
+
+        "holding register": "holding_register",
+        "holding_register": "holding_register",
+        "holding registers": "holding_register",
+        "holding_registers": "holding_register",
+
+        "input register": "input_register",
+        "input_register": "input_register",
+        "input registers": "input_register",
+        "input_registers": "input_register",
+    }
+
+    if area not in aliases:
+        raise ValueError(
+            "Invalid address_type. Use: "
+            "coil, discrete_input, "
+            "holding_register, input_register"
+        )
+
+    return aliases[area]
+
+
+def _validate_address(address):
+    try:
+        address = int(address)
+    except (TypeError, ValueError):
+        raise ValueError(
+            "Address must be an integer"
+        )
+
+    if address < 0 or address > 65535:
+        raise ValueError(
+            "Address must be between 0 and 65535"
+        )
+
+    return address
+
+
+def _validate_count(count, max_count):
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        raise ValueError(
+            "Count must be an integer"
+        )
+
+    if count < 1 or count > max_count:
+        raise ValueError(
+            f"Count must be between 1 and {max_count}"
+        )
+
+    return count
+
+
+def _get_client(device_name):
+    if not device_name:
+        raise ValueError(
+            "device_name is required"
+        )
+
+    with _clients_lock:
+        client = _clients.get(device_name)
+
+    if not client:
+        # Refresh once in case Setting was just changed.
+        sync_devices()
+
+        with _clients_lock:
+            client = _clients.get(device_name)
+
+    if not client:
+        raise ValueError(
+            f"TCP device '{device_name}' not found"
+        )
+
+    return client
+
+
+def _read_bits(client, function_code, address, count):
+    payload = struct.pack(
+        ">HH",
+        address,
+        count,
+    )
+
+    data = client.request(
+        function_code,
+        payload,
+    )
+
+    if not data:
+        raise RuntimeError(
+            "Empty Modbus response"
+        )
+
+    byte_count = data[0]
+    raw = data[1:1 + byte_count]
+
+    values = []
+
+    for i in range(count):
+        byte_index = i // 8
+        bit_index = i % 8
+
+        values.append(
+            bool(
+                raw[byte_index]
+                & (1 << bit_index)
+            )
+        )
+
+    return values
+
+
+def _read_registers(client, function_code, address, count):
+    payload = struct.pack(
+        ">HH",
+        address,
+        count,
+    )
+
+    data = client.request(
+        function_code,
+        payload,
+    )
+
+    if not data:
+        raise RuntimeError(
+            "Empty Modbus response"
+        )
+
+    byte_count = data[0]
+
+    if byte_count != count * 2:
+        raise RuntimeError(
+            f"Invalid register byte count: "
+            f"{byte_count}"
+        )
+
+    raw = data[1:]
+
+    return [
+        struct.unpack(
+            ">H",
+            raw[i:i + 2],
+        )[0]
+        for i in range(
+            0,
+            byte_count,
+            2,
+        )
+    ]
+
+
+# ============================================================
+# FLASK BLUEPRINT
+# ============================================================
+
+tcp_ip_bp = Blueprint(
+    "tcp_ip",
+    __name__,
+)
+
+
+@tcp_ip_bp.get("/api/tcp/devices")
+def devices():
     result = []
 
     with _clients_lock:
         clients = dict(_clients)
 
-    for dev in devices:
-        name = dev.get("Device Name", "")
+    for d in _load_tcp_devices():
+        name = d["Device Name"]
         client = clients.get(name)
 
         result.append({
             "name": name,
             "type": "TCP",
-            "ip": dev.get("IP Address", ""),
-            "port": dev.get("Port", 0),
+            "ip": d["IP Address"],
+            "port": d["Port"],
+            "unit_id": d["Device ID"],
+            "timeout": d["Timeout"],
             "connected": (
                 client.is_connected()
-                if client else False
+                if client
+                else False
             ),
         })
 
@@ -291,67 +684,380 @@ def get_tcp_config():
 
 @tcp_ip_bp.get("/api/tcp/status")
 def status():
-    with _clients_lock: clients = dict(_clients)
+    with _clients_lock:
+        clients = dict(_clients)
+
     return jsonify({
-        n: {"connected": c.is_connected(), "ip": c.ip, "port": c.port}
-        for n, c in clients.items()
+        name: {
+            "connected": client.is_connected(),
+            "ip": client.ip,
+            "port": client.port,
+            "unit_id": client.unit_id,
+            "protocol": "Modbus TCP",
+        }
+        for name, client in clients.items()
     })
 
-@tcp_ip_bp.get("/api/tcp/devices")
-def devices():
-    return jsonify({"devices": [
-        {"name": d.get("Device Name"), "ip": d.get("IP Address") or d.get("IP") or d.get("Host") or "", "port": d.get("Port", "")}
-        for d in _load_tcp_devices()
-    ]})
+
+@tcp_ip_bp.get("/api/tcp/types")
+def address_types():
+    return jsonify({
+        "success": True,
+        "types": [
+            {
+                "value": "coil",
+                "label": "Coil",
+                "function_read": 1,
+                "function_write": 5,
+                "read_only": False,
+                "data_type": "BOOL",
+            },
+            {
+                "value": "discrete_input",
+                "label": "Discrete Input",
+                "function_read": 2,
+                "function_write": None,
+                "read_only": True,
+                "data_type": "BOOL",
+            },
+            {
+                "value": "holding_register",
+                "label": "Holding Register",
+                "function_read": 3,
+                "function_write": 6,
+                "read_only": False,
+                "data_type": "UINT16",
+            },
+            {
+                "value": "input_register",
+                "label": "Input Register",
+                "function_read": 4,
+                "function_write": None,
+                "read_only": True,
+                "data_type": "UINT16",
+            },
+        ],
+    })
+
 
 @tcp_ip_bp.post("/api/tcp/connect")
 def connect():
-    name = (request.get_json() or {}).get("device_name")
+    body = request.get_json() or {}
+    name = body.get("device_name")
+
+    if name:
+        try:
+            client = _get_client(name)
+            ok = client.connect()
+
+            return jsonify({
+                "success": ok,
+                "results": {
+                    name: (
+                        "connected"
+                        if ok
+                        else "failed"
+                    )
+                },
+            })
+        except Exception as e:
+            return jsonify({
+                "success": False,
+                "message": str(e),
+            }), 400
+
     with _clients_lock:
-        targets = {name: _clients[name]} if name and name in _clients else dict(_clients) if not name else {}
-    if not targets:
-        return jsonify({"success": False, "message": f"Device '{name}' not found"}), 404
+        clients = dict(_clients)
+
     result = {}
-    for n, c in targets.items():
-        ok = c.connect()
-        if ok and not any(t.name == n for t in threading.enumerate()):
-            threading.Thread(target=c.listen, daemon=True, name=f"TCP-RX-{n}").start()
-        result[n] = "connected" if ok else "failed"
-    return jsonify({"success": True, "results": result})
+
+    for device_name, client in clients.items():
+        result[device_name] = (
+            "connected"
+            if client.connect()
+            else "failed"
+        )
+
+    return jsonify({
+        "success": True,
+        "results": result,
+    })
+
 
 @tcp_ip_bp.post("/api/tcp/disconnect")
 def disconnect():
-    name = (request.get_json() or {}).get("device_name")
-    with _clients_lock: targets = {name: _clients[name]} if name and name in _clients else dict(_clients)
-    for c in targets.values(): c.disconnect()
-    return jsonify({"success": True})
-
-@tcp_ip_bp.post("/api/tcp/send")
-def send():
     body = request.get_json() or {}
-    name, data = body.get("device_name"), body.get("data")
-    if data is None: return jsonify({"success": False, "message": "data required"}), 400
-    with _clients_lock:
-        if name:
-            if name not in _clients: return jsonify({"success": False, "message": "device not found"}), 404
-            return jsonify({"success": _clients[name].send(data)})
-        return jsonify({"success": True, "results": {n: c.send(data) for n, c in _clients.items()}})
+    name = body.get("device_name")
 
-@tcp_ip_bp.get("/api/tcp/latest")
-def latest():
-    with _buffers_lock:
+    with _clients_lock:
+        clients = dict(_clients)
+
+    if name:
+        client = clients.get(name)
+
+        if not client:
+            return jsonify({
+                "success": False,
+                "message": f"Device '{name}' not found",
+            }), 404
+
+        client.disconnect()
+
         return jsonify({
-            n: (b[-1].decode(errors="replace") if isinstance(b[-1], bytes) else b[-1])
-            for n, b in _buffers.items() if b
+            "success": True,
+            "device_name": name,
         })
 
-@tcp_ip_bp.post("/api/tcp/pop")
-def pop():
-    name = (request.get_json() or {}).get("device_name")
-    if not name: return jsonify({"error": "device_name required"}), 400
-    with _buffers_lock:
-        b = _buffers.get(name)
-        if b:
-            x = b.pop()
-            return jsonify({"success": True, "message": x.decode(errors="replace") if isinstance(x, bytes) else x})
-    return jsonify({"success": False, "message": None})
+    for client in clients.values():
+        client.disconnect()
+
+    return jsonify({
+        "success": True,
+    })
+
+
+@tcp_ip_bp.post("/api/tcp/read")
+def read_address():
+    """
+    Read one or multiple Modbus addresses.
+
+    Request:
+    {
+        "device_name": "PLC Simulator",
+        "address_type": "discrete_input",
+        "address": 0,
+        "count": 1
+    }
+
+    Response:
+    {
+        "success": true,
+        "device_name": "PLC Simulator",
+        "address_type": "discrete_input",
+        "address": 0,
+        "count": 1,
+        "values": [false],
+        "value": false,
+        "function_code": 2
+    }
+    """
+    body = request.get_json() or {}
+
+    try:
+        device_name = body.get("device_name")
+        area = _normalize_area(
+            body.get("address_type")
+        )
+        address = _validate_address(
+            body.get("address")
+        )
+
+        default_count = 1
+        count = _validate_count(
+            body.get("count", default_count),
+            2000 if area in (
+                "coil",
+                "discrete_input",
+            )
+            else 125,
+        )
+
+        client = _get_client(device_name)
+
+        function_code = AREA_MAP[area]
+
+        if function_code in (1, 2):
+            values = _read_bits(
+                client,
+                function_code,
+                address,
+                count,
+            )
+        else:
+            values = _read_registers(
+                client,
+                function_code,
+                address,
+                count,
+            )
+
+        return jsonify({
+            "success": True,
+            "device_name": device_name,
+            "address_type": area,
+            "address": address,
+            "count": count,
+            "values": values,
+            "value": values[0] if count == 1 else values,
+            "function_code": function_code,
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": str(e),
+        }), 400
+
+
+@tcp_ip_bp.post("/api/tcp/write")
+def write_address():
+    """
+    Write Modbus Coil or Holding Register.
+
+    Coil:
+        FC05, value true/false or 1/0
+
+    Holding Register:
+        FC06, value 0..65535
+
+    Request:
+    {
+        "device_name": "PLC Simulator",
+        "address_type": "coil",
+        "address": 0,
+        "value": true
+    }
+    """
+    body = request.get_json() or {}
+
+    try:
+        device_name = body.get("device_name")
+        area = _normalize_area(
+            body.get("address_type")
+        )
+        address = _validate_address(
+            body.get("address")
+        )
+        value = body.get("value")
+
+        client = _get_client(device_name)
+
+        if area == "coil":
+            bit_value = bool(value)
+
+            payload = struct.pack(
+                ">HH",
+                address,
+                0xFF00 if bit_value else 0x0000,
+            )
+
+            response = client.request(
+                5,
+                payload,
+            )
+
+            if len(response) != 4:
+                raise RuntimeError(
+                    "Invalid FC05 response"
+                )
+
+            response_address, response_value = (
+                struct.unpack(">HH", response)
+            )
+
+            return jsonify({
+                "success": True,
+                "device_name": device_name,
+                "address_type": area,
+                "address": response_address,
+                "value": bool(response_value),
+                "function_code": 5,
+            })
+
+        if area == "holding_register":
+            register_value = int(value)
+
+            if register_value < 0 or register_value > 65535:
+                raise ValueError(
+                    "Holding Register value must be "
+                    "0..65535"
+                )
+
+            payload = struct.pack(
+                ">HH",
+                address,
+                register_value,
+            )
+
+            response = client.request(
+                6,
+                payload,
+            )
+
+            if len(response) != 4:
+                raise RuntimeError(
+                    "Invalid FC06 response"
+                )
+
+            response_address, response_value = (
+                struct.unpack(">HH", response)
+            )
+
+            return jsonify({
+                "success": True,
+                "device_name": device_name,
+                "address_type": area,
+                "address": response_address,
+                "value": response_value,
+                "function_code": 6,
+            })
+
+        raise ValueError(
+            f"{area} is read-only"
+        )
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": str(e),
+        }), 400
+
+
+# Compatibility endpoint for the previous raw TCP implementation.
+# It remains available but should NOT be used for Modbus address access.
+@tcp_ip_bp.post("/api/tcp/send")
+def raw_send():
+    body = request.get_json() or {}
+
+    name = body.get("device_name")
+    data = body.get("data")
+
+    if data is None:
+        return jsonify({
+            "success": False,
+            "message": "data required",
+        }), 400
+
+    try:
+        client = _get_client(name)
+
+        if isinstance(data, list):
+            payload = bytes(data)
+        elif isinstance(data, bytearray):
+            payload = bytes(data)
+        elif isinstance(data, str):
+            payload = data.encode()
+        else:
+            raise ValueError(
+                "data must be string, list, or bytearray"
+            )
+
+        with client.lock:
+            if not client.is_connected():
+                if not client.connect():
+                    raise ConnectionError(
+                        "Unable to connect"
+                    )
+
+            client.sock.sendall(payload)
+
+        return jsonify({
+            "success": True,
+            "device_name": name,
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": str(e),
+        }), 400
