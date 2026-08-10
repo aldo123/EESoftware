@@ -119,6 +119,45 @@ const GAUGE_TYPES = [
   { value: "current", label: "Current", icon: "∿", unit: "A" },
 ];
 
+/*
+ * Shared Modbus address types.
+ * Keep these values identical with the runtime/API:
+ *   coil            -> FC01 read / FC05 write
+ *   discrete_input  -> FC02 read
+ *   holding_register-> FC03 read / FC06 or FC16 write
+ *   input_register  -> FC04 read
+ */
+// Component-specific Modbus address capabilities.
+//
+// BUTTON = WRITE only:
+//   - Coil            -> FC05
+//   - Holding Register -> FC06 / FC16
+//
+// LIGHT = READ:
+//   - Coil             -> FC01
+//   - Discrete Input   -> FC02
+//   - Holding Register -> FC03
+//   - Input Register   -> FC04
+//
+// GAUGE = READ numeric value:
+//   - Holding Register -> FC03 only
+const BUTTON_ADDRESS_TYPES = [
+  { value: "coil", label: "Coil (FC05 Write)" },
+  { value: "holding_register", label: "Holding Register (FC06 / FC16 Write)" },
+];
+
+const LIGHT_ADDRESS_TYPES = [
+  { value: "coil", label: "Coil (FC01 Read)" },
+  { value: "discrete_input", label: "Discrete Input (FC02 Read)" },
+  { value: "holding_register", label: "Holding Register (FC03 Read)" },
+  { value: "input_register", label: "Input Register (FC04 Read)" },
+];
+
+const GAUGE_ADDRESS_TYPES = [
+  { value: "holding_register", label: "Holding Register (FC03 Read)" },
+];
+
+
 function GaugeTypeIcon({ type = "temp", color = "#00BFFF", size = 28 }) {
   const common = {
     width: size,
@@ -231,7 +270,7 @@ const COMPONENT_TYPES = [
     icon: "💡",
     desc: "Status light that reads a variable",
     defaultProps: {
-      addressType: "discrete_input",
+      addressType: "coil",
       device: "",
       address: "",
       label: "STATUS",
@@ -1115,9 +1154,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
                 <PropSection title="Address Type">
           <PropInput
               label="Address Type"
-              options={[
-                { value: "coil", label: "Coil (FC01 / FC05)" }
-              ]}
+              options={BUTTON_ADDRESS_TYPES}
               value={p.addressType || "coil"}
               onChange={v => set("addressType", v)}
             />
@@ -1130,7 +1167,8 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             onChange={v => set("variable", v)}
           />
           <div className="text-[8px] text-[#64748B] mt-0.5">
-            Button writes 1 when ON and 0 when OFF to the Logic Builder variable.
+            Button is WRITE only. Use Coil or Holding Register.
+            Discrete Input and Input Register are intentionally not available because they are read-only.
           </div>
           <div className="grid grid-cols-2 gap-2">
             <PropInput
@@ -1298,11 +1336,8 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
                 <PropSection title="Address Type">
           <PropInput
               label="Address Type"
-              options={[
-                { value: "coil", label: "Coil (FC01)" },
-                { value: "discrete_input", label: "Discrete Input (FC02)" }
-              ]}
-              value={p.addressType || "discrete_input"}
+              options={LIGHT_ADDRESS_TYPES}
+              value={p.addressType || "coil"}
               onChange={v => set("addressType", v)}
             />
         </PropSection>
@@ -1314,7 +1349,8 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             onChange={v => set("variable", v)}
           />
           <div className="text-[8px] text-[#64748B] mt-0.5">
-            Light reads the Logic Builder variable. 1 = ON, 0 = OFF.
+            Light is READ only. It supports Coil, Discrete Input, Holding Register and Input Register.
+            Runtime converts the read value to ON/OFF using Value ON / Value OFF.
           </div>
           <div className="grid grid-cols-2 gap-2">
             <PropInput
@@ -1598,10 +1634,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
                 <PropSection title="Address Type">
           <PropInput
               label="Address Type"
-              options={[
-                { value: "holding_register", label: "Holding Register (FC03)" },
-                { value: "input_register", label: "Input Register (FC04)" }
-              ]}
+              options={GAUGE_ADDRESS_TYPES}
               value={p.addressType || "holding_register"}
               onChange={v => set("addressType", v)}
             />
@@ -1614,7 +1647,8 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             onChange={v => set("variable", v)}
           />
           <div className="text-[8px] text-[#64748B] mt-0.5">
-            Numeric value is read from the Logic Builder variable.
+            Gauge is READ only and uses Holding Register only.
+            Runtime reads the Holding Register numeric value and binds it to the gauge.
           </div>
         </PropSection>
 

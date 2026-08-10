@@ -792,6 +792,33 @@ export default function DynamicCPPage({ cpNumber, user }) {
     return "";
   }, []);
 
+  // Component capability rules:
+  // Button = WRITE only: Coil / Holding Register
+  // Light  = READ only: Coil / Discrete Input / Holding Register / Input Register
+  // Gauge  = READ only: Holding Register
+  const isValidPLCBinding = useCallback((widgetType, addressType) => {
+    const type = normalizeType(addressType);
+
+    if (widgetType === "button") {
+      return type === "coil" || type === "holding_register";
+    }
+
+    if (widgetType === "light") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
+    if (widgetType === "gauge") {
+      return type === "holding_register";
+    }
+
+    return false;
+  }, [normalizeType]);
+
   const getTCPDevice = useCallback(
     (deviceName) => {
       if (!deviceName) return null;
@@ -827,6 +854,11 @@ export default function DynamicCPPage({ cpNumber, user }) {
       const addressType = normalizeType(p.addressType);
 
       if (!addressType) return false;
+
+      // Enforce Page Builder capability at runtime.
+      if (!isValidPLCBinding(widget.type, addressType)) {
+        return false;
+      }
 
       return Boolean(getTCPDevice(p.device));
     },
@@ -1139,8 +1171,17 @@ export default function DynamicCPPage({ cpNumber, user }) {
         return;
       }
 
+      // Enforce the same capability rules as Page Builder.
+      if (!isValidPLCBinding(type, addressType)) {
+        console.warn(
+          `[DynamicCPPage] Invalid binding: ${type} cannot use ${addressType}`
+        );
+        return;
+      }
+
       registerBinding({
         widgetId: widget.id,
+        widgetType: type,
         device,
         addressType,
         address: p.address,
@@ -1162,6 +1203,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     clearBindings,
     getTCPDevice,
     normalizeType,
+    isValidPLCBinding,
     registerBinding,
   ]);
 
@@ -1358,7 +1400,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
         /*
          * If this button is PLC bound:
-         * write directly to configured coil.
+         * write directly to configured Coil or Holding Register.
          */
         if (hasPLCBinding(widget)) {
           const device =

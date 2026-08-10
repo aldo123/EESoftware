@@ -61,14 +61,6 @@ function normalizeDevice(device) {
     return null;
   }
 
-  /*
-   * Device bisa berasal dari:
-   *
-   * MainPage
-   * setting.json
-   * /api/tcp/devices
-   */
-
   const name =
     device.name ||
     device.deviceName ||
@@ -105,7 +97,6 @@ function normalizeDevice(device) {
 
   return {
     ...device,
-
     name: String(name),
     host: String(host),
     port,
@@ -179,6 +170,74 @@ export function useTCPPLC({
     useRef(false);
 
 
+  // ============================================================
+  // COMPONENT CAPABILITY
+  // ============================================================
+  //
+  // BUTTON
+  // WRITE ONLY
+  //   - Coil
+  //   - Holding Register
+  //
+  // LIGHT
+  // READ ONLY
+  //   - Coil
+  //   - Discrete Input
+  //   - Holding Register
+  //   - Input Register
+  //
+  // GAUGE
+  // READ ONLY
+  //   - Holding Register
+  //
+  // ============================================================
+
+  function isValidBinding(widgetType, addressType) {
+
+    const type =
+      normalizeAddressType(addressType);
+
+    const component =
+      String(widgetType || "")
+        .trim()
+        .toLowerCase();
+
+    // -----------------------------
+    // BUTTON = WRITE
+    // -----------------------------
+
+    if (component === "button") {
+      return (
+        type === "coil" ||
+        type === "holding_register"
+      );
+    }
+
+    // -----------------------------
+    // LIGHT = READ
+    // -----------------------------
+
+    if (component === "light") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
+    // -----------------------------
+    // GAUGE = READ
+    // -----------------------------
+
+    if (component === "gauge") {
+      return type === "holding_register";
+    }
+
+    return false;
+  }
+
+
   // ==========================================================
   // REGISTER WIDGET
   // ==========================================================
@@ -186,6 +245,7 @@ export function useTCPPLC({
   const registerBinding = useCallback(
     ({
       widgetId,
+      widgetType,
       device,
       addressType,
       address,
@@ -224,6 +284,22 @@ export function useTCPPLC({
         return;
       }
 
+      // Jangan register binding yang tidak sesuai
+      // dengan capability component.
+
+      if (
+        !isValidBinding(
+          widgetType,
+          type
+        )
+      ) {
+        console.warn(
+          `[useTCPPLC] Invalid binding: ${widgetType} cannot use ${type}`
+        );
+
+        return;
+      }
+
       const key =
         createAddressKey(
           normalizedDevice,
@@ -235,12 +311,23 @@ export function useTCPPLC({
         String(widgetId),
         {
           widgetId: String(widgetId),
-          device: normalizedDevice,
-          addressType: type,
-          address: numericAddress,
+
+          widgetType:
+            widgetType || "",
+
+          device:
+            normalizedDevice,
+
+          addressType:
+            type,
+
+          address:
+            numericAddress,
+
           key,
         }
       );
+
     },
     []
   );
@@ -251,17 +338,20 @@ export function useTCPPLC({
   // ==========================================================
 
   const unregisterBinding =
-    useCallback((widgetId) => {
+    useCallback(
+      (widgetId) => {
 
-      if (!widgetId) {
-        return;
-      }
+        if (!widgetId) {
+          return;
+        }
 
-      bindingsRef.current.delete(
-        String(widgetId)
-      );
+        bindingsRef.current.delete(
+          String(widgetId)
+        );
 
-    }, []);
+      },
+      []
+    );
 
 
   // ==========================================================
@@ -269,11 +359,14 @@ export function useTCPPLC({
   // ==========================================================
 
   const clearBindings =
-    useCallback(() => {
+    useCallback(
+      () => {
 
-      bindingsRef.current.clear();
+        bindingsRef.current.clear();
 
-    }, []);
+      },
+      []
+    );
 
 
   // ==========================================================
@@ -311,7 +404,9 @@ export function useTCPPLC({
         }
 
         const type =
-          normalizeAddressType(addressType);
+          normalizeAddressType(
+            addressType
+          );
 
         if (!type) {
           throw new Error(
@@ -332,16 +427,9 @@ export function useTCPPLC({
           Number(count) || 1;
 
 
-        /*
-         * IMPORTANT
-         *
-         * Backend tcp_ip.py expects:
-         *
-         * device_name
-         * address_type
-         * address
-         * count
-         */
+        // ------------------------------------------------------
+        // READ REQUEST
+        // ------------------------------------------------------
 
         const response =
           await fetch(
@@ -355,6 +443,7 @@ export function useTCPPLC({
               },
 
               body: JSON.stringify({
+
                 device_name:
                   normalizedDevice.name,
 
@@ -366,6 +455,7 @@ export function useTCPPLC({
 
                 count:
                   numericCount,
+
               }),
             }
           );
@@ -373,10 +463,22 @@ export function useTCPPLC({
 
         if (!response.ok) {
 
-          throw new Error(
-            `PLC read HTTP ${response.status}`
-          );
+          let message =
+            `PLC read HTTP ${response.status}`;
 
+          try {
+            const errorData =
+              await response.json();
+
+            if (errorData?.message) {
+              message =
+                errorData.message;
+            }
+          } catch {
+            // Ignore invalid error JSON.
+          }
+
+          throw new Error(message);
         }
 
 
@@ -394,27 +496,31 @@ export function useTCPPLC({
         }
 
 
-        /*
-         * Backend returns:
-         *
-         * value
-         *
-         * or:
-         *
-         * values[]
-         */
+        // Backend bisa return:
+        //
+        // {
+        //   success: true,
+        //   value: 1
+        // }
+        //
+        // atau:
+        //
+        // {
+        //   success: true,
+        //   values: [1]
+        // }
 
         if (
           data.value !== undefined
         ) {
-
           return data.value;
-
         }
 
 
         if (
-          Array.isArray(data.values)
+          Array.isArray(
+            data.values
+          )
         ) {
 
           return data.values;
@@ -423,6 +529,7 @@ export function useTCPPLC({
 
 
         return null;
+
       },
       []
     );
@@ -463,15 +570,14 @@ export function useTCPPLC({
         }
 
         const type =
-          normalizeAddressType(addressType);
+          normalizeAddressType(
+            addressType
+          );
 
 
-        /*
-         * Only these two are writable:
-         *
-         * Coil
-         * Holding Register
-         */
+        // ------------------------------------------------------
+        // ONLY COIL & HOLDING REGISTER ARE WRITABLE
+        // ------------------------------------------------------
 
         if (
           type !== "coil" &&
@@ -497,6 +603,10 @@ export function useTCPPLC({
         }
 
 
+        // ------------------------------------------------------
+        // WRITE REQUEST
+        // ------------------------------------------------------
+
         const response =
           await fetch(
             `${API}/api/tcp/write`,
@@ -509,6 +619,7 @@ export function useTCPPLC({
               },
 
               body: JSON.stringify({
+
                 device_name:
                   normalizedDevice.name,
 
@@ -518,7 +629,16 @@ export function useTCPPLC({
                 address:
                   numericAddress,
 
-                value,
+                value:
+
+                  // Coil harus boolean / 0 / 1.
+                  type === "coil"
+                    ? (
+                        Number(value) === 1 ||
+                        value === true
+                      )
+                    : Number(value),
+
               }),
             }
           );
@@ -526,10 +646,23 @@ export function useTCPPLC({
 
         if (!response.ok) {
 
-          throw new Error(
-            `PLC write HTTP ${response.status}`
-          );
+          let message =
+            `PLC write HTTP ${response.status}`;
 
+          try {
+            const errorData =
+              await response.json();
+
+            if (errorData?.message) {
+              message =
+                errorData.message;
+            }
+
+          } catch {
+            // Ignore invalid error JSON.
+          }
+
+          throw new Error(message);
         }
 
 
@@ -548,6 +681,7 @@ export function useTCPPLC({
 
 
         return data;
+
       },
       []
     );
@@ -572,9 +706,7 @@ export function useTCPPLC({
         if (
           bindingsRef.current.size === 0
         ) {
-
           return;
-
         }
 
 
@@ -584,14 +716,12 @@ export function useTCPPLC({
         try {
 
           /*
-           * Group identical addresses.
+           * Group identical READ addresses.
            *
-           * Example:
+           * IMPORTANT:
            *
-           * Gauge 1 → HR30
-           * Gauge 2 → HR30
-           *
-           * Only one request.
+           * Button adalah WRITE component,
+           * sehingga BUTTON TIDAK BOLEH dipolling.
            */
 
           const grouped =
@@ -600,6 +730,24 @@ export function useTCPPLC({
 
           bindingsRef.current.forEach(
             (binding) => {
+
+              // -----------------------------------------------
+              // BUTTON = WRITE ONLY
+              // Jangan masuk read polling.
+              // -----------------------------------------------
+
+              if (
+                String(
+                  binding.widgetType || ""
+                ).toLowerCase() === "button"
+              ) {
+                return;
+              }
+
+
+              // -----------------------------------------------
+              // LIGHT / GAUGE = READ
+              // -----------------------------------------------
 
               if (
                 !grouped.has(
@@ -632,6 +780,7 @@ export function useTCPPLC({
 
                   const value =
                     await readPLC({
+
                       device:
                         binding.device,
 
@@ -641,7 +790,9 @@ export function useTCPPLC({
                       address:
                         binding.address,
 
-                      count: 1,
+                      count:
+                        1,
+
                     });
 
 
@@ -652,12 +803,13 @@ export function useTCPPLC({
                   }
 
 
-                  /*
-                   * Save by widget ID
-                   */
+                  // ------------------------------------------------
+                  // SAVE VALUE BY WIDGET ID
+                  // ------------------------------------------------
 
                   setValues(
                     (previous) => ({
+
                       ...previous,
 
                       [binding.widgetId]:
@@ -665,27 +817,30 @@ export function useTCPPLC({
 
                       [binding.key]:
                         value,
+
                     })
                   );
 
 
-                  /*
-                   * Connection OK
-                   */
+                  // ------------------------------------------------
+                  // CONNECTION OK
+                  // ------------------------------------------------
 
                   setConnectionStatus(
                     (previous) => ({
+
                       ...previous,
 
                       [binding.key]:
                         true,
+
                     })
                   );
 
 
-                  /*
-                   * Remove previous error
-                   */
+                  // ------------------------------------------------
+                  // CLEAR PREVIOUS ERROR
+                  // ------------------------------------------------
 
                   setErrors(
                     (previous) => {
@@ -716,22 +871,32 @@ export function useTCPPLC({
 
                   setConnectionStatus(
                     (previous) => ({
+
                       ...previous,
 
                       [binding.key]:
                         false,
+
                     })
                   );
 
 
                   setErrors(
                     (previous) => ({
+
                       ...previous,
 
                       [binding.key]:
                         error?.message ||
                         "PLC communication error.",
+
                     })
+                  );
+
+
+                  console.error(
+                    `[useTCPPLC] Read failed: ${binding.device?.name} / ${binding.addressType} / ${binding.address}`,
+                    error
                   );
 
                 }
@@ -779,22 +944,24 @@ export function useTCPPLC({
       }
 
 
-      /*
-       * Read immediately.
-       */
+      // --------------------------------------------------------
+      // READ IMMEDIATELY
+      // --------------------------------------------------------
 
       poll();
 
 
-      /*
-       * Then periodic polling.
-       */
+      // --------------------------------------------------------
+      // PERIODIC POLLING
+      // --------------------------------------------------------
 
       timerRef.current =
         setInterval(
           poll,
+
           Math.max(
             100,
+
             Number(
               pollInterval
             ) ||
@@ -849,16 +1016,18 @@ export function useTCPPLC({
 
         const result =
           await writePLC({
+
             device,
             addressType,
             address,
             value,
+
           });
 
 
-        /*
-         * Update UI immediately.
-         */
+        // ------------------------------------------------------
+        // UPDATE UI IMMEDIATELY
+        // ------------------------------------------------------
 
         if (
           mountedRef.current
@@ -884,6 +1053,7 @@ export function useTCPPLC({
 
           setValues(
             (previous) => ({
+
               ...previous,
 
               [String(widgetId)]:
@@ -891,6 +1061,7 @@ export function useTCPPLC({
 
               [key]:
                 value,
+
             })
           );
 
@@ -919,10 +1090,9 @@ export function useTCPPLC({
         address,
       }) => {
 
-        /*
-         * First priority:
-         * widget ID.
-         */
+        // ------------------------------------------------------
+        // FIRST PRIORITY = WIDGET ID
+        // ------------------------------------------------------
 
         if (
           widgetId !== undefined &&
@@ -939,10 +1109,9 @@ export function useTCPPLC({
         }
 
 
-        /*
-         * Second priority:
-         * Device + Type + Address.
-         */
+        // ------------------------------------------------------
+        // SECOND PRIORITY = ADDRESS KEY
+        // ------------------------------------------------------
 
         if (
           device &&
@@ -1073,7 +1242,7 @@ export function useTCPPLC({
     // Communication errors
     errors,
 
-    // Devices from MainPage / Setting
+    // Devices
     devices:
       normalizedDevices,
 
@@ -1094,6 +1263,7 @@ export function useTCPPLC({
 
     // Manual polling
     poll,
+
   };
 }
 
@@ -1102,7 +1272,7 @@ export function useTCPPLC({
 // DEFAULT EXPORT
 // ============================================================
 //
-// This allows BOTH:
+// Supports:
 //
 // import { useTCPPLC } from "../hooks/useTCPPLC";
 //
