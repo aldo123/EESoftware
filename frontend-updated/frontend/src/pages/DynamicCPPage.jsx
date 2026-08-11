@@ -717,6 +717,281 @@ function RuntimeGauge({ widget, value }) {
     );
  }
 
+function RuntimeLineChart({ widget, history = [], running = true }) {
+  const p = widget.props || {};
+  // Page Builder starts with ONE realtime series.
+  // Additional series created with "Add Series" are also supported.
+  // Dynamic page renders every enabled configured series.
+  const series = Array.isArray(p.series)
+    ? p.series.filter(s => s && s.enabled !== false)
+    : [];
+
+  const W = 620;
+  const H = 270;
+  const left = 44;
+  const right = 128;
+  const top = 34;
+  const bottom = 28;
+  const chartW = W - left - right;
+  const chartH = H - top - bottom;
+  const decimals = Math.max(0, Number(p.decimals ?? 1));
+
+  const colors = ["#00BFFF", "#EF4444", "#22C55E", "#FFB020"];
+
+  const values = [];
+  series.forEach(s => {
+    history.forEach(point => {
+      const value = Number(point?.[s.id]);
+      if (Number.isFinite(value)) {
+        values.push(value);
+      }
+    });
+  });
+
+  let min = Number(p.yMin ?? 0);
+  let max = Number(p.yMax ?? 100);
+
+  if (p.autoScale !== false && values.length) {
+    const dataMin = Math.min(...values);
+    const dataMax = Math.max(...values);
+    const span = Math.max(1, dataMax - dataMin);
+    const padding = span * 0.10;
+    min = dataMin - padding;
+    max = dataMax + padding;
+  }
+
+  if (!Number.isFinite(min)) min = 0;
+  if (!Number.isFinite(max) || max <= min) max = min + 1;
+
+  const yFor = value => {
+    const ratio = (value - min) / (max - min);
+    return top + chartH - ratio * chartH;
+  };
+
+  // X-axis is elapsed seconds from trend START: 0s -> max duration.
+  const maxDuration = Math.max(1, Number(p.historySeconds ?? 60));
+
+  const xForElapsed = elapsed => {
+    const seconds = Number(elapsed);
+    if (!Number.isFinite(seconds)) return left;
+    const ratio = Math.max(0, Math.min(1, seconds / maxDuration));
+    return left + ratio * chartW;
+  };
+
+  const getSeriesPoints = s => {
+    const points = [];
+
+    history.forEach(point => {
+      const elapsed = Number(point?.elapsed);
+      const value = Number(point?.[s.id]);
+      if (!Number.isFinite(elapsed) || !Number.isFinite(value)) {
+        return;
+      }
+
+      points.push(`${xForElapsed(elapsed)},${yFor(value)}`);
+    });
+
+    return points.join(" ");
+  };
+
+  const getLatestValue = s => {
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      const value = Number(history[i]?.[s.id]);
+      if (Number.isFinite(value)) {
+        return value;
+      }
+    }
+    return null;
+  };
+
+  const hasHistory = history.length > 0 && values.length > 0;
+  const chartId = `linechart-${widget.id}`;
+
+  return (
+    <div
+      className="absolute overflow-hidden"
+      style={{
+        left: widget.x,
+        top: widget.y,
+        width: p.width,
+        height: p.height,
+        background: p.backgroundColor || "#071421",
+        border: `${Math.max(0, Number(p.borderWidth ?? 1))}px solid ${p.borderColor || "#123B5A"}`,
+        borderRadius: `${Math.max(0, Number(p.borderRadius ?? 8))}px`,
+        boxSizing: "border-box",
+      }}
+    >
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full h-full"
+        preserveAspectRatio="none"
+        style={{ display: "block" }}
+      >
+        <defs>
+          <clipPath id={`${chartId}-clip`}>
+            <rect x={left} y={top} width={chartW} height={chartH} />
+          </clipPath>
+        </defs>
+
+        {/* Header */}
+        <text
+          x="12"
+          y="18"
+          fill={p.textColor || "#FFFFFF"}
+          fontSize="10"
+          fontWeight="700"
+          letterSpacing="1"
+        >
+          {p.title || "PROCESS TREND"}
+        </text>
+
+        {p.triggerEnabled === true && (
+          <text
+            x={W - 8}
+            y="13"
+            textAnchor="end"
+            fill={running ? "#22C55E" : "#64748B"}
+            fontSize="7"
+            fontWeight="700"
+          >
+            {running ? "● TREND RUNNING" : "● TREND STOPPED"}
+          </text>
+        )}
+
+        {/* Legend + current values */}
+        {p.showLegend !== false && series.map((s, index) => {
+          const color = s.color || colors[index % colors.length];
+          const latest = getLatestValue(s);
+          const legendY = 12 + index * 14;
+
+          return (
+            <g key={`legend-${s.id}`}>
+              <line
+                x1={W - 120}
+                y1={legendY - 3}
+                x2={W - 110}
+                y2={legendY - 3}
+                stroke={color}
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <text
+                x={W - 106}
+                y={legendY}
+                fill={color}
+                fontSize="7"
+                fontWeight="700"
+              >
+                {s.label || `SERIES ${index + 1}`}
+              </text>
+              {p.showCurrentValue !== false && (
+                <text
+                  x={W - 8}
+                  y={legendY}
+                  textAnchor="end"
+                  fill={color}
+                  fontSize="8"
+                  fontWeight="700"
+                >
+                  {latest === null ? "--" : latest.toFixed(decimals)}{p.unit ? ` ${p.unit}` : ""}
+                </text>
+              )}
+            </g>
+          );
+        })}
+
+        {/* Grid */}
+        {p.showGrid !== false && [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
+          const y = top + chartH - ratio * chartH;
+          return (
+            <line
+              key={`h-${index}`}
+              x1={left}
+              y1={y}
+              x2={W - right}
+              y2={y}
+              stroke={p.gridColor || "#16324A"}
+              strokeWidth="0.7"
+            />
+          );
+        })}
+
+        {p.showGrid !== false && [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
+          const x = left + ratio * chartW;
+          return (
+            <line
+              key={`v-${index}`}
+              x1={x}
+              y1={top}
+              x2={x}
+              y2={top + chartH}
+              stroke={p.gridColor || "#16324A"}
+              strokeWidth="0.7"
+            />
+          );
+        })}
+
+        {/* Y-axis */}
+        <text x="5" y={top + 5} fill={p.labelColor || "#7F9DB8"} fontSize="7">
+          {max.toFixed(decimals > 0 ? 1 : 0)}
+        </text>
+        <text x="5" y={top + chartH} fill={p.labelColor || "#7F9DB8"} fontSize="7">
+          {min.toFixed(decimals > 0 ? 1 : 0)}
+        </text>
+
+        {/* Trend lines */}
+        <g clipPath={`url(#${chartId}-clip)`}>
+          {series.map((s, index) => (
+            <polyline
+              key={s.id}
+              points={getSeriesPoints(s)}
+              fill="none"
+              stroke={s.color || colors[index % colors.length]}
+              strokeWidth={Number(p.lineWidth ?? 1.8)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity="0.96"
+            />
+          ))}
+        </g>
+
+        {!hasHistory && (
+          <g>
+            <text
+              x={left + chartW / 2}
+              y={top + chartH / 2}
+              textAnchor="middle"
+              fill="#48647B"
+              fontSize="9"
+              fontWeight="600"
+              letterSpacing="0.8"
+            >
+              {p.triggerEnabled === true && !running
+                ? "TREND STOPPED — TRIGGER = 0"
+                : "WAITING FOR PLC DATA..."}
+            </text>
+          </g>
+        )}
+
+        {/* Elapsed time axis: 0s -> max duration */}
+        {p.showTimeAxis !== false && (
+          <>
+            <text x={left} y={H - 7} fill={p.labelColor || "#7F9DB8"} fontSize="7">
+              0s
+            </text>
+            <text x={left + chartW / 2} y={H - 7} textAnchor="middle" fill={p.labelColor || "#7F9DB8"} fontSize="7">
+              {Math.round(maxDuration / 2)}s
+            </text>
+            <text x={W - right} y={H - 7} textAnchor="end" fill={p.labelColor || "#7F9DB8"} fontSize="7">
+              {maxDuration}s
+            </text>
+          </>
+        )}
+      </svg>
+    </div>
+  );
+}
+
 export default function DynamicCPPage({ cpNumber, user }) {
   const [widgets, setWidgets] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -725,6 +1000,15 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const [logs, setLogs] = useState([]);
   const [tcpDevices, setTcpDevices] = useState([]);
   const [tcpDeviceError, setTcpDeviceError] = useState("");
+
+  // Realtime trend history is intentionally kept in browser memory.
+  // It is not written to the database on every PLC poll.
+  const [chartHistory, setChartHistory] = useState({});
+  const [chartRunning, setChartRunning] = useState({});
+  const chartSampleRef = useRef({});
+  const chartTriggerRef = useRef({});
+  // Trend start time per chart. X-axis is elapsed seconds from START.
+  const chartStartTimeRef = useRef({});
 
   const containerRef = useRef(null);
   const [scale, setScale] = useState(1);
@@ -739,7 +1023,11 @@ export default function DynamicCPPage({ cpNumber, user }) {
   //   props.address
   //
   // Dynamic Page resolves the device name against
-  // /api/tcp/devices and registers Button / Light / Gauge.
+  // /api/tcp/devices and registers Button / Light / Gauge / LineChart.
+  //
+  // LineChart bindings:
+  //   <widgetId>:<seriesId>
+  //   <widgetId>:__trend_trigger__
   // ============================================================
 
   const {
@@ -793,9 +1081,14 @@ export default function DynamicCPPage({ cpNumber, user }) {
   }, []);
 
   // Component capability rules:
-  // Button = WRITE only: Coil / Holding Register
-  // Light  = READ only: Coil / Discrete Input / Holding Register / Input Register
-  // Gauge  = READ only: Holding Register
+  // Button    = WRITE only: Coil / Holding Register
+  // Light     = READ only: Coil / Discrete Input / Holding Register / Input Register
+  // Gauge     = READ only: Holding Register
+  // LineChart = READ only: Coil / Discrete Input / Holding Register / Input Register
+  //
+  // LineChart has:
+  //   - series bindings for plotted values
+  //   - optional trigger binding for start/stop recording
   const isValidPLCBinding = useCallback((widgetType, addressType) => {
     const type = normalizeType(addressType);
 
@@ -814,6 +1107,15 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
     if (widgetType === "gauge") {
       return type === "holding_register";
+    }
+
+    if (widgetType === "linechart") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
     }
 
     return false;
@@ -898,6 +1200,11 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const resetAll = useCallback(() => {
     setFieldValues({});
     setLogs([]);
+    setChartHistory({});
+    setChartRunning({});
+    chartSampleRef.current = {};
+    chartTriggerRef.current = {};
+    chartStartTimeRef.current = {};
 
     console.log(
       `[DynamicCPPage] Reset all states for CP${cpNumber}`
@@ -1103,32 +1410,140 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // ============================================================
 
   useEffect(() => {
+    clearBindings();
+
     if (!widgets.length) {
-      clearBindings();
       return;
     }
 
     /*
-     * Important:
+     * One binding = one PLC address.
      *
-     * Page Builder uses:
-     *
-     * Button:
-     *   coil
-     *
-     * Light:
-     *   discrete_input
-     *
-     * Gauge:
-     *   holding_register / input_register
+     * Button / Light / Gauge keep the original widget.id binding.
+     * Line Chart uses `${widget.id}:${series.id}` so one chart can
+     * read multiple PLC addresses independently.
      */
-
-    clearBindings();
-
     widgets.forEach((widget) => {
       const type = widget?.type;
       const p = widget?.props || {};
 
+      // ----------------------------------------------------------
+      // LINE CHART: multiple read bindings
+      // ----------------------------------------------------------
+      if (type === "linechart") {
+        const series = Array.isArray(p.series) ? p.series : [];
+
+        console.log(
+          `[DynamicCPPage] Registering line chart ${widget.id}: ${series.filter(s => s && s.enabled !== false).length} enabled series`
+        );
+
+        // TREND TRIGGER: value 1 starts recording, value 0 stops recording.
+        if (p.triggerEnabled === true && p.triggerDevice &&
+            p.triggerAddress !== undefined && p.triggerAddress !== null &&
+            String(p.triggerAddress).trim() !== "") {
+          const triggerDevice = getTCPDevice(p.triggerDevice);
+          const triggerAddressType = normalizeType(p.triggerAddressType);
+
+          if (!triggerDevice) {
+            console.warn(
+              `[DynamicCPPage] Line chart trigger device not found for ${widget.id}: ${p.triggerDevice}`
+            );
+          } else if (!triggerAddressType) {
+            console.warn(
+              `[DynamicCPPage] Invalid line chart trigger address type for ${widget.id}:`,
+              p.triggerAddressType
+            );
+          } else if (!isValidPLCBinding(type, triggerAddressType)) {
+            console.warn(
+              `[DynamicCPPage] Invalid line chart trigger binding: ${triggerAddressType}`
+            );
+          } else {
+            const triggerBindingId = `${widget.id}:__trend_trigger__`;
+
+            registerBinding({
+              widgetId: triggerBindingId,
+              widgetType: type,
+              device: triggerDevice,
+              addressType: triggerAddressType,
+              address: p.triggerAddress,
+            });
+
+            console.log(
+              `[DynamicCPPage] Line chart trigger binding: ${triggerBindingId} -> ${triggerDevice.name} / ${triggerAddressType} / ${p.triggerAddress}`
+            );
+          }
+        }
+
+        series.forEach((s, index) => {
+          if (s?.enabled === false) {
+            return;
+          }
+
+          if (!s?.device) {
+            console.warn(
+              `[DynamicCPPage] Line chart series has no device: ${widget.id}/${s.id || index}`
+            );
+            return;
+          }
+
+          if (
+            s.address === undefined ||
+            s.address === null ||
+            String(s.address).trim() === ""
+          ) {
+            console.warn(
+              `[DynamicCPPage] Line chart series has no address: ${widget.id}/${s.id || index}`
+            );
+            return;
+          }
+
+          const device = getTCPDevice(s.device);
+
+          if (!device) {
+            console.warn(
+              `[DynamicCPPage] Line chart device not found for ${widget.id}/${s.id || index}: ${s.device}`
+            );
+            return;
+          }
+
+          const addressType = normalizeType(s.addressType);
+
+          if (!addressType) {
+            console.warn(
+              `[DynamicCPPage] Invalid line chart address type for ${widget.id}/${s.id || index}:`,
+              s.addressType
+            );
+            return;
+          }
+
+          if (!isValidPLCBinding(type, addressType)) {
+            console.warn(
+              `[DynamicCPPage] Invalid line chart binding: ${addressType}`
+            );
+            return;
+          }
+
+          const bindingId = `${widget.id}:${s.id || `series_${index + 1}`}`;
+
+          registerBinding({
+            widgetId: bindingId,
+            widgetType: type,
+            device,
+            addressType,
+            address: s.address,
+          });
+
+          console.log(
+            `[DynamicCPPage] Line chart PLC binding: ${bindingId} -> ${device.name} / ${addressType} / ${s.address}`
+          );
+        });
+
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // Existing single-value widgets
+      // ----------------------------------------------------------
       if (
         type !== "button" &&
         type !== "light" &&
@@ -1149,9 +1564,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
         return;
       }
 
-      const device = getTCPDevice(
-        p.device
-      );
+      const device = getTCPDevice(p.device);
 
       if (!device) {
         console.warn(
@@ -1160,8 +1573,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
         return;
       }
 
-      const addressType =
-        normalizeType(p.addressType);
+      const addressType = normalizeType(p.addressType);
 
       if (!addressType) {
         console.warn(
@@ -1171,7 +1583,6 @@ export default function DynamicCPPage({ cpNumber, user }) {
         return;
       }
 
-      // Enforce the same capability rules as Page Builder.
       if (!isValidPLCBinding(type, addressType)) {
         console.warn(
           `[DynamicCPPage] Invalid binding: ${type} cannot use ${addressType}`
@@ -1191,12 +1602,6 @@ export default function DynamicCPPage({ cpNumber, user }) {
         `[DynamicCPPage] PLC binding: ${widget.id} -> ${device.name} / ${addressType} / ${p.address}`
       );
     });
-
-    /*
-     * Do not put useTCPPLC() here.
-     * registerBinding() is a normal callback.
-     */
-
   }, [
     widgets,
     tcpDevices,
@@ -1206,6 +1611,212 @@ export default function DynamicCPPage({ cpNumber, user }) {
     isValidPLCBinding,
     registerBinding,
   ]);
+
+  // ============================================================
+  // CAPTURE REALTIME LINE CHART HISTORY
+  //
+  // IMPORTANT: each trend starts at elapsed = 0 seconds.
+  // The PLC trigger controls START/STOP. Timestamp is only used
+  // internally to calculate elapsed seconds and is not displayed.
+  // ============================================================
+
+  useEffect(() => {
+    if (!widgets.length) return;
+
+    const chartWidgets = widgets.filter(widget => widget?.type === "linechart");
+    if (!chartWidgets.length) return;
+
+    const now = Date.now();
+    const nextPoints = {};
+    const nextRunning = {};
+    const chartsToClear = new Set();
+    let shouldUpdate = false;
+
+    chartWidgets.forEach(widget => {
+      const p = widget.props || {};
+      const triggerConfigured =
+        p.triggerEnabled === true &&
+        p.triggerDevice &&
+        p.triggerAddress !== undefined &&
+        p.triggerAddress !== null &&
+        String(p.triggerAddress).trim() !== "";
+
+      let running = true;
+      let startedNow = false;
+
+      if (!triggerConfigured) {
+        // No trigger = trend starts automatically from 0 seconds.
+        running = true;
+        if (!chartStartTimeRef.current[widget.id]) {
+          chartStartTimeRef.current[widget.id] = now;
+          startedNow = true;
+        }
+
+        chartTriggerRef.current[widget.id] = {
+          running: true,
+          raw: undefined,
+        };
+      } else {
+        const triggerBindingId = `${widget.id}:__trend_trigger__`;
+        const rawTrigger = tcpValues[triggerBindingId];
+        const numericTrigger = Number(rawTrigger);
+        const startValue = Number(p.triggerStartValue ?? 1);
+        const stopValue = Number(p.triggerStopValue ?? 0);
+        const previous = chartTriggerRef.current[widget.id];
+        const previousRunning = previous?.running === true;
+        running = previousRunning;
+
+        if (Number.isFinite(numericTrigger)) {
+          if (numericTrigger === startValue) running = true;
+          else if (numericTrigger === stopValue) running = false;
+        }
+
+        // 0 -> 1 : new trend cycle. Start X-axis at exactly 0s.
+        if (running && !previousRunning) {
+          chartStartTimeRef.current[widget.id] = now;
+          startedNow = true;
+          chartsToClear.add(widget.id);
+        }
+
+        // If trigger is already ON when page first loads, start at 0s.
+        if (running && !chartStartTimeRef.current[widget.id]) {
+          chartStartTimeRef.current[widget.id] = now;
+          startedNow = true;
+          chartsToClear.add(widget.id);
+        }
+
+        // If stopped, preserve the last trend and do not add samples.
+        if (!running) {
+          chartTriggerRef.current[widget.id] = {
+            running: false,
+            raw: numericTrigger,
+          };
+          nextRunning[widget.id] = false;
+
+          if (
+            previous?.running !== false &&
+            Number.isFinite(numericTrigger)
+          ) {
+            console.log(
+              `[DynamicCPPage] Line chart trigger ${widget.id}: ${rawTrigger} -> STOPPED`
+            );
+          }
+          return;
+        }
+
+        chartTriggerRef.current[widget.id] = {
+          running: true,
+          raw: numericTrigger,
+        };
+        nextRunning[widget.id] = true;
+
+        if (
+          previous?.running !== true &&
+          Number.isFinite(numericTrigger)
+        ) {
+          console.log(
+            `[DynamicCPPage] Line chart trigger ${widget.id}: ${rawTrigger} -> RUNNING (elapsed reset to 0s)`
+          );
+        }
+      }
+
+      nextRunning[widget.id] = running;
+
+      // Do not wait for the PLC value to change. A new sample is created
+      // every configured sample interval while the trend is running.
+      const interval = Math.max(100, Number(p.sampleInterval ?? 500));
+      const lastSample = Number(chartSampleRef.current[widget.id] || 0);
+
+      // Always allow the first point of a new trend immediately.
+      if (!startedNow && now - lastSample < interval) return;
+
+      chartSampleRef.current[widget.id] = now;
+
+      const series = Array.isArray(p.series)
+        ? p.series.filter(s => s && s.enabled !== false)
+        : [];
+
+      const startTime = Number(chartStartTimeRef.current[widget.id] || now);
+      const elapsedSeconds = Math.max(0, (now - startTime) / 1000);
+      const maxDuration = Math.max(1, Number(p.historySeconds ?? 60));
+
+      // Do not record beyond the configured maximum trend duration.
+      if (elapsedSeconds > maxDuration) return;
+
+      const point = {
+        elapsed: elapsedSeconds,
+      };
+
+      let hasValue = false;
+
+      series.forEach((s, index) => {
+        const bindingId = `${widget.id}:${s.id || `series_${index + 1}`}`;
+        const numeric = Number(tcpValues[bindingId]);
+        if (Number.isFinite(numeric)) {
+          point[s.id || `series_${index + 1}`] = numeric;
+          hasValue = true;
+        }
+      });
+
+      if (hasValue) {
+        nextPoints[widget.id] = point;
+        shouldUpdate = true;
+
+        console.debug(
+          `[DynamicCPPage] Line chart sample ${widget.id}: ${elapsedSeconds.toFixed(2)}s`,
+          point
+        );
+      }
+    });
+
+    if (Object.keys(nextRunning).length) {
+      setChartRunning(previous => {
+        let changed = false;
+        const next = { ...previous };
+        Object.entries(nextRunning).forEach(([id, running]) => {
+          if (next[id] !== running) {
+            next[id] = running;
+            changed = true;
+          }
+        });
+        return changed ? next : previous;
+      });
+    }
+
+    if (!shouldUpdate && !chartsToClear.size) return;
+
+    setChartHistory(previous => {
+      const next = { ...previous };
+
+      chartWidgets.forEach(widget => {
+        const point = nextPoints[widget.id];
+        const p = widget.props || {};
+
+        if (!point) {
+          if (chartsToClear.has(widget.id)) {
+            next[widget.id] = [];
+          }
+          return;
+        }
+
+        const interval = Math.max(100, Number(p.sampleInterval ?? 500));
+        const maxPoints = Math.min(5000, Math.max(10, Math.ceil((Number(p.historySeconds ?? 60) * 1000) / interval) + 1));
+        const history = chartsToClear.has(widget.id)
+          ? []
+          : (Array.isArray(previous[widget.id]) ? previous[widget.id] : []);
+
+        // Keep only points from the current START cycle and max duration.
+        const maxDuration = Math.max(1, Number(p.historySeconds ?? 60));
+        const merged = [...history, point]
+          .filter(item => Number(item?.elapsed) >= 0 && Number(item?.elapsed) <= maxDuration)
+          .slice(-maxPoints);
+
+        next[widget.id] = merged;
+      });
+
+      return next;
+    });
+  }, [widgets, tcpValues]);
 
   // ============================================================
   // SCALE
@@ -1652,6 +2263,21 @@ export default function DynamicCPPage({ cpNumber, user }) {
                   key={id}
                   widget={widget}
                   value={runtimeValue}
+                />
+              );
+            }
+
+            // ----------------------------------------------------
+            // LINE CHART
+            // ----------------------------------------------------
+
+            if (type === "linechart") {
+              return (
+                <RuntimeLineChart
+                  key={id}
+                  widget={widget}
+                  history={chartHistory[id] || []}
+                  running={chartRunning[id] !== false}
                 />
               );
             }

@@ -157,6 +157,30 @@ const GAUGE_ADDRESS_TYPES = [
   { value: "holding_register", label: "Holding Register (FC03 Read)" },
 ];
 
+const LINECHART_ADDRESS_TYPES = [
+  { value: "coil", label: "Coil (FC01 Read)" },
+  { value: "discrete_input", label: "Discrete Input (FC02 Read)" },
+  { value: "holding_register", label: "Holding Register (FC03 Read)" },
+  { value: "input_register", label: "Input Register (FC04 Read)" },
+];
+
+const LINECHART_SERIES_COLORS = [
+  "#00BFFF",
+  "#EF4444",
+  "#22C55E",
+  "#FFB020",
+];
+
+const createLineChartSeries = (index = 0) => ({
+  id: `series_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 6)}`,
+  label: index === 0 ? "REALTIME" : `SERIES ${index + 1}`,
+  device: "",
+  addressType: "holding_register",
+  address: "",
+  color: LINECHART_SERIES_COLORS[index % LINECHART_SERIES_COLORS.length],
+  enabled: true,
+});
+
 
 function GaugeTypeIcon({ type = "temp", color = "#00BFFF", size = 28 }) {
   const common = {
@@ -384,7 +408,61 @@ const COMPONENT_TYPES = [
       height: 190,
       visual: { ...DEFAULT_VISUAL }
     }
+  },
+  {
+    type: "linechart",
+    label: "Line Chart",
+    icon: "📈",
+    desc: "Realtime industrial process trend",
+    defaultProps: {
+      title: "PROCESS TREND",
+      unit: "",
+
+      // Trend history
+      historySeconds: 60,
+      sampleInterval: 500,
+
+      // Trend trigger
+      // When enabled: trigger = 1 starts recording, trigger = 0 stops recording.
+      triggerEnabled: false,
+      triggerDevice: "",
+      triggerAddressType: "holding_register",
+      triggerAddress: "",
+      triggerStartValue: 1,
+      triggerStopValue: 0,
+      clearHistoryOnStart: true,
+
+      // Y axis
+      autoScale: true,
+      yMin: 0,
+      yMax: 100,
+      decimals: 1,
+
+      // Display
+      showGrid: true,
+      showLegend: true,
+      showCurrentValue: true,
+      showTimeAxis: true,
+
+      // Appearance
+      backgroundColor: "#071421",
+      borderColor: "#123B5A",
+      gridColor: "#16324A",
+      textColor: "#FFFFFF",
+      labelColor: "#7F9DB8",
+      lineWidth: 1.8,
+
+      // Start with one realtime series. Additional series can be added from the property panel.
+      series: [
+        createLineChartSeries(0),
+      ],
+
+      width: 420,
+      height: 220,
+      visual: { ...DEFAULT_VISUAL },
+    },
   }
+
 ];
 
 const snap = (v) => Math.round(v / GRID) * GRID;
@@ -696,6 +774,178 @@ function WidgetPreview({ widget, onUpdate }) {
       </div>
     );
   }
+
+  // ── PREVIEW LINE CHART ─────────────────────────────────────────────
+  if (type === "linechart") {
+    const series = Array.isArray(p.series)
+      ? p.series.filter(s => s && s.enabled !== false)
+      : [];
+
+    const W = 520;
+    const H = 250;
+    const left = 42;
+    const right = 118;
+    const top = 34;
+    const bottom = 27;
+    const chartW = W - left - right;
+    const chartH = H - top - bottom;
+    const previewPoints = 42;
+
+    const previewSeries = series.map((s, seriesIndex) => {
+      const points = Array.from({ length: previewPoints }, (_, i) => {
+        const phase = seriesIndex * 0.85;
+        const trend = seriesIndex === 0 ? i * 0.12 : seriesIndex === 1 ? -i * 0.05 : i * 0.03;
+        return 50 + trend + Math.sin(i * 0.28 + phase) * (8 + seriesIndex * 2) + Math.sin(i * 0.08 + phase) * 4;
+      });
+      return { ...s, points };
+    });
+
+    const allValues = previewSeries.flatMap(s => s.points);
+    let min = p.autoScale !== false ? Math.min(...allValues) : Number(p.yMin ?? 0);
+    let max = p.autoScale !== false ? Math.max(...allValues) : Number(p.yMax ?? 100);
+    if (!Number.isFinite(min)) min = 0;
+    if (!Number.isFinite(max) || max <= min) max = min + 1;
+    if (p.autoScale !== false) {
+      const pad = Math.max(1, (max - min) * 0.12);
+      min -= pad;
+      max += pad;
+    }
+
+    const yFor = value => top + chartH - ((value - min) / (max - min)) * chartH;
+    const pointsFor = values => values.map((value, index) => {
+      const x = left + (index / Math.max(1, values.length - 1)) * chartW;
+      return `${x},${yFor(value)}`;
+    }).join(" ");
+
+    const decimals = Math.max(0, Number(p.decimals ?? 1));
+    const currentValues = previewSeries.map(s => s.points[s.points.length - 1]);
+
+    return (
+      <div
+        className="w-full h-full overflow-hidden rounded-lg"
+        style={{
+          background: p.backgroundColor || "#071421",
+          border: `1px solid ${p.borderColor || "#123B5A"}`,
+          boxSizing: "border-box",
+        }}
+      >
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" preserveAspectRatio="none">
+          <text
+            x="12"
+            y="18"
+            fill={p.textColor || "#FFFFFF"}
+            fontSize="10"
+            fontWeight="700"
+            letterSpacing="1"
+          >
+            {p.title || "PROCESS TREND"}
+          </text>
+
+          {p.showLegend !== false && previewSeries.map((s, index) => (
+            <g key={`legend-${s.id}`}>
+              <line
+                x1={W - 112}
+                y1={10 + index * 12}
+                x2={W - 104}
+                y2={10 + index * 12}
+                stroke={s.color || LINECHART_SERIES_COLORS[index % 4]}
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+              <text
+                x={W - 100}
+                y={13 + index * 12}
+                fill={s.color || LINECHART_SERIES_COLORS[index % 4]}
+                fontSize="7"
+                fontWeight="700"
+              >
+                {s.label || `SERIES ${index + 1}`}
+              </text>
+            </g>
+          ))}
+
+          {p.showCurrentValue !== false && previewSeries.map((s, index) => (
+            <text
+              key={`value-${s.id}`}
+              x={W - 8}
+              y={44 + index * 15}
+              textAnchor="end"
+              fill={s.color || LINECHART_SERIES_COLORS[index % 4]}
+              fontSize="8"
+              fontWeight="700"
+            >
+              {currentValues[index].toFixed(decimals)}{p.unit ? ` ${p.unit}` : ""}
+            </text>
+          ))}
+
+          {p.showGrid !== false && [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
+            const y = top + chartH - ratio * chartH;
+            return (
+              <line
+                key={`h-${index}`}
+                x1={left}
+                y1={y}
+                x2={W - right}
+                y2={y}
+                stroke={p.gridColor || "#16324A"}
+                strokeWidth="0.7"
+              />
+            );
+          })}
+
+          {p.showGrid !== false && [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
+            const x = left + ratio * chartW;
+            return (
+              <line
+                key={`v-${index}`}
+                x1={x}
+                y1={top}
+                x2={x}
+                y2={top + chartH}
+                stroke={p.gridColor || "#16324A"}
+                strokeWidth="0.7"
+              />
+            );
+          })}
+
+          <text x="5" y={top + 5} fill={p.labelColor || "#7F9DB8"} fontSize="7">
+            {max.toFixed(decimals > 0 ? 1 : 0)}
+          </text>
+          <text x="5" y={top + chartH} fill={p.labelColor || "#7F9DB8"} fontSize="7">
+            {min.toFixed(decimals > 0 ? 1 : 0)}
+          </text>
+
+          {previewSeries.map((s, index) => (
+            <polyline
+              key={s.id}
+              points={pointsFor(s.points)}
+              fill="none"
+              stroke={s.color || LINECHART_SERIES_COLORS[index % 4]}
+              strokeWidth={Number(p.lineWidth ?? 1.8)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity="0.95"
+            />
+          ))}
+
+          {p.showTimeAxis !== false && (
+            <>
+              <text x={left} y={H - 7} fill={p.labelColor || "#7F9DB8"} fontSize="7">
+                0s
+              </text>
+              <text x={left + chartW / 2} y={H - 7} textAnchor="middle" fill={p.labelColor || "#7F9DB8"} fontSize="7">
+                {Math.round((p.historySeconds || 60) / 2)}s
+              </text>
+              <text x={W - right} y={H - 7} textAnchor="end" fill={p.labelColor || "#7F9DB8"} fontSize="7">
+                {p.historySeconds || 60}s
+              </text>
+            </>
+          )}
+        </svg>
+      </div>
+    );
+  }
+
 
   // ── PREVIEW GAUGE ─────────────────────────────────────────────────
   if (type === "gauge") {
@@ -1594,6 +1844,640 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
         </PropSection>
       </>
     )}
+
+    {type === "linechart" && (
+      <>
+        <PropSection title="Chart">
+          <PropInput
+            label="Title"
+            value={p.title || "PROCESS TREND"}
+            onChange={v => set("title", v)}
+          />
+          <PropInput
+            label="Unit"
+            value={p.unit || ""}
+            onChange={v => set("unit", v)}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Max Duration (sec)"
+              type="number"
+              min={5}
+              max={3600}
+              value={p.historySeconds ?? 60}
+              onChange={v => set("historySeconds", Number(v))}
+            />
+            <PropInput
+              label="Sample (ms)"
+              type="number"
+              min={100}
+              max={5000}
+              value={p.sampleInterval ?? 500}
+              onChange={v => set("sampleInterval", Number(v))}
+            />
+          </div>
+          <PropInput
+            label="Decimals"
+            type="number"
+            min={0}
+            max={4}
+            value={p.decimals ?? 1}
+            onChange={v => set("decimals", Number(v))}
+          />
+        </PropSection>
+
+        <PropSection title="Y Axis">
+          <PropInput
+            label="Auto Scale"
+            type="checkbox"
+            value={p.autoScale !== false}
+            onChange={v => set("autoScale", v)}
+          />
+          {p.autoScale === false && (
+            <div className="grid grid-cols-2 gap-2">
+              <PropInput
+                label="Min"
+                type="number"
+                value={p.yMin ?? 0}
+                onChange={v => set("yMin", Number(v))}
+              />
+              <PropInput
+                label="Max"
+                type="number"
+                value={p.yMax ?? 100}
+                onChange={v => set("yMax", Number(v))}
+              />
+            </div>
+          )}
+        </PropSection>
+
+        <PropSection title="Trend Trigger">
+          <div className="text-[8px] text-[#64748B] leading-relaxed">
+            When enabled, the configured trigger address controls the trend: value 1 starts recording and value 0 stops recording.
+          </div>
+
+          <PropInput
+            label="Enable Trigger"
+            type="checkbox"
+            value={p.triggerEnabled === true}
+            onChange={v => set("triggerEnabled", v)}
+          />
+
+          <div>
+            <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+              Trigger Device
+            </label>
+            <select
+              value={p.triggerDevice || ""}
+              onChange={e => set("triggerDevice", e.target.value)}
+              className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+            >
+              <option value="">Select device...</option>
+              {availableDevices
+                .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                .map(dev => (
+                  <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
+                    {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <PropInput
+            label="Trigger Address Type"
+            options={LINECHART_ADDRESS_TYPES}
+            value={p.triggerAddressType || "holding_register"}
+            onChange={v => set("triggerAddressType", v)}
+          />
+
+          <PropInput
+            label="Trigger Address"
+            value={p.triggerAddress ?? ""}
+            onChange={v => set("triggerAddress", v)}
+            placeholder="0 / 10 / 100"
+          />
+
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Start Value"
+              type="number"
+              value={p.triggerStartValue ?? 1}
+              onChange={v => set("triggerStartValue", Number(v))}
+            />
+            <PropInput
+              label="Stop Value"
+              type="number"
+              value={p.triggerStopValue ?? 0}
+              onChange={v => set("triggerStopValue", Number(v))}
+            />
+          </div>
+
+          <PropInput
+            label="Clear History On Start"
+            type="checkbox"
+            value={p.clearHistoryOnStart !== false}
+            onChange={v => set("clearHistoryOnStart", v)}
+          />
+        </PropSection>
+
+        <PropSection title="Realtime Series">
+          <div className="text-[8px] text-[#64748B]">
+            One realtime signal is shown by default. Add more PLC series only when needed.
+          </div>
+
+          {(Array.isArray(p.series) ? p.series : []).map((series, index) => {
+            const updateSeries = (key, value) => {
+              const next = [...(Array.isArray(p.series) ? p.series : [])];
+              next[index] = { ...next[index], [key]: value };
+              set("series", next);
+            };
+
+            return (
+              <div
+                key={series.id || `series-${index}`}
+                className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2.5 flex flex-col gap-2"
+              >
+                <div className="flex items-center justify-between gap-2 pb-1 border-b border-[#1E293B]">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
+                      style={{ background: series.color || LINECHART_SERIES_COLORS[index % 4], boxShadow: `0 0 7px ${series.color || LINECHART_SERIES_COLORS[index % 4]}` }}
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[9px] text-white font-bold truncate">SERIES {index + 1}</div>
+                      <div className="text-[7px] text-[#64748B] uppercase tracking-wider">Realtime PLC signal</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[8px] text-[#CBD5E1]">
+                      <input
+                        type="checkbox"
+                        checked={series.enabled !== false}
+                        onChange={e => updateSeries("enabled", e.target.checked)}
+                        className="accent-[#22C55E]"
+                      />
+                      ON
+                    </label>
+                    {(Array.isArray(p.series) ? p.series : []).length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = [...(Array.isArray(p.series) ? p.series : [])];
+                          next.splice(index, 1);
+                          set("series", next);
+                        }}
+                        className="w-6 h-6 rounded border border-[#334155] text-[#64748B] hover:text-[#EF4444] hover:border-[#EF4444]/60 hover:bg-[#1A0F14] text-[11px] transition-colors"
+                        title="Remove series"
+                      >
+                        ×
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <PropInput
+                  label="Label"
+                  value={series.label || `SERIES ${index + 1}`}
+                  onChange={v => updateSeries("label", v)}
+                />
+
+                <div>
+                  <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+                    Device
+                  </label>
+                  <select
+                    value={series.device || ""}
+                    onChange={e => updateSeries("device", e.target.value)}
+                    className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+                  >
+                    <option value="">Select device...</option>
+                    {availableDevices
+                      .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                      .map(dev => (
+                        <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
+                          {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <PropInput
+                  label="Address Type"
+                  options={LINECHART_ADDRESS_TYPES}
+                  value={series.addressType || "holding_register"}
+                  onChange={v => updateSeries("addressType", v)}
+                />
+
+                <PropInput
+                  label="Address"
+                  value={series.address ?? ""}
+                  onChange={v => updateSeries("address", v)}
+                  placeholder="0 / 10 / 100"
+                />
+
+                <PropInput
+                  label="Line Color"
+                  type="color"
+                  value={series.color || LINECHART_SERIES_COLORS[index % 4]}
+                  onChange={v => updateSeries("color", v)}
+                />
+              </div>
+            );
+          })}
+
+          {(Array.isArray(p.series) ? p.series : []).length < 4 && (
+            <button
+              type="button"
+              onClick={() => {
+                const current = Array.isArray(p.series) ? p.series : [];
+                set("series", [...current, createLineChartSeries(current.length)]);
+              }}
+              className="h-8 rounded-lg border border-[#334155] bg-[#0F172A] text-[#22C55E] text-[9px] font-bold hover:bg-[#1E293B] transition-colors"
+            >
+              + ADD SERIES
+            </button>
+          )}
+        </PropSection>
+
+        <PropSection title="Display">
+          <PropInput
+            label="Show Grid"
+            type="checkbox"
+            value={p.showGrid !== false}
+            onChange={v => set("showGrid", v)}
+          />
+          <PropInput
+            label="Show Legend"
+            type="checkbox"
+            value={p.showLegend !== false}
+            onChange={v => set("showLegend", v)}
+          />
+          <PropInput
+            label="Show Current Value"
+            type="checkbox"
+            value={p.showCurrentValue !== false}
+            onChange={v => set("showCurrentValue", v)}
+          />
+          <PropInput
+            label="Show Time Axis"
+            type="checkbox"
+            value={p.showTimeAxis !== false}
+            onChange={v => set("showTimeAxis", v)}
+          />
+        </PropSection>
+
+        <PropSection title="Appearance">
+          <div className="flex flex-col gap-2">
+
+            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+              <PropInput
+                label="Background"
+                type="color"
+                value={p.backgroundColor || "#071421"}
+                onChange={v => set("backgroundColor", v)}
+              />
+            </div>
+
+            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+              <PropInput
+                label="Border"
+                type="color"
+                value={p.borderColor || "#123B5A"}
+                onChange={v => set("borderColor", v)}
+              />
+            </div>
+
+            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+              <PropInput
+                label="Grid"
+                type="color"
+                value={p.gridColor || "#16324A"}
+                onChange={v => set("gridColor", v)}
+              />
+            </div>
+
+            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+              <PropInput
+                label="Axis Text"
+                type="color"
+                value={p.labelColor || "#7F9DB8"}
+                onChange={v => set("labelColor", v)}
+              />
+            </div>
+
+            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+              <PropInput
+                label="Chart Text"
+                type="color"
+                value={p.textColor || "#FFFFFF"}
+                onChange={v => set("textColor", v)}
+              />
+            </div>
+
+            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+              <PropInput
+                label="Line Width"
+                type="number"
+                min={1}
+                max={5}
+                step={0.1}
+                value={p.lineWidth ?? 1.8}
+                onChange={v => set("lineWidth", Number(v))}
+              />
+            </div>
+
+          </div>
+        </PropSection>
+      </>
+    )}
+
+    {type === "gauge" && (
+      <>
+
+
+        <PropSection title="Device / Address">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+                Device
+              </label>
+              <select
+                value={p.device || ""}
+                onChange={e => set("device", e.target.value)}
+                className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+              >
+                <option value="">Select device...</option>
+                {availableDevices
+                  .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                  .map((dev) => (
+                    <option
+                      key={`${dev.type || "TCP"}-${dev.name}`}
+                      value={dev.name}
+                    >
+                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <PropInput
+              label="Address"
+              value={p.address || ""}
+              onChange={v => set("address", v)}
+              placeholder="D100 / M100"
+            />
+          </div>
+        </PropSection>
+                <PropSection title="Address Type">
+          <PropInput
+              label="Address Type"
+              options={GAUGE_ADDRESS_TYPES}
+              value={p.addressType || "holding_register"}
+              onChange={v => set("addressType", v)}
+            />
+        </PropSection>
+
+<PropSection title="Data Binding">
+          <PropInput
+            label="Variable"
+            value={p.variable || ""}
+            onChange={v => set("variable", v)}
+          />
+          <div className="text-[8px] text-[#64748B] mt-0.5">
+            Gauge is READ only and uses Holding Register only.
+            Runtime reads the Holding Register numeric value and binds it to the gauge.
+          </div>
+        </PropSection>
+
+        <PropSection title="Gauge Type & Header">
+          <div className="flex flex-col gap-1">
+            <span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">
+              Instrument
+            </span>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              {GAUGE_TYPES.map(item => {
+                const active = (p.gaugeType || "temp") === item.value;
+
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    onClick={() => set("gaugeType", item.value)}
+                    className="h-9 rounded-lg border flex items-center gap-2 px-2 text-left transition-all"
+                    style={{
+                      background: active ? "rgba(0,191,255,0.10)" : "#0F172A",
+                      borderColor: active ? "#00BFFF" : "#334155",
+                      color: active ? "#FFFFFF" : "#94A3B8",
+                      boxShadow: active ? "0 0 10px rgba(0,191,255,0.12)" : "none"
+                    }}
+                  >
+                    <span
+                      className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
+                      style={{
+                        background: active ? "rgba(0,191,255,0.12)" : "#07111F",
+                        color: active ? "#00BFFF" : "#64748B"
+                      }}
+                    >
+                      <GaugeTypeIcon
+                        type={item.value}
+                        color={active ? "#00BFFF" : "#64748B"}
+                        size={17}
+                      />
+                    </span>
+
+                    <span className="text-[9px] font-bold truncate">
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <PropInput
+            label="Title"
+            value={p.title || "VALUE"}
+            onChange={v => set("title", v)}
+          />
+
+          <PropInput
+            label="Unit"
+            value={p.unit || ""}
+            onChange={v => set("unit", v)}
+          />
+          <div className="text-[8px] text-[#64748B] -mt-1">
+            Suggested: {GAUGE_TYPES.find(g => g.value === (p.gaugeType || "temp"))?.unit || ""}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Icon Size"
+              type="number"
+              min={12}
+              max={48}
+              value={p.iconSize ?? 25}
+              onChange={v => set("iconSize", Number(v))}
+            />
+
+            <PropInput
+              label="Title Size"
+              type="number"
+              min={7}
+              max={24}
+              value={p.titleSize ?? 10}
+              onChange={v => set("titleSize", Number(v))}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Show Icon"
+              type="checkbox"
+              value={p.showIcon !== false}
+              onChange={v => set("showIcon", v)}
+            />
+
+            <PropInput
+              label="Show Title"
+              type="checkbox"
+              value={p.showTitle !== false}
+              onChange={v => set("showTitle", v)}
+            />
+          </div>
+        </PropSection>
+
+        <PropSection title="Value Range">
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Min"
+              type="number"
+              value={p.min ?? 0}
+              onChange={v => set("min", Number(v))}
+            />
+
+            <PropInput
+              label="Max"
+              type="number"
+              value={p.max ?? 100}
+              onChange={v => set("max", Number(v))}
+            />
+          </div>
+
+          <PropInput
+            label="Decimals"
+            type="number"
+            min={0}
+            max={4}
+            value={p.decimals ?? 1}
+            onChange={v => set("decimals", Number(v))}
+          />
+        </PropSection>
+
+        <PropSection title="Simulation State">
+          <PropInput
+            label="Value"
+            type="number"
+            value={p.simulationValue ?? p.min ?? 0}
+            min={Number(p.min ?? 0)}
+            max={Number(p.max ?? 100)}
+            onChange={v => set("simulationValue", Number(v))}
+          />
+
+          <div className="text-[8px] text-[#64748B] mt-0.5">
+            Builder preview only. Runtime value will come from the bound variable.
+          </div>
+        </PropSection>
+
+        <PropSection title="Display">
+          <PropInput
+            label="Show Value"
+            type="checkbox"
+            value={p.showValue !== false}
+            onChange={v => set("showValue", v)}
+          />
+
+          <PropInput
+            label="Show Scale"
+            type="checkbox"
+            value={p.showScale !== false}
+            onChange={v => set("showScale", v)}
+          />
+
+          <PropInput
+            label="Show Min / Max"
+            type="checkbox"
+            value={p.showMinMax !== false}
+            onChange={v => set("showMinMax", v)}
+          />
+
+          <PropInput
+            label="Glow"
+            type="checkbox"
+            value={p.glow !== false}
+            onChange={v => set("glow", v)}
+          />
+        </PropSection>
+
+        <PropSection title="Appearance">
+          <PropInput
+            label="Gauge Background"
+            type="color"
+            value={p.backgroundColor || "#071421"}
+            onChange={v => set("backgroundColor", v)}
+          />
+
+          <PropInput
+            label="Gauge Border"
+            type="color"
+            value={p.borderColor || "#18334A"}
+            onChange={v => set("borderColor", v)}
+          />
+
+          <PropInput
+            label="Progress Color"
+            type="color"
+            value={p.progressColor || "#00BFFF"}
+            onChange={v => set("progressColor", v)}
+          />
+
+          <PropInput
+            label="Track Color"
+            type="color"
+            value={p.trackColor || "#172B3F"}
+            onChange={v => set("trackColor", v)}
+          />
+
+          <PropInput
+            label="Text / Value Color"
+            type="color"
+            value={p.textColor || "#FFFFFF"}
+            onChange={v => set("textColor", v)}
+          />
+
+          <PropInput
+            label="Icon Color"
+            type="color"
+            value={p.iconColor || p.progressColor || "#00BFFF"}
+            onChange={v => set("iconColor", v)}
+          />
+
+          <PropInput
+            label="Unit Color"
+            type="color"
+            value={p.unitColor || p.progressColor || "#00BFFF"}
+            onChange={v => set("unitColor", v)}
+          />
+
+          <PropInput
+            label="Tick / Scale Color"
+            type="color"
+            value={p.labelColor || "#7F9DB8"}
+            onChange={v => set("labelColor", v)}
+          />
+        </PropSection>
+      </>
+    )}
+
 
     {type === "gauge" && (
       <>
