@@ -781,171 +781,508 @@ function WidgetPreview({ widget, onUpdate }) {
       ? p.series.filter(s => s && s.enabled !== false)
       : [];
 
-    const W = 520;
-    const H = 250;
-    const left = 42;
-    const right = 118;
-    const top = 34;
-    const bottom = 27;
-    const chartW = W - left - right;
-    const chartH = H - top - bottom;
-    const previewPoints = 42;
+    /*
+     * Industrial trend-card preview.
+     * NOTE:
+     * - This only changes the Page Builder preview appearance.
+     * - Data binding, trigger logic, history, series configuration and
+     *   runtime behavior are intentionally untouched.
+     */
+    const W = 720;
+    const H = 220;
 
+    // Layout based on the reference HMI style:
+    // left = Y axis, center = trend plot, right = realtime/value panel.
+    const left = 48;
+    const plotRight = 500;
+    const separatorX = 520;
+    const right = 18;
+    const top = 52;
+    const bottom = 28;
+    const chartW = plotRight - left;
+    const chartH = H - top - bottom;
+    const previewPoints = 52;
+
+    const chartId = `lineChart-${widget.id || "preview"}`;
+
+    // Keep the preview data synthetic; this is only to make the builder
+    // visually represent a realistic industrial trend.
     const previewSeries = series.map((s, seriesIndex) => {
       const points = Array.from({ length: previewPoints }, (_, i) => {
-        const phase = seriesIndex * 0.85;
-        const trend = seriesIndex === 0 ? i * 0.12 : seriesIndex === 1 ? -i * 0.05 : i * 0.03;
-        return 50 + trend + Math.sin(i * 0.28 + phase) * (8 + seriesIndex * 2) + Math.sin(i * 0.08 + phase) * 4;
+        let value;
+
+        if (seriesIndex === 0) {
+          // Low steady area -> small disturbance -> sharp process step.
+          if (i < 14) {
+            value = 28 + Math.sin(i * 0.45) * 0.8;
+          } else if (i < 17) {
+            value = 28 + (i - 14) * 1.4;
+          } else if (i < 31) {
+            value = 30 + Math.sin(i * 0.32) * 0.7;
+          } else if (i < 35) {
+            value = 30 + (i - 31) * 18;
+          } else {
+            value = 92 + Math.sin(i * 0.22) * 1.8 + (i - 35) * 0.05;
+          }
+        } else if (seriesIndex === 1) {
+          // Secondary signal with a different industrial step profile.
+          if (i < 7) {
+            value = 4 + Math.sin(i * 0.8) * 2;
+          } else if (i < 11) {
+            value = 70 + Math.sin(i * 0.55) * 7;
+          } else if (i < 23) {
+            value = 0;
+          } else if (i < 38) {
+            value = 48 + Math.sin(i * 0.3) * 3;
+          } else if (i < 43) {
+            value = 18 + Math.sin(i * 0.5) * 4;
+          } else if (i < 48) {
+            value = 52 + Math.sin(i * 0.28) * 4;
+          } else {
+            value = 0;
+          }
+        } else {
+          value =
+            50 +
+            Math.sin(i * 0.24 + seriesIndex) * (8 + seriesIndex * 2) +
+            Math.sin(i * 0.07 + seriesIndex) * 4;
+        }
+
+        return value;
       });
+
       return { ...s, points };
     });
 
     const allValues = previewSeries.flatMap(s => s.points);
-    let min = p.autoScale !== false ? Math.min(...allValues) : Number(p.yMin ?? 0);
-    let max = p.autoScale !== false ? Math.max(...allValues) : Number(p.yMax ?? 100);
+    let min = p.autoScale !== false
+      ? Math.min(...allValues)
+      : Number(p.yMin ?? 0);
+    let max = p.autoScale !== false
+      ? Math.max(...allValues)
+      : Number(p.yMax ?? 100);
+
     if (!Number.isFinite(min)) min = 0;
     if (!Number.isFinite(max) || max <= min) max = min + 1;
+
     if (p.autoScale !== false) {
-      const pad = Math.max(1, (max - min) * 0.12);
+      const range = max - min;
+      const pad = Math.max(1, range * 0.10);
       min -= pad;
       max += pad;
     }
 
-    const yFor = value => top + chartH - ((value - min) / (max - min)) * chartH;
-    const pointsFor = values => values.map((value, index) => {
-      const x = left + (index / Math.max(1, values.length - 1)) * chartW;
-      return `${x},${yFor(value)}`;
-    }).join(" ");
+    const yFor = value =>
+      top + chartH - ((value - min) / (max - min)) * chartH;
+
+    const pointsFor = values =>
+      values
+        .map((value, index) => {
+          const x =
+            left +
+            (index / Math.max(1, values.length - 1)) * chartW;
+          return `${x},${yFor(value)}`;
+        })
+        .join(" ");
 
     const decimals = Math.max(0, Number(p.decimals ?? 1));
-    const currentValues = previewSeries.map(s => s.points[s.points.length - 1]);
+    const currentValues = previewSeries.map(
+      s => s.points[s.points.length - 1]
+    );
+
+    const background = p.backgroundColor || "#071421";
+    const borderColor = p.borderColor || "#123B5A";
+    const gridColor = p.gridColor || "#16324A";
+    const textColor = p.textColor || "#FFFFFF";
+    const labelColor = p.labelColor || "#7F9DB8";
+    const unit = p.unit || "";
+
+    const formatValue = value =>
+      Number(value).toFixed(decimals);
+
+    const gridRatios = [0, 0.25, 0.5, 0.75, 1];
 
     return (
       <div
-        className="w-full h-full overflow-hidden rounded-lg"
+        className="w-full h-full overflow-hidden rounded-xl"
         style={{
-          background: p.backgroundColor || "#071421",
-          border: `1px solid ${p.borderColor || "#123B5A"}`,
+          background: `
+            radial-gradient(circle at 24% 40%, rgba(0,191,255,0.055), transparent 35%),
+            linear-gradient(180deg, #071421 0%, ${background} 100%)
+          `,
+          border: `1px solid ${borderColor}`,
+          boxShadow:
+            "inset 0 1px 0 rgba(255,255,255,0.025), 0 0 18px rgba(0,0,0,0.22)",
           boxSizing: "border-box",
         }}
       >
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" preserveAspectRatio="none">
-          <text
-            x="12"
-            y="18"
-            fill={p.textColor || "#FFFFFF"}
-            fontSize="10"
-            fontWeight="700"
-            letterSpacing="1"
-          >
-            {p.title || "PROCESS TREND"}
-          </text>
-
-          {p.showLegend !== false && previewSeries.map((s, index) => (
-            <g key={`legend-${s.id}`}>
-              <line
-                x1={W - 112}
-                y1={10 + index * 12}
-                x2={W - 104}
-                y2={10 + index * 12}
-                stroke={s.color || LINECHART_SERIES_COLORS[index % 4]}
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-              <text
-                x={W - 100}
-                y={13 + index * 12}
-                fill={s.color || LINECHART_SERIES_COLORS[index % 4]}
-                fontSize="7"
-                fontWeight="700"
-              >
-                {s.label || `SERIES ${index + 1}`}
-              </text>
-            </g>
-          ))}
-
-          {p.showCurrentValue !== false && previewSeries.map((s, index) => (
-            <text
-              key={`value-${s.id}`}
-              x={W - 8}
-              y={44 + index * 15}
-              textAnchor="end"
-              fill={s.color || LINECHART_SERIES_COLORS[index % 4]}
-              fontSize="8"
-              fontWeight="700"
+        <svg
+          viewBox={`0 0 ${W} ${H}`}
+          className="w-full h-full"
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <filter
+              id={`${chartId}-glow`}
+              x="-50%"
+              y="-100%"
+              width="200%"
+              height="300%"
+              colorInterpolationFilters="sRGB"
             >
-              {currentValues[index].toFixed(decimals)}{p.unit ? ` ${p.unit}` : ""}
+              <feGaussianBlur stdDeviation="2.2" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+
+            <linearGradient
+              id={`${chartId}-panel`}
+              x1="0"
+              y1="0"
+              x2="1"
+              y2="0"
+            >
+              <stop offset="0%" stopColor="#0A1828" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="#06101D" stopOpacity="0.72" />
+            </linearGradient>
+          </defs>
+
+          {/* ───────── HEADER ───────── */}
+          <text
+            x="48"
+            y="22"
+            fill={textColor}
+            fontSize="11"
+            fontWeight="700"
+            letterSpacing="0.9"
+          >
+            {(p.title || "PROCESS TREND").toUpperCase()}
+          </text>
+
+          {/* Unit at the upper-left of the trend plot */}
+          {unit && (
+            <text
+              x="10"
+              y="28"
+              fill={labelColor}
+              fontSize="8"
+              fontWeight="600"
+            >
+              {unit}
             </text>
-          ))}
+          )}
 
-          {p.showGrid !== false && [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
-            const y = top + chartH - ratio * chartH;
-            return (
-              <line
-                key={`h-${index}`}
-                x1={left}
-                y1={y}
-                x2={W - right}
-                y2={y}
-                stroke={p.gridColor || "#16324A"}
-                strokeWidth="0.7"
-              />
-            );
-          })}
-
-          {p.showGrid !== false && [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
-            const x = left + ratio * chartW;
-            return (
-              <line
-                key={`v-${index}`}
-                x1={x}
-                y1={top}
-                x2={x}
-                y2={top + chartH}
-                stroke={p.gridColor || "#16324A"}
-                strokeWidth="0.7"
-              />
-            );
-          })}
-
-          <text x="5" y={top + 5} fill={p.labelColor || "#7F9DB8"} fontSize="7">
-            {max.toFixed(decimals > 0 ? 1 : 0)}
-          </text>
-          <text x="5" y={top + chartH} fill={p.labelColor || "#7F9DB8"} fontSize="7">
-            {min.toFixed(decimals > 0 ? 1 : 0)}
-          </text>
-
-          {previewSeries.map((s, index) => (
-            <polyline
-              key={s.id}
-              points={pointsFor(s.points)}
+          {/* Small industrial status badge */}
+          <g transform="translate(585 9)">
+            <rect
+              x="0"
+              y="0"
+              width="106"
+              height="22"
+              rx="7"
+              fill="#063622"
+              fillOpacity="0.88"
+              stroke="#0B5B3A"
+              strokeWidth="0.6"
+            />
+            <path
+              d="M10 12 L13 12 L15 7 L18 16 L21 10 L24 12 L29 12"
               fill="none"
-              stroke={s.color || LINECHART_SERIES_COLORS[index % 4]}
-              strokeWidth={Number(p.lineWidth ?? 1.8)}
+              stroke="#39FF88"
+              strokeWidth="1.25"
               strokeLinecap="round"
               strokeLinejoin="round"
-              opacity="0.95"
             />
-          ))}
+            <text
+              x="34"
+              y="14"
+              fill="#62F6A0"
+              fontSize="8"
+              fontWeight="700"
+              letterSpacing="0.5"
+            >
+              REALTIME
+            </text>
+            <text
+              x="92"
+              y="14"
+              fill="#39FF88"
+              fontSize="9"
+              fontWeight="800"
+            >
+              +
+            </text>
+          </g>
 
+          {/* ───────── TREND GRID ───────── */}
+          {p.showGrid !== false &&
+            gridRatios.map((ratio, index) => {
+              const y = top + chartH - ratio * chartH;
+              return (
+                <line
+                  key={`h-${index}`}
+                  x1={left}
+                  y1={y}
+                  x2={plotRight}
+                  y2={y}
+                  stroke={gridColor}
+                  strokeWidth="0.65"
+                  strokeDasharray="2 5"
+                  opacity={index === 0 ? 0.9 : 0.72}
+                />
+              );
+            })}
+
+          {p.showGrid !== false &&
+            gridRatios.map((ratio, index) => {
+              const x = left + ratio * chartW;
+              return (
+                <line
+                  key={`v-${index}`}
+                  x1={x}
+                  y1={top}
+                  x2={x}
+                  y2={top + chartH}
+                  stroke={gridColor}
+                  strokeWidth="0.65"
+                  strokeDasharray="2 5"
+                  opacity="0.62"
+                />
+              );
+            })}
+
+          {/* ───────── Y AXIS LABELS ───────── */}
+          {gridRatios.map((ratio, index) => {
+            const value = max - ratio * (max - min);
+            const y = top + ratio * chartH + 2.5;
+
+            return (
+              <text
+                key={`ylabel-${index}`}
+                x="38"
+                y={y}
+                textAnchor="end"
+                fill={labelColor}
+                fontSize="7"
+                fontWeight={index === 0 || index === 4 ? "600" : "500"}
+              >
+                {formatValue(value)}
+              </text>
+            );
+          })}
+
+          {/* Axis baseline */}
+          <line
+            x1={left}
+            y1={top + chartH}
+            x2={plotRight}
+            y2={top + chartH}
+            stroke="#31536D"
+            strokeWidth="0.8"
+            opacity="0.85"
+          />
+
+          {/* ───────── LINE SERIES ───────── */}
+          {previewSeries.map((s, index) => {
+            const color =
+              s.color || LINECHART_SERIES_COLORS[index % 4];
+
+            return (
+              <g key={s.id}>
+                {p.glow !== false && (
+                  <polyline
+                    points={pointsFor(s.points)}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={Number(p.lineWidth ?? 1.8) + 2.8}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity="0.16"
+                    filter={`url(#${chartId}-glow)`}
+                  />
+                )}
+
+                <polyline
+                  points={pointsFor(s.points)}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={Number(p.lineWidth ?? 1.8)}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.98"
+                />
+
+                {/* Current-value marker */}
+                {p.showCurrentValue !== false && (
+                  <circle
+                    cx={plotRight}
+                    cy={yFor(s.points[s.points.length - 1])}
+                    r="2.2"
+                    fill={color}
+                    stroke="#071421"
+                    strokeWidth="1"
+                  />
+                )}
+              </g>
+            );
+          })}
+
+          {/* ───────── TIME AXIS ───────── */}
           {p.showTimeAxis !== false && (
             <>
-              <text x={left} y={H - 7} fill={p.labelColor || "#7F9DB8"} fontSize="7">
+              <text
+                x={left}
+                y={H - 7}
+                fill={labelColor}
+                fontSize="7"
+              >
                 0s
               </text>
-              <text x={left + chartW / 2} y={H - 7} textAnchor="middle" fill={p.labelColor || "#7F9DB8"} fontSize="7">
+              <text
+                x={left + chartW / 2}
+                y={H - 7}
+                textAnchor="middle"
+                fill={labelColor}
+                fontSize="7"
+              >
                 {Math.round((p.historySeconds || 60) / 2)}s
               </text>
-              <text x={W - right} y={H - 7} textAnchor="end" fill={p.labelColor || "#7F9DB8"} fontSize="7">
+              <text
+                x={plotRight}
+                y={H - 7}
+                textAnchor="end"
+                fill={labelColor}
+                fontSize="7"
+              >
                 {p.historySeconds || 60}s
               </text>
             </>
+          )}
+
+          {/* ───────── RIGHT INFORMATION PANEL ───────── */}
+          <rect
+            x={separatorX}
+            y="0"
+            width={W - separatorX}
+            height={H}
+            fill={`url(#${chartId}-panel)`}
+          />
+
+          <line
+            x1={separatorX}
+            y1="36"
+            x2={separatorX}
+            y2={H - 15}
+            stroke="#24445C"
+            strokeWidth="0.8"
+          />
+
+          {p.showLegend !== false &&
+            previewSeries.map((s, index) => {
+              const color =
+                s.color || LINECHART_SERIES_COLORS[index % 4];
+              const y = 62 + index * 28;
+
+              return (
+                <g key={`legend-${s.id}`}>
+                  <line
+                    x1={separatorX + 20}
+                    y1={y - 3}
+                    x2={separatorX + 36}
+                    y2={y - 3}
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                  />
+                  <text
+                    x={separatorX + 43}
+                    y={y}
+                    fill="#CBD5E1"
+                    fontSize="8"
+                    fontWeight="600"
+                    letterSpacing="0.35"
+                  >
+                    {(s.label || `SERIES ${index + 1}`).toUpperCase()}
+                  </text>
+                </g>
+              );
+            })}
+
+          {p.showCurrentValue !== false &&
+            previewSeries.map((s, index) => {
+              const color =
+                s.color || LINECHART_SERIES_COLORS[index % 4];
+              const y = 92 + index * 57;
+
+              return (
+                <g key={`value-${s.id}`}>
+                  <text
+                    x={separatorX + 20}
+                    y={y - 19}
+                    fill="#CBD5E1"
+                    fontSize="8"
+                    fontWeight="500"
+                    letterSpacing="0.4"
+                  >
+                    {(s.label || `SERIES ${index + 1}`).toUpperCase()}
+                  </text>
+
+                  <text
+                    x={separatorX + 20}
+                    y={y + 5}
+                    fill={color}
+                    fontSize="20"
+                    fontWeight="500"
+                    letterSpacing="-0.4"
+                  >
+                    {formatValue(currentValues[index])}
+                  </text>
+
+                  {unit && (
+                    <text
+                      x={separatorX + 92}
+                      y={y + 4}
+                      fill={color}
+                      fontSize="8"
+                      fontWeight="600"
+                    >
+                      {unit}
+                    </text>
+                  )}
+
+                  {index < previewSeries.length - 1 && (
+                    <line
+                      x1={separatorX + 20}
+                      y1={y + 23}
+                      x2={W - 18}
+                      y2={y + 23}
+                      stroke="#294158"
+                      strokeWidth="0.7"
+                    />
+                  )}
+                </g>
+              );
+            })}
+
+          {/* Empty-series state */}
+          {previewSeries.length === 0 && (
+            <text
+              x={left + chartW / 2}
+              y={top + chartH / 2}
+              textAnchor="middle"
+              fill={labelColor}
+              fontSize="9"
+              letterSpacing="0.7"
+            >
+              NO ACTIVE SERIES
+            </text>
           )}
         </svg>
       </div>
     );
   }
-
 
   // ── PREVIEW GAUGE ─────────────────────────────────────────────────
   if (type === "gauge") {

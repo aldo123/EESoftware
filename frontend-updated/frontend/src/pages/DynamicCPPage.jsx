@@ -719,32 +719,36 @@ function RuntimeGauge({ widget, value }) {
 
 function RuntimeLineChart({ widget, history = [], running = true }) {
   const p = widget.props || {};
+
   // Page Builder starts with ONE realtime series.
-  // Additional series created with "Add Series" are also supported.
-  // Dynamic page renders every enabled configured series.
+  // Additional series created with "Add Series" remain fully supported.
   const series = Array.isArray(p.series)
     ? p.series.filter(s => s && s.enabled !== false)
     : [];
 
-  const W = 620;
-  const H = 270;
-  const left = 44;
-  const right = 128;
-  const top = 34;
-  const bottom = 28;
-  const chartW = W - left - right;
+  // Industrial HMI trend-card proportions.
+  // The chart occupies the left side and the live-value panel occupies the right.
+  const W = 760;
+  const H = 220;
+  const left = 52;
+  const rightPanel = 176;
+  const chartRight = W - rightPanel;
+  const top = 48;
+  const bottom = 30;
+  const chartW = chartRight - left;
   const chartH = H - top - bottom;
   const decimals = Math.max(0, Number(p.decimals ?? 1));
 
   const colors = ["#00BFFF", "#EF4444", "#22C55E", "#FFB020"];
 
+  const getColor = (s, index) =>
+    s?.color || colors[index % colors.length];
+
   const values = [];
   series.forEach(s => {
     history.forEach(point => {
       const value = Number(point?.[s.id]);
-      if (Number.isFinite(value)) {
-        values.push(value);
-      }
+      if (Number.isFinite(value)) values.push(value);
     });
   });
 
@@ -774,7 +778,12 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
   const xForElapsed = elapsed => {
     const seconds = Number(elapsed);
     if (!Number.isFinite(seconds)) return left;
-    const ratio = Math.max(0, Math.min(1, seconds / maxDuration));
+
+    const ratio = Math.max(
+      0,
+      Math.min(1, seconds / maxDuration)
+    );
+
     return left + ratio * chartW;
   };
 
@@ -784,11 +793,14 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
     history.forEach(point => {
       const elapsed = Number(point?.elapsed);
       const value = Number(point?.[s.id]);
+
       if (!Number.isFinite(elapsed) || !Number.isFinite(value)) {
         return;
       }
 
-      points.push(`${xForElapsed(elapsed)},${yFor(value)}`);
+      points.push(
+        `${xForElapsed(elapsed)},${yFor(value)}`
+      );
     });
 
     return points.join(" ");
@@ -797,15 +809,33 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
   const getLatestValue = s => {
     for (let i = history.length - 1; i >= 0; i -= 1) {
       const value = Number(history[i]?.[s.id]);
+
       if (Number.isFinite(value)) {
         return value;
       }
     }
+
     return null;
   };
 
-  const hasHistory = history.length > 0 && values.length > 0;
+  const hasHistory =
+    history.length > 0 && values.length > 0;
+
   const chartId = `linechart-${widget.id}`;
+  const bg = p.backgroundColor || "#071421";
+  const border = p.borderColor || "#123B5A";
+  const textColor = p.textColor || "#FFFFFF";
+  const labelColor = p.labelColor || "#7F9DB8";
+  const gridColor = p.gridColor || "#16324A";
+  const accent = p.accentColor || "#00BFFF";
+
+  const title = p.title || "PROCESS TREND";
+  const unit = p.unit || "";
+
+  // Keep the badge compact so it stays visually similar to the reference HMI.
+  const badgeX = chartRight + 18;
+  const badgeW = Math.min(112, rightPanel - 34);
+  const badgeY = 14;
 
   return (
     <div
@@ -815,9 +845,15 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
         top: widget.y,
         width: p.width,
         height: p.height,
-        background: p.backgroundColor || "#071421",
-        border: `${Math.max(0, Number(p.borderWidth ?? 1))}px solid ${p.borderColor || "#123B5A"}`,
-        borderRadius: `${Math.max(0, Number(p.borderRadius ?? 8))}px`,
+        background: bg,
+        border: `${Math.max(
+          0,
+          Number(p.borderWidth ?? 1)
+        )}px solid ${border}`,
+        borderRadius: `${Math.max(
+          0,
+          Number(p.borderRadius ?? 8)
+        )}px`,
         boxSizing: "border-box",
       }}
     >
@@ -828,133 +864,353 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
         style={{ display: "block" }}
       >
         <defs>
+          {/* Soft glow for realtime trend lines */}
+          <filter
+            id={`${chartId}-glow`}
+            x="-30%"
+            y="-100%"
+            width="160%"
+            height="300%"
+          >
+            <feGaussianBlur
+              stdDeviation="1.5"
+              result="blur"
+            />
+            <feMerge>
+              <feMergeNode in="blur" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+
           <clipPath id={`${chartId}-clip`}>
-            <rect x={left} y={top} width={chartW} height={chartH} />
+            <rect
+              x={left}
+              y={top}
+              width={chartW}
+              height={chartH}
+            />
           </clipPath>
         </defs>
 
-        {/* Header */}
-        <text
-          x="12"
-          y="18"
-          fill={p.textColor || "#FFFFFF"}
-          fontSize="10"
-          fontWeight="700"
-          letterSpacing="1"
-        >
-          {p.title || "PROCESS TREND"}
-        </text>
-
-        {p.triggerEnabled === true && (
+        {/* ========================================================
+            HEADER
+            ======================================================== */}
+        {p.showTitle !== false && (
           <text
-            x={W - 8}
-            y="13"
-            textAnchor="end"
-            fill={running ? "#22C55E" : "#64748B"}
-            fontSize="7"
+            x="14"
+            y="22"
+            fill={textColor}
+            fontSize="11"
             fontWeight="700"
+            letterSpacing="0.35"
           >
-            {running ? "● TREND RUNNING" : "● TREND STOPPED"}
+            {title}
           </text>
         )}
 
-        {/* Legend + current values */}
-        {p.showLegend !== false && series.map((s, index) => {
-          const color = s.color || colors[index % colors.length];
-          const latest = getLatestValue(s);
-          const legendY = 12 + index * 14;
+        {/* Unit label at the left of the chart */}
+        {unit && (
+          <text
+            x="12"
+            y={top - 8}
+            fill={labelColor}
+            fontSize="8"
+            fontWeight="600"
+          >
+            {unit}
+          </text>
+        )}
 
-          return (
-            <g key={`legend-${s.id}`}>
-              <line
-                x1={W - 120}
-                y1={legendY - 3}
-                x2={W - 110}
-                y2={legendY - 3}
-                stroke={color}
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-              <text
-                x={W - 106}
-                y={legendY}
-                fill={color}
-                fontSize="7"
-                fontWeight="700"
-              >
-                {s.label || `SERIES ${index + 1}`}
-              </text>
-              {p.showCurrentValue !== false && (
-                <text
-                  x={W - 8}
-                  y={legendY}
-                  textAnchor="end"
-                  fill={color}
-                  fontSize="8"
-                  fontWeight="700"
-                >
-                  {latest === null ? "--" : latest.toFixed(decimals)}{p.unit ? ` ${p.unit}` : ""}
-                </text>
-              )}
-            </g>
-          );
-        })}
+        {/* ========================================================
+            REALTIME STATUS BADGE
+            ======================================================== */}
+        <g>
+          <rect
+            x={badgeX}
+            y={badgeY}
+            width={badgeW}
+            height="24"
+            rx="6"
+            fill={running ? "#06351F" : "#18202A"}
+            stroke={
+              running
+                ? "#0A5C35"
+                : "#2B3A49"
+            }
+            strokeWidth="0.7"
+          />
 
-        {/* Grid */}
-        {p.showGrid !== false && [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
-          const y = top + chartH - ratio * chartH;
-          return (
-            <line
-              key={`h-${index}`}
-              x1={left}
-              y1={y}
-              x2={W - right}
-              y2={y}
-              stroke={p.gridColor || "#16324A"}
-              strokeWidth="0.7"
-            />
-          );
-        })}
+          {/* waveform / heartbeat icon */}
+          <path
+            d={`M ${badgeX + 8} ${badgeY + 12}
+                L ${badgeX + 12} ${badgeY + 12}
+                L ${badgeX + 15} ${badgeY + 7}
+                L ${badgeX + 18} ${badgeY + 17}
+                L ${badgeX + 21} ${badgeY + 11}
+                L ${badgeX + 26} ${badgeY + 11}`}
+            fill="none"
+            stroke={running ? "#39FF88" : "#64748B"}
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
 
-        {p.showGrid !== false && [0, 0.25, 0.5, 0.75, 1].map((ratio, index) => {
-          const x = left + ratio * chartW;
-          return (
-            <line
-              key={`v-${index}`}
-              x1={x}
-              y1={top}
-              x2={x}
-              y2={top + chartH}
-              stroke={p.gridColor || "#16324A"}
-              strokeWidth="0.7"
-            />
-          );
-        })}
+          <text
+            x={badgeX + 33}
+            y={badgeY + 15}
+            fill={running ? "#39FF88" : "#94A3B8"}
+            fontSize="8"
+            fontWeight="700"
+            letterSpacing="0.35"
+          >
+            {running ? "REALTIME" : "STOPPED"}
+          </text>
 
-        {/* Y-axis */}
-        <text x="5" y={top + 5} fill={p.labelColor || "#7F9DB8"} fontSize="7">
-          {max.toFixed(decimals > 0 ? 1 : 0)}
-        </text>
-        <text x="5" y={top + chartH} fill={p.labelColor || "#7F9DB8"} fontSize="7">
-          {min.toFixed(decimals > 0 ? 1 : 0)}
-        </text>
-
-        {/* Trend lines */}
-        <g clipPath={`url(#${chartId}-clip)`}>
-          {series.map((s, index) => (
-            <polyline
-              key={s.id}
-              points={getSeriesPoints(s)}
-              fill="none"
-              stroke={s.color || colors[index % colors.length]}
-              strokeWidth={Number(p.lineWidth ?? 1.8)}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity="0.96"
-            />
-          ))}
+          {running && (
+            <text
+              x={badgeX + badgeW - 9}
+              y={badgeY + 15}
+              textAnchor="middle"
+              fill="#39FF88"
+              fontSize="10"
+              fontWeight="700"
+            >
+              +
+            </text>
+          )}
         </g>
 
+        {/* Optional trigger status, kept subtle */}
+        {p.triggerEnabled === true && !running && (
+          <text
+            x={badgeX}
+            y="48"
+            fill="#64748B"
+            fontSize="7"
+            fontWeight="600"
+          >
+            TRIGGER STOP
+          </text>
+        )}
+
+        {/* ========================================================
+            RIGHT LIVE VALUE PANEL
+            ======================================================== */}
+        <line
+          x1={chartRight}
+          y1="14"
+          x2={chartRight}
+          y2={H - 14}
+          stroke="#21405A"
+          strokeWidth="0.8"
+        />
+
+        {p.showLegend !== false &&
+          series.map((s, index) => {
+            const color = getColor(s, index);
+            const latest = getLatestValue(s);
+
+            const rowTop =
+              52 + index * 56;
+
+            return (
+              <g key={`value-panel-${s.id}`}>
+                {/* Series legend line */}
+                <line
+                  x1={chartRight + 18}
+                  y1={rowTop - 1}
+                  x2={chartRight + 34}
+                  y2={rowTop - 1}
+                  stroke={color}
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+
+                <text
+                  x={chartRight + 42}
+                  y={rowTop + 2}
+                  fill="#CBD5E1"
+                  fontSize="8"
+                  fontWeight="600"
+                  letterSpacing="0.35"
+                >
+                  {(s.label ||
+                    `SERIES ${index + 1}`)
+                    .toUpperCase()}
+                </text>
+
+                {p.showCurrentValue !== false && (
+                  <text
+                    x={chartRight + 18}
+                    y={rowTop + 29}
+                    fill={color}
+                    fontSize="20"
+                    fontWeight="500"
+                    letterSpacing="-0.3"
+                  >
+                    {latest === null
+                      ? "--"
+                      : latest.toFixed(decimals)}
+                  </text>
+                )}
+
+                {unit &&
+                  p.showCurrentValue !== false && (
+                    <text
+                      x={chartRight + 104}
+                      y={rowTop + 29}
+                      fill={color}
+                      fontSize="9"
+                      fontWeight="600"
+                    >
+                      {unit}
+                    </text>
+                  )}
+
+                {index < series.length - 1 && (
+                  <line
+                    x1={chartRight + 18}
+                    y1={rowTop + 42}
+                    x2={W - 14}
+                    y2={rowTop + 42}
+                    stroke="#1E3347"
+                    strokeWidth="0.7"
+                  />
+                )}
+              </g>
+            );
+          })}
+
+        {/* ========================================================
+            GRID
+            ======================================================== */}
+        {p.showGrid !== false &&
+          [0, 0.25, 0.5, 0.75, 1].map(
+            (ratio, index) => {
+              const y =
+                top +
+                chartH -
+                ratio * chartH;
+
+              return (
+                <line
+                  key={`h-${index}`}
+                  x1={left}
+                  y1={y}
+                  x2={chartRight}
+                  y2={y}
+                  stroke={gridColor}
+                  strokeWidth="0.65"
+                  strokeDasharray="2 5"
+                  opacity="0.85"
+                />
+              );
+            }
+          )}
+
+        {p.showGrid !== false &&
+          [0, 0.25, 0.5, 0.75, 1].map(
+            (ratio, index) => {
+              const x =
+                left + ratio * chartW;
+
+              return (
+                <line
+                  key={`v-${index}`}
+                  x1={x}
+                  y1={top}
+                  x2={x}
+                  y2={top + chartH}
+                  stroke={gridColor}
+                  strokeWidth="0.65"
+                  strokeDasharray="2 5"
+                  opacity="0.65"
+                />
+              );
+            }
+          )}
+
+        {/* ========================================================
+            Y AXIS
+            ======================================================== */}
+        <text
+          x="10"
+          y={top + 4}
+          fill={labelColor}
+          fontSize="8"
+        >
+          {max.toFixed(
+            decimals > 0 ? 1 : 0
+          )}
+        </text>
+
+        <text
+          x="10"
+          y={top + chartH + 2}
+          fill={labelColor}
+          fontSize="8"
+        >
+          {min.toFixed(
+            decimals > 0 ? 1 : 0
+          )}
+        </text>
+
+        {/* ========================================================
+            TREND LINES
+            ======================================================== */}
+        <g
+          clipPath={`url(#${chartId}-clip)`}
+        >
+          {series.map((s, index) => {
+            const color = getColor(
+              s,
+              index
+            );
+
+            return (
+              <g key={`trend-${s.id}`}>
+                {/* subtle glow layer */}
+                {p.glow !== false && (
+                  <polyline
+                    points={getSeriesPoints(s)}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={Math.max(
+                      1,
+                      Number(
+                        p.lineWidth ?? 1.8
+                      ) + 2.5
+                    )}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity="0.10"
+                    filter={`url(#${chartId}-glow)`}
+                  />
+                )}
+
+                {/* main line */}
+                <polyline
+                  points={getSeriesPoints(s)}
+                  fill="none"
+                  stroke={color}
+                  strokeWidth={Math.max(
+                    1,
+                    Number(
+                      p.lineWidth ?? 1.8
+                    )
+                  )}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  opacity="0.98"
+                />
+              </g>
+            );
+          })}
+        </g>
+
+        {/* ========================================================
+            NO DATA STATE
+            ======================================================== */}
         {!hasHistory && (
           <g>
             <text
@@ -966,26 +1222,74 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
               fontWeight="600"
               letterSpacing="0.8"
             >
-              {p.triggerEnabled === true && !running
+              {p.triggerEnabled === true &&
+              !running
                 ? "TREND STOPPED — TRIGGER = 0"
                 : "WAITING FOR PLC DATA..."}
             </text>
           </g>
         )}
 
-        {/* Elapsed time axis: 0s -> max duration */}
+        {/* ========================================================
+            ELAPSED TIME AXIS
+            ======================================================== */}
         {p.showTimeAxis !== false && (
           <>
-            <text x={left} y={H - 7} fill={p.labelColor || "#7F9DB8"} fontSize="7">
+            <line
+              x1={left}
+              y1={top + chartH}
+              x2={chartRight}
+              y2={top + chartH}
+              stroke="#31516A"
+              strokeWidth="0.8"
+            />
+
+            <text
+              x={left}
+              y={H - 8}
+              fill={labelColor}
+              fontSize="8"
+            >
               0s
             </text>
-            <text x={left + chartW / 2} y={H - 7} textAnchor="middle" fill={p.labelColor || "#7F9DB8"} fontSize="7">
-              {Math.round(maxDuration / 2)}s
+
+            <text
+              x={left + chartW / 2}
+              y={H - 8}
+              textAnchor="middle"
+              fill={labelColor}
+              fontSize="8"
+            >
+              {Math.round(
+                maxDuration / 2
+              )}s
             </text>
-            <text x={W - right} y={H - 7} textAnchor="end" fill={p.labelColor || "#7F9DB8"} fontSize="7">
+
+            <text
+              x={chartRight}
+              y={H - 8}
+              textAnchor="end"
+              fill={labelColor}
+              fontSize="8"
+            >
               {maxDuration}s
             </text>
           </>
+        )}
+
+        {/* Bottom-right status accent */}
+        {p.triggerEnabled === true && (
+          <circle
+            cx={W - 10}
+            cy={H - 10}
+            r="3"
+            fill={
+              running
+                ? "#39FF88"
+                : "#475569"
+            }
+            opacity="0.9"
+          />
         )}
       </svg>
     </div>
