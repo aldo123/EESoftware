@@ -1,5 +1,7 @@
 // src/MainPage.jsx
 import { useState, useEffect, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ModalBackdrop, ModalPanel, dropdownVariants, EASE_OUT } from "./components/motion";
 import InterlockModal from "./modal/InterlockModal";
 import SettingModal from "./modal/SettingModal";
 import MaintenancePage from "./modal/MaintenanceModal";
@@ -60,21 +62,29 @@ const IconLogic = () => (
   </svg>
 );
 
+const IconMenu = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="3" y1="6" x2="21" y2="6" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+    <line x1="3" y1="18" x2="21" y2="18" />
+  </svg>
+);
+
 // ── Menu items ────────────────────────────────────────────────
 const MENU_ITEMS = ["Main", "Maintenance", "SN List", "Reference"];
 
 // ── Field (reused) ─────────────────────────────────────────────
 function Field({ icon, placeholder, value, onChange, onKeyDown, type = "text" }) {
   return (
-    <div className="flex items-center bg-[#0F172A] border border-[#1E293B] focus-within:border-[#22C55E]/60 rounded-xl px-3 h-11 gap-2.5 transition-colors group">
-      <span className="text-[#475569] group-focus-within:text-[#22C55E] transition-colors shrink-0">{icon}</span>
+    <div className="flex items-center bg-[var(--bg-input)] border border-[var(--border-soft)] focus-within:border-[#22C55E]/60 rounded-xl px-3 h-11 gap-2.5 transition-colors group">
+      <span className="text-[var(--text-muted)] group-focus-within:text-[#22C55E] transition-colors shrink-0">{icon}</span>
       <input
         type={type}
         placeholder={placeholder}
         value={value}
         onChange={onChange}
         onKeyDown={onKeyDown}
-        className="flex-1 bg-transparent text-white text-sm placeholder-[#334155] outline-none"
+        className="flex-1 bg-transparent text-[var(--text-primary)] text-sm placeholder-[var(--text-faint)] outline-none"
       />
     </div>
   );
@@ -96,26 +106,30 @@ function DropdownMenu({ anchorRef, items, onClose }) {
   }, [onClose, anchorRef]);
 
   return (
-    <div
+    <motion.div
       ref={menuRef}
-      className="absolute right-0 top-full mt-1 w-52 z-50 rounded-xl overflow-hidden border border-[#334155] shadow-2xl"
-      style={{ background: "#111827" }}
+      className="absolute right-0 top-full mt-1 w-52 z-50 rounded-xl overflow-hidden border border-[var(--border)] shadow-2xl"
+      style={{ background: "var(--bg-surface-2)" }}
+      variants={dropdownVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
     >
       {items.map((item, i) =>
         item === "---" ? (
-          <div key={i} className="h-px bg-[#1E293B] mx-3" />
+          <div key={i} className="h-px bg-[var(--border-soft)] mx-3" />
         ) : (
           <button
             key={i}
             onClick={() => { item.action(); onClose(); }}
-            className="w-full text-left px-4 py-2.5 text-sm text-[#94A3B8] hover:bg-[#2563EB] hover:text-white transition-colors flex items-center gap-2.5"
+            className="w-full text-left px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[#2563EB] hover:text-white transition-colors flex items-center gap-2.5"
           >
-            <span className="text-[#475569] group-hover:text-white">{item.icon}</span>
+            <span className="text-[var(--text-muted)] group-hover:text-white">{item.icon}</span>
             {item.label}
           </button>
         )
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -142,8 +156,8 @@ function ChangePasswordModal({ onClose, user }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[400px] rounded-2xl border border-[#22C55E]/30 overflow-hidden shadow-2xl" style={{ background: "#111827" }}>
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="w-[400px] rounded-2xl border border-[#22C55E]/30 overflow-hidden shadow-2xl" style={{ background: "var(--bg-surface-2)" }}>
         <div className="px-6 pt-6 pb-4">
           <p className="text-[#22C55E] font-bold text-lg mb-5">Change Password</p>
           <Field
@@ -157,26 +171,26 @@ function ChangePasswordModal({ onClose, user }) {
           {error && <p className="text-[#FCA5A5] text-xs mt-2">{error}</p>}
         </div>
         <div className="px-6 pb-6 flex gap-3">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-[#334155] text-[#94A3B8] hover:bg-[#1E293B] text-sm transition-colors">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-sm transition-colors">
             Cancel
           </button>
           <button onClick={save} disabled={loading} className="flex-1 py-2.5 rounded-xl bg-[#22C55E] hover:bg-[#16A34A] text-[#052E16] font-bold text-sm transition-colors disabled:opacity-40">
             {loading ? "Saving…" : "Save"}
           </button>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }
 
 // ── Modal: Downtime ────────────────────────────────────────────
 function DowntimeModal({ onClose, onSelect }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[520px] rounded-2xl border border-[#334155] overflow-hidden shadow-2xl" style={{ background: "#0F172A" }}>
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="w-[520px] rounded-2xl border border-[var(--border)] overflow-hidden shadow-2xl" style={{ background: "var(--bg-surface)" }}>
         <div className="px-8 pt-8 pb-6 text-center">
           <p className="text-[#22C55E] font-bold text-xl mb-1">SELECT DOWNTIME TYPE</p>
-          <p className="text-[#94A3B8] text-sm mb-8">Please choose downtime category</p>
+          <p className="text-[var(--text-secondary)] text-sm mb-8">Please choose downtime category</p>
           <div className="flex gap-4">
             <button
               onClick={() => onSelect("maintenance")}
@@ -195,12 +209,12 @@ function DowntimeModal({ onClose, onSelect }) {
           </div>
         </div>
         <div className="px-8 pb-6 flex justify-end">
-          <button onClick={onClose} className="px-5 py-2 rounded-xl border border-[#334155] text-[#94A3B8] hover:bg-[#1E293B] text-sm transition-colors">
+          <button onClick={onClose} className="px-5 py-2 rounded-xl border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-sm transition-colors">
             Cancel
           </button>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }
 
@@ -246,40 +260,40 @@ function ReloginModal({ onClose, onLoginSuccess }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[420px] bg-[#0F172A] border border-[#22C55E] rounded-2xl overflow-hidden shadow-2xl">
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="w-[420px] bg-[var(--bg-surface)] border border-[#22C55E] rounded-2xl overflow-hidden shadow-2xl">
         <div className="flex flex-col items-center pt-6 pb-2">
           <div className="w-16 h-16 rounded-full bg-[#22C55E] flex items-center justify-center mb-2">
             <span className="text-2xl">🔒</span>
           </div>
-          <p className="text-[#94A3B8] text-sm">Engineer Access Required</p>
+          <p className="text-[var(--text-secondary)] text-sm">Engineer Access Required</p>
         </div>
 
         <div className="px-6 py-4 space-y-4">
           <div>
-            <label className="text-[#94A3B8] text-xs block mb-1">UserName</label>
+            <label className="text-[var(--text-secondary)] text-xs block mb-1">UserName</label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full bg-[#1E293B] border border-[#334155] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#22C55E]"
+              className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#22C55E]"
               placeholder="👤 Username"
               autoFocus
             />
           </div>
           <div>
-            <label className="text-[#94A3B8] text-xs block mb-1">Password</label>
+            <label className="text-[var(--text-secondary)] text-xs block mb-1">Password</label>
             <div className="flex">
               <input
                 type={showPwd ? "text" : "password"}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="flex-1 bg-[#1E293B] border border-[#334155] text-white rounded-l-lg px-3 py-2 text-sm focus:outline-none focus:border-[#22C55E]"
+                className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] rounded-l-lg px-3 py-2 text-sm focus:outline-none focus:border-[#22C55E]"
                 placeholder="🔒 Password"
               />
               <button
                 onClick={() => setShowPwd(!showPwd)}
-                className="bg-[#1A5C34] hover:bg-[#166534] text-white px-3 rounded-r-lg border border-[#334155] border-l-0"
+                className="bg-[#1A5C34] hover:bg-[#166534] text-white px-3 rounded-r-lg border border-[var(--border)] border-l-0"
               >
                 {showPwd ? "🙈" : "👁"}
               </button>
@@ -302,9 +316,9 @@ function ReloginModal({ onClose, onLoginSuccess }) {
             </button>
           </div>
 
-          <div className="border-t border-[#334155] pt-3">
+          <div className="border-t border-[var(--border)] pt-3">
             <div className="flex items-center gap-2">
-              <div className="w-11 h-11 bg-[#1E293B] border border-[#334155] rounded-lg flex items-center justify-center text-[#94A3B8] text-lg">
+              <div className="w-11 h-11 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg flex items-center justify-center text-[var(--text-secondary)] text-lg">
                 🪪
               </div>
               <input
@@ -312,7 +326,7 @@ function ReloginModal({ onClose, onLoginSuccess }) {
                 value={cardId}
                 onChange={(e) => setCardId(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-                className="flex-1 bg-[#1E293B] border border-[#334155] text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#22C55E]"
+                className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#22C55E]"
                 placeholder="Scan / tempel ID Card di sini..."
               />
             </div>
@@ -320,8 +334,8 @@ function ReloginModal({ onClose, onLoginSuccess }) {
 
           {error && <div className="text-[#EF4444] text-xs text-center">{error}</div>}
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }
 
@@ -357,6 +371,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
   const [showRelogin, setShowRelogin] = useState(false);
   const [showBuilder, setShowBuilder] = useState(false);
   const [showLogic, setShowLogic] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const settingBtnRef = useRef(null);
   const userBtnRef = useRef(null);
@@ -753,24 +768,31 @@ export default function MainPage({ user: initialUser, onLogout }) {
   ];
 
   return (
-    <div className="w-screen h-screen bg-[#0F172A] flex flex-col overflow-hidden font-sans">
+    <div className="w-screen h-screen bg-[var(--bg-canvas)] flex flex-col overflow-hidden font-sans transition-colors">
       {/* HEADER */}
-      <header className="h-[72px] bg-[#111827] border-b border-[#1E293B] flex items-center px-5 shrink-0 z-10">
-        <div className="flex items-center gap-2 shrink-0">
+      <header className="h-[72px] bg-[var(--bg-surface-2)] border-b border-[var(--border-soft)] flex items-center px-5 shrink-0 z-10 transition-colors">
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setSidebarOpen(p => !p)}
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-primary)] hover:text-white hover:bg-[#2563EB] transition-colors shrink-0"
+          >
+            <IconMenu />
+          </button>
           <div className="relative">
             <span className="text-[28px] font-black text-[#22C55E] leading-none tracking-tighter">WIK</span>
             <span className="absolute -top-0.5 -right-2 w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
           </div>
           <div className="ml-2 flex flex-col leading-tight">
-            <span className="text-[#E2E8F0] text-[10px]">Technology</span>
-            <span className="text-[#E2E8F0] text-[10px]">attuned to Nature</span>
+            <span className="text-[var(--text-primary)] text-[10px]">Technology</span>
+            <span className="text-[var(--text-primary)] text-[10px]">attuned to Nature</span>
           </div>
         </div>
 
         {/* Title tengah: Control Point Name */}
         <div className="flex-1 flex flex-col items-center select-none">
           <p className="text-[#22C55E] font-bold text-xl leading-tight">{cpInfo.name}</p>
-          <p className="text-[#E2E8F0] text-[10px] font-mono mt-0.5">
+          <p className="text-[var(--text-primary)] text-[10px] font-mono mt-0.5">
             {fmtDate(time)} &nbsp; {fmtTime(time)} &nbsp; {fmtWW(time)}
           </p>
         </div>
@@ -778,10 +800,10 @@ export default function MainPage({ user: initialUser, onLogout }) {
         <div className="flex items-center gap-4 shrink-0">
           {/* Line Code & Spec Code */}
           <div className="text-right leading-tight hidden lg:block">
-            <p className="text-[#E2E8F0] text-[10px] font-mono">Line Code : {cpInfo.code}</p>
-            <p className="text-[#E2E8F0] text-[10px] font-mono">Spec Code : {cpInfo.family}</p>
+            <p className="text-[var(--text-primary)] text-[10px] font-mono">Line Code : {cpInfo.code}</p>
+            <p className="text-[var(--text-primary)] text-[10px] font-mono">Spec Code : {cpInfo.family}</p>
           </div>
-          <div className="w-px h-8 bg-[#1E293B]" />
+          <div className="w-px h-8 bg-[var(--border-soft)]" />
           <div className="flex flex-col items-center gap-1">
             <p className="text-[10px] font-bold font-mono" style={{ color: msConf.color }}>{msConf.label}</p>
             <button
@@ -792,158 +814,127 @@ export default function MainPage({ user: initialUser, onLogout }) {
               <span>⏸</span> Downtime
             </button>
           </div>
-          <div className="w-px h-8 bg-[#1E293B]" />
+          <div className="w-px h-8 bg-[var(--border-soft)]" />
           <div className="relative" ref={settingBtnRef}>
-            <button onClick={() => { setShowSettingMenu(p => !p); setShowUserMenu(false); }} disabled={!isEngineer} className="w-8 h-8 rounded-lg flex items-center justify-center text-[#E2E8F0] hover:text-white hover:bg-[#2563EB] transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+            <button onClick={() => { setShowSettingMenu(p => !p); setShowUserMenu(false); }} disabled={!isEngineer} className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-primary)] hover:text-white hover:bg-[#2563EB] transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
               <IconGear />
             </button>
-            {showSettingMenu && <DropdownMenu anchorRef={settingBtnRef} items={settingMenuItems} onClose={() => setShowSettingMenu(false)} />}
+            <AnimatePresence>
+              {showSettingMenu && <DropdownMenu anchorRef={settingBtnRef} items={settingMenuItems} onClose={() => setShowSettingMenu(false)} />}
+            </AnimatePresence>
           </div>
           <div className="relative" ref={userBtnRef}>
-            <button onClick={() => { setShowUserMenu(p => !p); setShowSettingMenu(false); }} className="w-8 h-8 rounded-lg flex items-center justify-center text-[#E2E8F0] hover:text-white hover:bg-[#2563EB] transition-colors">
+            <button onClick={() => { setShowUserMenu(p => !p); setShowSettingMenu(false); }} className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-primary)] hover:text-white hover:bg-[#2563EB] transition-colors">
               <IconUser />
             </button>
-            {showUserMenu && <DropdownMenu anchorRef={userBtnRef} items={userMenuItems} onClose={() => setShowUserMenu(false)} />}
+            <AnimatePresence>
+              {showUserMenu && <DropdownMenu anchorRef={userBtnRef} items={userMenuItems} onClose={() => setShowUserMenu(false)} />}
+            </AnimatePresence>
           </div>
           <div className="leading-tight text-left">
-            <p className="text-[#E2E8F0] text-[11px] font-semibold">{user.username}</p>
-            <p className="text-[#E2E8F0] text-[10px]">{user.role}</p>
+            <p className="text-[var(--text-primary)] text-[11px] font-semibold">{user.username}</p>
+            <p className="text-[var(--text-primary)] text-[10px]">{user.role}</p>
           </div>
         </div>
       </header>
 
       {/* BODY */}
       <div className="flex flex-1 overflow-hidden">
-        {/* SIDEBAR KIRI (selalu tampil) */}
-        <aside className="w-[180px] bg-[#111827] border-r border-[#1E293B] flex flex-col shrink-0">
-          <nav className="pt-2 flex flex-col gap-0.5">
-            {MENU_ITEMS.map(label => {
-              const disabled = (label === "Maintenance" || label === "Reference") && !isEngineer;
-              const active = activeMenu === label;
-              return (
-                <button
-                  key={label}
-                  disabled={disabled}
-                  onClick={() => !disabled && setActiveMenu(label)}
-                  className={`w-full text-left px-4 py-2.5 text-[11px] font-semibold transition-colors ${active
-                    ? "bg-[#16A34A] text-white"
-                    : disabled
-                      ? "text-[#334155] cursor-not-allowed"
-                      : "text-[#94A3B8] hover:bg-[#1E293B] hover:text-[#E2E8F0]"
-                    }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </nav>
-          <div className="flex-1" />
-          {/* COMM DEVICE di sidebar kiri */}
-          <div className="mx-2 mb-3 rounded-lg border border-[#334155] overflow-hidden" style={{ background: "#111827" }}>
-            <div className="px-3 pt-3 pb-1">
-              <p className="text-[#22C55E] text-[9px] font-bold tracking-widest uppercase mb-2">COMM DEVICE</p>
-              <div className="flex flex-col gap-1">
-                {commDevices.length === 0 && <p className="text-[#E2E8F0] text-[9px] font-mono">No devices</p>}
-                {commDevices.map(dev => (
-                  <div
-                    key={`${dev.type}-${dev.name}`}
-                    className="flex items-center gap-1.5 min-w-0"
-                    title={dev.connection ? `${dev.name} — ${dev.connection}` : dev.name}
+        {/* SIDEBAR KIRI (collapsible) */}
+        <motion.aside
+          initial={false}
+          animate={{ width: sidebarOpen ? 130 : 0 }}
+          transition={{ duration: 0.22, ease: EASE_OUT }}
+          className="bg-[var(--bg-surface-2)] border-r border-[var(--border-soft)] flex flex-col shrink-0 overflow-hidden transition-colors"
+        >
+          <div className="w-[130px] h-full flex flex-col">
+            <nav className="pt-2 flex flex-col gap-0.5">
+              {MENU_ITEMS.map(label => {
+                const disabled = (label === "Maintenance" || label === "Reference") && !isEngineer;
+                const active = activeMenu === label;
+                return (
+                  <button
+                    key={label}
+                    disabled={disabled}
+                    onClick={() => !disabled && setActiveMenu(label)}
+                    className={`relative w-full text-left px-4 py-2.5 text-[11px] font-semibold transition-colors ${active
+                      ? "text-white"
+                      : disabled
+                        ? "text-[var(--text-faint)] cursor-not-allowed"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                      }`}
                   >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                        dev.connected
-                          ? "bg-[#22C55E]"
-                          : "bg-[#EF4444]"
-                      }`}
-                    />
-
-                    <span
-                      className={`text-[9px] font-mono truncate ${
-                        dev.connected
-                          ? "text-[#22C55E]"
-                          : "text-[#EF4444]"
-                      }`}
-                    >
-                      {dev.name}
-                    </span>
-
-                    {dev.connection && (
-                      <span className="ml-auto pl-1 text-[8px] font-mono text-[#64748B] truncate shrink-0 max-w-[88px]">
-                        {dev.connection}
-                      </span>
+                    {active && (
+                      <motion.span
+                        layoutId="active-menu-pill"
+                        className="absolute inset-0 bg-[#16A34A]"
+                        transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                      />
                     )}
-                  </div>
-                ))}
+                    <span className="relative">{label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="flex-1" />
+            {/* COMM DEVICE di sidebar kiri */}
+            <div className="mx-2 mb-3 rounded-lg border border-[var(--border)] overflow-hidden" style={{ background: "var(--bg-surface-2)" }}>
+              <div className="px-3 pt-3 pb-1">
+                <p className="text-[#22C55E] text-[9px] font-bold tracking-widest uppercase mb-2">COMM DEVICE</p>
+                <div className="flex flex-col gap-1">
+                  {commDevices.length === 0 && <p className="text-[var(--text-primary)] text-[9px] font-mono">No devices</p>}
+                  {commDevices.map(dev => (
+                    <div key={dev.name} className="flex items-center gap-1.5">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dev.connected ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} />
+                      <span className={`text-[9px] font-mono truncate ${dev.connected ? "text-[#22C55E]" : "text-[#EF4444]"}`}>
+                        {dev.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-            <div className="px-3 pb-2 pt-1 border-t border-[#1E293B] mt-1">
-              <div className="flex items-center gap-1.5">
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dbStatus === null ? "bg-[#64748B] animate-pulse" : dbStatus ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} />
-                <span className={`text-[9px] font-mono ${dbStatus === null ? "text-[#64748B]" : dbStatus ? "text-[#22C55E]" : "text-[#EF4444]"}`}>Database</span>
+              <div className="px-3 pb-2 pt-1 border-t border-[var(--border-soft)] mt-1">
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dbStatus === null ? "bg-[#64748B] animate-pulse" : dbStatus ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} />
+                  <span className={`text-[9px] font-mono ${dbStatus === null ? "text-[var(--text-muted)]" : dbStatus ? "text-[#22C55E]" : "text-[#EF4444]"}`}>Database</span>
+                </div>
               </div>
             </div>
           </div>
-        </aside>
+        </motion.aside>
 
         {/* KONTEN UTAMA + SIDEBAR KANAN (kondisional) */}
         <div className="flex flex-1 overflow-hidden">
           {/* Area konten dinamis */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            {renderContent()}
-          </div>
-
-          {/* ── SIDEBAR KANAN – hanya tampil saat activeMenu === "Main" ── */}
-          {activeMenu === "Main" && (
-            <aside className="w-[272px] shrink-0 bg-[#1E293B] border-l border-[#334155] flex flex-col gap-3 p-3 overflow-y-auto">
-              <div className="rounded-lg border border-[#334155] flex items-center justify-center h-[200px] shrink-0" style={{ background: "#172132" }}>
-                <span className="text-[#E2E8F0] text-xs font-mono select-none">[ Product Image ]</span>
-              </div>
-              <div className="rounded-lg border border-[#334155] p-3 shrink-0" style={{ background: "#1E293B" }}>
-                <p className="text-[#E2E8F0] text-[10px] mb-2">Move Status :</p>
-                <div className="h-9 rounded-md" style={{ background: "#172132" }} />
-              </div>
-              <div className="rounded-lg border border-[#334155] flex-1 flex flex-col overflow-hidden" style={{ background: "#1E293B" }}>
-                <div className="px-3 pt-2 pb-1 border-b border-[#334155]">
-                  <p className="text-[#E2E8F0] text-[10px] font-semibold">Repair Action From Diagnosing</p>
-                </div>
-                <div className="flex-1 overflow-y-auto">
-                  <div className="flex items-center justify-center h-full py-6">
-                    <p className="text-[#E2E8F0] text-[10px] font-mono">No data</p>
-                  </div>
-                </div>
-              </div>
-              <button className="w-full h-14 rounded-xl bg-[#22C55E] hover:bg-[#16A34A] text-[#052E16] font-bold text-base transition-colors active:scale-[0.98] shrink-0">
-                SN Reject
-              </button>
-              {/* 🟢 PERBAIKAN: Tombol Reset dengan onClick */}
-              <button
-                onClick={() => {
-                  window.dispatchEvent(new CustomEvent("cp-reset"));
-                }}
-                className="w-full h-14 rounded-xl bg-[#22C55E] hover:bg-[#16A34A] text-[#052E16] font-bold text-base transition-colors active:scale-[0.98] shrink-0"
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeMenu}
+                className="flex-1 flex flex-col overflow-hidden"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
               >
-                Reset
-              </button>
-            </aside>
-          )}
+                {renderContent()}
+              </motion.div>
+            </AnimatePresence>
+          </div>
         </div>
       </div>
 
       {/* ── MODALS ───────────────────────────────────────────── */}
-      {showDowntime && <DowntimeModal onClose={() => setShowDowntime(false)} onSelect={handleDowntimeSelect} />}
-      {showChangePass && <ChangePasswordModal user={user} onClose={() => setShowChangePass(false)} />}
-      {showInterlock && <InterlockModal open={showInterlock} onClose={() => setShowInterlock(false)} />}
-      {showSetting && <SettingModal onClose={() => setShowSetting(false)} onSaved={refreshCommDevices} />}
-      {showRelogin && <ReloginModal onClose={() => setShowRelogin(false)} onLoginSuccess={handleReloginSuccess} />}
+      <AnimatePresence>
+        {showDowntime && <DowntimeModal key="downtime" onClose={() => setShowDowntime(false)} onSelect={handleDowntimeSelect} />}
+        {showChangePass && <ChangePasswordModal key="changepass" user={user} onClose={() => setShowChangePass(false)} />}
+        {showInterlock && <InterlockModal key="interlock" open={showInterlock} onClose={() => setShowInterlock(false)} />}
+        {showSetting && <SettingModal key="setting" onClose={() => setShowSetting(false)} onSaved={refreshCommDevices} />}
+        {showRelogin && <ReloginModal key="relogin" onClose={() => setShowRelogin(false)} onLoginSuccess={handleReloginSuccess} />}
 
-      {/* Page Builder – kirim cpNumber yang benar */}
-      {showBuilder && (<PageBuilder
-          cpNumber={cpNumber || "2"}
-          availableDevices={commDevices}
-          onClose={() => setShowBuilder(false)}
-        />)}
-      {showLogic && (<LogicBuilder cpNumber={cpNumber || "2"} onClose={() => setShowLogic(false)} />)}
+        {/* Page Builder – kirim cpNumber yang benar */}
+        {showBuilder && (<PageBuilder key="builder" cpNumber={cpNumber || "2"} availableDevices={commDevices} onClose={() => setShowBuilder(false)} />)}
+        {showLogic && (<LogicBuilder key="logic" cpNumber={cpNumber || "2"} onClose={() => setShowLogic(false)} />)}
+      </AnimatePresence>
     </div>
   );
 }
@@ -951,7 +942,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
 // ── Placeholder pages ──────────────────────────────────────────
 function MainContent() {
   return (
-    <div className="flex-1 flex items-center justify-center text-[#E2E8F0] font-mono text-sm select-none">
+    <div className="flex-1 flex items-center justify-center text-[var(--text-primary)] font-mono text-sm select-none">
       <div className="text-center">
         <div className="text-4xl mb-3 opacity-20">⚙</div>
         <p>CP02-PCBAVM2 — Main Process</p>

@@ -1,6 +1,7 @@
 // src/modal/InterlockModal.jsx
 import { useState, useEffect } from "react";
 import { API } from "../service/api";
+import { ModalBackdrop, ModalPanel } from "../components/motion";
 
 // ── Icons used only in this modal ─────────────────────────────
 const IconX = () => (
@@ -92,17 +93,17 @@ export default function InterlockModal({ onClose, onSaved }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#0F172A] border border-[#1E293B] rounded-2xl w-[560px] max-h-[82vh] flex flex-col shadow-2xl">
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="bg-[var(--bg-surface)] border border-[var(--border-soft)] rounded-2xl w-[560px] max-h-[82vh] flex flex-col shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1E293B]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-soft)]">
           <div>
-            <p className="text-xs text-[#64748B] uppercase tracking-widest font-mono mb-0.5">Configuration</p>
-            <h2 className="text-white font-semibold text-base">Interlock Settings</h2>
+            <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest font-mono mb-0.5">Configuration</p>
+            <h2 className="text-[var(--text-primary)] font-semibold text-base">Interlock Settings</h2>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-[#64748B] hover:text-white hover:bg-[#1E293B] transition-colors"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
           >
             <IconX />
           </button>
@@ -118,20 +119,20 @@ export default function InterlockModal({ onClose, onSaved }) {
             Object.entries(sections).map(([section, fields]) => (
               <div key={section}>
                 <p className="text-xs font-mono text-[#22C55E] uppercase tracking-widest mb-3">{section}</p>
-                <div className="bg-[#111827] rounded-xl border border-[#1E293B] overflow-hidden">
+                <div className="bg-[var(--bg-surface-2)] rounded-xl border border-[var(--border-soft)] overflow-hidden">
                   {Object.entries(fields).map(([key, val], i, arr) => (
                     <div
                       key={key}
                       className={`flex items-center gap-4 px-4 py-3 ${
-                        i < arr.length - 1 ? "border-b border-[#1E293B]" : ""
+                        i < arr.length - 1 ? "border-b border-[var(--border-soft)]" : ""
                       }`}
                     >
-                      <span className="text-[#94A3B8] text-sm w-44 shrink-0">{key}</span>
+                      <span className="text-[var(--text-secondary)] text-sm w-44 shrink-0">{key}</span>
                       {key === "Interlock ByPass" ? (
                         <select
                           value={entries[section]?.[key] ?? val}
                           onChange={(e) => handleChange(section, key, e.target.value)}
-                          className="flex-1 bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
+                          className="flex-1 bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
                         >
                           <option>Yes</option>
                           <option>No</option>
@@ -141,7 +142,7 @@ export default function InterlockModal({ onClose, onSaved }) {
                           type={key.toLowerCase().includes("password") ? "password" : "text"}
                           value={entries[section]?.[key] ?? val}
                           onChange={(e) => handleChange(section, key, e.target.value)}
-                          className="flex-1 bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
+                          className="flex-1 bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
                         />
                       )}
                     </div>
@@ -153,7 +154,7 @@ export default function InterlockModal({ onClose, onSaved }) {
         </div>
 
         {/* Footer */}
-        <div className="flex flex-col gap-2 px-6 py-4 border-t border-[#1E293B]">
+        <div className="flex flex-col gap-2 px-6 py-4 border-t border-[var(--border-soft)]">
           {testResult && (
             <div
               className={`flex items-center gap-2 rounded-lg px-3 py-2 text-xs ${
@@ -178,7 +179,7 @@ export default function InterlockModal({ onClose, onSaved }) {
               <button
                 onClick={handleTest}
                 disabled={testing}
-                className="px-4 py-2 text-xs font-semibold border border-[#334155] hover:border-[#22C55E]/50 text-[#94A3B8] hover:text-[#22C55E] rounded-lg transition-colors disabled:opacity-60 flex items-center gap-1.5"
+                className="px-4 py-2 text-xs font-semibold border border-[var(--border)] hover:border-[#22C55E]/50 text-[var(--text-secondary)] hover:text-[#22C55E] rounded-lg transition-colors disabled:opacity-60 flex items-center gap-1.5"
               >
                 {testing ? (
                   <div className="w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -189,7 +190,7 @@ export default function InterlockModal({ onClose, onSaved }) {
               </button>
               <button
                 onClick={onClose}
-                className="px-4 py-2 text-sm text-[#94A3B8] hover:text-white border border-[#334155] hover:border-[#475569] rounded-lg transition-colors"
+                className="px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--text-muted)] rounded-lg transition-colors"
               >
                 Close
               </button>
@@ -206,7 +207,7 @@ export default function InterlockModal({ onClose, onSaved }) {
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }

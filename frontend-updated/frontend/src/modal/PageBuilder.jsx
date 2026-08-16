@@ -1,6 +1,7 @@
 // src/modal/PageBuilder.jsx
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { API } from "../service/api";
+import { ModalBackdrop, ModalPanel } from "../components/motion";
 
 // ──────────────────────────────────────────────────────────────────
 //  HMI DESIGN SYSTEM - THEME & VISUAL PROPS
@@ -8,29 +9,29 @@ import { API } from "../service/api";
 
 const THEME_PRESETS = {
   "wik_cyan": {
-    accent: "#00BFFF", background: "#07111F", border: "#123B5A", text: "#FFFFFF", secondary: "#7F9DB8", success: "#39FF88", warning: "#FFB020", danger: "#FF3B4D"
+    accent: "var(--accent-cyan)", background: "var(--panel-canvas)", border: "var(--panel-mid)", text: "#FFFFFF", secondary: "var(--panel-line)", success: "var(--accent-green-neon)", warning: "var(--accent-orange)", danger: "var(--accent-red-bright)"
   },
   "industrial_blue": {
-    accent: "#3B82F6", background: "#080E1A", border: "#1E3A5F", text: "#E2E8F0", secondary: "#94A3B8", success: "#22C55E", warning: "#F59E0B", danger: "#EF4444"
+    accent: "var(--accent-blue)", background: "var(--panel-canvas)", border: "var(--bg-hover)", text: "var(--text-primary)", secondary: "var(--text-secondary)", success: "var(--accent-green)", warning: "var(--accent-orange-alt)", danger: "var(--accent-red)"
   },
   "emerald": {
-    accent: "#22C55E", background: "#07150F", border: "#155E3A", text: "#FFFFFF", secondary: "#8BA99A", success: "#39FF88", warning: "#FFB020", danger: "#FF3B4D"
+    accent: "var(--accent-green)", background: "var(--status-green-bg)", border: "var(--status-green-solid)", text: "#FFFFFF", secondary: "var(--swatch-sage)", success: "var(--accent-green-neon)", warning: "var(--accent-orange)", danger: "var(--accent-red-bright)"
   },
   "amber": {
-    accent: "#FFB020", background: "#181107", border: "#654B15", text: "#FFFFFF", secondary: "#B6A27A", success: "#39FF88", warning: "#FFB020", danger: "#FF3B4D"
+    accent: "var(--accent-orange)", background: "var(--status-orange-bg)", border: "var(--status-orange-bg)", text: "#FFFFFF", secondary: "var(--swatch-tan)", success: "var(--accent-green-neon)", warning: "var(--accent-orange)", danger: "var(--accent-red-bright)"
   },
   "red_alert": {
-    accent: "#EF4444", background: "#1A0C0C", border: "#5F1A1A", text: "#FCA5A5", secondary: "#A66E6E", success: "#22C55E", warning: "#FFB020", danger: "#EF4444"
+    accent: "var(--accent-red)", background: "var(--status-red-bg)", border: "var(--status-red-bg)", text: "var(--accent-red-soft)", secondary: "var(--swatch-rose)", success: "var(--accent-green)", warning: "var(--accent-orange)", danger: "var(--accent-red)"
   }
 };
 
 const DEFAULT_VISUAL = {
   theme: "wik_cyan",
-  accentColor: "#00BFFF",
-  backgroundColor: "#07111F",
-  borderColor: "#123B5A",
+  accentColor: "var(--accent-cyan)",
+  backgroundColor: "var(--panel-canvas)",
+  borderColor: "var(--panel-mid)",
   textColor: "#FFFFFF",
-  secondaryTextColor: "#7F9DB8",
+  secondaryTextColor: "var(--panel-line)",
   borderWidth: 1,
   borderRadius: 12,
   glow: true,
@@ -165,10 +166,10 @@ const LINECHART_ADDRESS_TYPES = [
 ];
 
 const LINECHART_SERIES_COLORS = [
-  "#00BFFF",
-  "#EF4444",
-  "#22C55E",
-  "#FFB020",
+  "var(--accent-cyan)",
+  "var(--accent-red)",
+  "var(--accent-green)",
+  "var(--accent-orange)",
 ];
 
 const createLineChartSeries = (index = 0) => ({
@@ -182,7 +183,7 @@ const createLineChartSeries = (index = 0) => ({
 });
 
 
-function GaugeTypeIcon({ type = "temp", color = "#00BFFF", size = 28 }) {
+function GaugeTypeIcon({ type = "temp", color = "var(--accent-cyan)", size = 28 }) {
   const common = {
     width: size,
     height: size,
@@ -301,8 +302,8 @@ const COMPONENT_TYPES = [
       variable: "Light1", // 🔴 UBAH KE variable
       shape: "circle",
       showLabel: true,
-      onColor: "#00BFFF",
-      offColor: "#1E293B",
+      onColor: "var(--accent-cyan)",
+      offColor: "var(--border-soft)",
       width: 120,
       height: 60,
       visual: { ...DEFAULT_VISUAL },
@@ -322,8 +323,8 @@ const COMPONENT_TYPES = [
     desc: "Basic graphic shape",
     defaultProps: {
       shapeType: "rectangle",
-      fill: "#123B5A",
-      borderColor: "#00BFFF",
+      fill: "var(--panel-mid)",
+      borderColor: "var(--accent-cyan)",
       borderWidth: 1,
       radius: 8,
       rotation: 0,
@@ -395,13 +396,13 @@ const COMPONENT_TYPES = [
       // Needle / arc
       startAngle: -135,
       endAngle: 135,
-      trackColor: "#172B3F",
-      progressColor: "#00BFFF",
-      backgroundColor: "#071421",
+      trackColor: "var(--panel-mid)",
+      progressColor: "var(--accent-cyan)",
+      backgroundColor: "var(--panel-canvas)",
       textColor: "#FFFFFF",
-      iconColor: "#00BFFF",
-      unitColor: "#00BFFF",
-      labelColor: "#7F9DB8",
+      iconColor: "var(--accent-cyan)",
+      unitColor: "var(--accent-cyan)",
+      labelColor: "var(--panel-line)",
       glow: true,
 
       width: 220,
@@ -445,11 +446,11 @@ const COMPONENT_TYPES = [
       showTimeAxis: true,
 
       // Appearance
-      backgroundColor: "#071421",
-      borderColor: "#123B5A",
-      gridColor: "#16324A",
+      backgroundColor: "var(--panel-canvas)",
+      borderColor: "var(--panel-mid)",
+      gridColor: "var(--panel-mid)",
       textColor: "#FFFFFF",
-      labelColor: "#7F9DB8",
+      labelColor: "var(--panel-line)",
       lineWidth: 1.8,
 
       // Start with one realtime series. Additional series can be added from the property panel.
@@ -482,9 +483,9 @@ function WidgetPreview({ widget, onUpdate }) {
     const isOn = p.builderState === 1;
     const variant = p.variant || "neon";
 
-    const currentBg = isOn ? (p.onBackground || "#00BFFF") : (p.offBackground || "#0F172A");
-    const currentBorder = isOn ? (p.onBorder || "#00BFFF") : (p.offBorder || "#123B5A");
-    const currentText = isOn ? (p.onTextColor || "#FFFFFF") : (p.offTextColor || "#7F9DB8");
+    const currentBg = isOn ? (p.onBackground || "var(--accent-cyan)") : (p.offBackground || "var(--bg-canvas)");
+    const currentBorder = isOn ? (p.onBorder || "var(--accent-cyan)") : (p.offBorder || "var(--panel-mid)");
+    const currentText = isOn ? (p.onTextColor || "#FFFFFF") : (p.offTextColor || "var(--panel-line)");
     const currentLabel = isOn ? (p.labelOn || "ON") : (p.labelOff || "OFF");
     const fontSize = p.fontSize || 18;
 
@@ -497,7 +498,7 @@ function WidgetPreview({ widget, onUpdate }) {
     };
 
     if (variant === "neon") {
-      btnStyle.background = `linear-gradient(135deg, #07111F, ${currentBorder})`;
+      btnStyle.background = `linear-gradient(135deg, var(--panel-canvas), ${currentBorder})`;
       btnStyle.boxShadow = isOn ? `0 0 18px ${currentBg}` : "none";
     }
 
@@ -516,7 +517,7 @@ function WidgetPreview({ widget, onUpdate }) {
             <div
               className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full transition-all duration-300"
               style={{
-                background: isOn ? currentBg : "#0F172A",
+                background: isOn ? currentBg : "var(--bg-canvas)",
                 boxShadow: isOn ? `0 0 8px ${currentBg}` : "none"
               }}
             />
@@ -541,8 +542,8 @@ function WidgetPreview({ widget, onUpdate }) {
     // 🔴 LOGIKA VARIABLE ENGINE: Jika nilai 1 = ON, selain itu OFF
     const isOn = p.builderState === 1;
     const shape = p.shape || "circle";
-    const onColor = p.onColor || "#00BFFF";
-    const offColor = p.offColor || "#1E293B";
+    const onColor = p.onColor || "var(--accent-cyan)";
+    const offColor = p.offColor || "var(--border-soft)";
     const currentColor = isOn ? onColor : offColor;
     const label = p.label || "STATUS";
     const showLabel = p.showLabel !== false;
@@ -555,9 +556,9 @@ function WidgetPreview({ widget, onUpdate }) {
           style={{
             width: 36,
             height: 36,
-            background: `radial-gradient(circle at 35% 35%, ${isOn ? onColor : '#2A3A5A'}, ${currentColor})`,
+            background: `radial-gradient(circle at 35% 35%, ${isOn ? onColor : 'var(--panel-line)'}, ${currentColor})`,
             boxShadow: isOn ? `0 0 24px ${onColor}, inset 0 -2px 4px rgba(0,0,0,0.4)` : `inset 0 2px 6px rgba(0,0,0,0.6)`,
-            border: `1px solid ${isOn ? onColor : '#1E293B'}`
+            border: `1px solid ${isOn ? onColor : 'var(--border-soft)'}`
           }}
         />
 
@@ -566,7 +567,7 @@ function WidgetPreview({ widget, onUpdate }) {
           <span
             className="font-bold uppercase tracking-widest text-sm"
             style={{
-              color: isOn ? onColor : "#64748B",
+              color: isOn ? onColor : "var(--text-dim)",
               textShadow: isOn ? `0 0 12px ${onColor}` : "none"
             }}
           >
@@ -581,7 +582,7 @@ function WidgetPreview({ widget, onUpdate }) {
   if (type === "shape") {
     const shapeType = p.shapeType || "rectangle";
     const fill = p.fill || "transparent";
-    const borderColor = p.borderColor || "#00BFFF";
+    const borderColor = p.borderColor || "var(--accent-cyan)";
     const borderWidth = Math.max(0, Number(p.borderWidth ?? 1));
     const radius = Math.max(0, Number(p.radius ?? 8));
     const rotation = Number(p.rotation ?? 0);
@@ -890,11 +891,11 @@ function WidgetPreview({ widget, onUpdate }) {
       s => s.points[s.points.length - 1]
     );
 
-    const background = p.backgroundColor || "#071421";
-    const borderColor = p.borderColor || "#123B5A";
-    const gridColor = p.gridColor || "#16324A";
+    const background = p.backgroundColor || "var(--panel-canvas)";
+    const borderColor = p.borderColor || "var(--panel-mid)";
+    const gridColor = p.gridColor || "var(--panel-mid)";
     const textColor = p.textColor || "#FFFFFF";
-    const labelColor = p.labelColor || "#7F9DB8";
+    const labelColor = p.labelColor || "var(--panel-line)";
     const unit = p.unit || "";
 
     const formatValue = value =>
@@ -908,7 +909,7 @@ function WidgetPreview({ widget, onUpdate }) {
         style={{
           background: `
             radial-gradient(circle at 24% 40%, rgba(0,191,255,0.055), transparent 35%),
-            linear-gradient(180deg, #071421 0%, ${background} 100%)
+            linear-gradient(180deg, var(--panel-canvas) 0%, ${background} 100%)
           `,
           border: `1px solid ${borderColor}`,
           boxShadow:
@@ -944,8 +945,8 @@ function WidgetPreview({ widget, onUpdate }) {
               x2="1"
               y2="0"
             >
-              <stop offset="0%" stopColor="#0A1828" stopOpacity="0.2" />
-              <stop offset="100%" stopColor="#06101D" stopOpacity="0.72" />
+              <stop offset="0%" stopColor="var(--panel-mid)" stopOpacity="0.2" />
+              <stop offset="100%" stopColor="var(--panel-canvas)" stopOpacity="0.72" />
             </linearGradient>
           </defs>
 
@@ -982,15 +983,15 @@ function WidgetPreview({ widget, onUpdate }) {
               width="106"
               height="22"
               rx="7"
-              fill="#063622"
+              fill="var(--status-green-bg)"
               fillOpacity="0.88"
-              stroke="#0B5B3A"
+              stroke="var(--status-green-solid)"
               strokeWidth="0.6"
             />
             <path
               d="M10 12 L13 12 L15 7 L18 16 L21 10 L24 12 L29 12"
               fill="none"
-              stroke="#39FF88"
+              stroke="var(--accent-green-neon)"
               strokeWidth="1.25"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -998,7 +999,7 @@ function WidgetPreview({ widget, onUpdate }) {
             <text
               x="34"
               y="14"
-              fill="#62F6A0"
+              fill="var(--accent-green-neon-2)"
               fontSize="8"
               fontWeight="700"
               letterSpacing="0.5"
@@ -1008,7 +1009,7 @@ function WidgetPreview({ widget, onUpdate }) {
             <text
               x="92"
               y="14"
-              fill="#39FF88"
+              fill="var(--accent-green-neon)"
               fontSize="9"
               fontWeight="800"
             >
@@ -1079,7 +1080,7 @@ function WidgetPreview({ widget, onUpdate }) {
             y1={top + chartH}
             x2={plotRight}
             y2={top + chartH}
-            stroke="#31536D"
+            stroke="var(--panel-line)"
             strokeWidth="0.8"
             opacity="0.85"
           />
@@ -1121,7 +1122,7 @@ function WidgetPreview({ widget, onUpdate }) {
                     cy={yFor(s.points[s.points.length - 1])}
                     r="2.2"
                     fill={color}
-                    stroke="#071421"
+                    stroke="var(--panel-canvas)"
                     strokeWidth="1"
                   />
                 )}
@@ -1175,7 +1176,7 @@ function WidgetPreview({ widget, onUpdate }) {
             y1="36"
             x2={separatorX}
             y2={H - 15}
-            stroke="#24445C"
+            stroke="var(--panel-line)"
             strokeWidth="0.8"
           />
 
@@ -1199,7 +1200,7 @@ function WidgetPreview({ widget, onUpdate }) {
                   <text
                     x={separatorX + 43}
                     y={y}
-                    fill="#CBD5E1"
+                    fill="var(--text-soft)"
                     fontSize="8"
                     fontWeight="600"
                     letterSpacing="0.35"
@@ -1221,7 +1222,7 @@ function WidgetPreview({ widget, onUpdate }) {
                   <text
                     x={separatorX + 20}
                     y={y - 19}
-                    fill="#CBD5E1"
+                    fill="var(--text-soft)"
                     fontSize="8"
                     fontWeight="500"
                     letterSpacing="0.4"
@@ -1258,7 +1259,7 @@ function WidgetPreview({ widget, onUpdate }) {
                       y1={y + 23}
                       x2={W - 18}
                       y2={y + 23}
-                      stroke="#294158"
+                      stroke="var(--panel-line)"
                       strokeWidth="0.7"
                     />
                   )}
@@ -1305,10 +1306,10 @@ function WidgetPreview({ widget, onUpdate }) {
     const title = p.title || "VALUE";
     const gaugeType = p.gaugeType || "temp";
 
-    const accent = p.progressColor || "#00BFFF";
-    const track = p.trackColor || "#1A2C3D";
+    const accent = p.progressColor || "var(--accent-cyan)";
+    const track = p.trackColor || "var(--panel-line)";
     const textColor = p.textColor || "#FFFFFF";
-    const labelColor = p.labelColor || "#71879B";
+    const labelColor = p.labelColor || "var(--panel-line)";
     const needleColor = p.needleColor || "#FFFFFF";
 
     const gaugeId = `dialGauge-${widget.id || "preview"}`;
@@ -1370,9 +1371,9 @@ function WidgetPreview({ widget, onUpdate }) {
             </linearGradient>
 
             <radialGradient id={`${gaugeId}-face`} cx="50%" cy="45%" r="70%">
-              <stop offset="0%" stopColor={p.backgroundColor || "#102133"} />
-              <stop offset="72%" stopColor={p.backgroundColor || "#071421"} />
-              <stop offset="100%" stopColor={p.backgroundColor || "#050D16"} />
+              <stop offset="0%" stopColor={p.backgroundColor || "var(--panel-mid)"} />
+              <stop offset="72%" stopColor={p.backgroundColor || "var(--panel-canvas)"} />
+              <stop offset="100%" stopColor={p.backgroundColor || "var(--panel-canvas)"} />
             </radialGradient>
 
             <filter
@@ -1399,7 +1400,7 @@ function WidgetPreview({ widget, onUpdate }) {
             cy={cy}
             r="88"
             fill={`url(#${gaugeId}-face)`}
-            stroke={p.borderColor || "#18334A"}
+            stroke={p.borderColor || "var(--panel-mid)"}
             strokeWidth="1"
           />
 
@@ -1407,7 +1408,7 @@ function WidgetPreview({ widget, onUpdate }) {
           <path
             d={arcPath(start, end, 84)}
             fill="none"
-            stroke="#24445C"
+            stroke="var(--panel-line)"
             strokeWidth="2"
             strokeDasharray="1 4"
           />
@@ -1602,15 +1603,15 @@ function WidgetPreview({ widget, onUpdate }) {
     );
   }
 
-  return <div className="text-[10px] text-[#475569]">Empty Component</div>;
+  return <div className="text-[10px] text-[var(--text-muted)]">Empty Component</div>;
 }
 
 function PropInput({ label, value, onChange, type = "text", options, min, max }) {
-  return (<div className="flex flex-col gap-0.5"><span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">{label}</span>
-    {options ? (<select value={value} onChange={e => onChange(e.target.value)} className="bg-[#0F172A] border border-[#334155] text-white text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60">{options.map(o => (<option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>))}</select>) :
-      type === "checkbox" ? (<label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} className="accent-[#22C55E]" /><span className="text-[10px] text-white">{label}</span></label>) :
-        type === "color" ? (<div className="flex items-center gap-2"><input type="color" value={value} onChange={e => onChange(e.target.value)} className="w-7 h-7 rounded cursor-pointer bg-transparent border border-[#334155]" /><input type="text" value={value} onChange={e => onChange(e.target.value)} className="flex-1 bg-[#0F172A] border border-[#334155] text-white text-[10px] rounded px-2 h-7 outline-none font-mono" /></div>) :
-          (<input type={type} value={value} min={min} max={max} onChange={e => onChange(type === "number" ? Number(e.target.value) : e.target.value)} className="bg-[#0F172A] border border-[#334155] text-white text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60" />)}
+  return (<div className="flex flex-col gap-0.5"><span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">{label}</span>
+    {options ? (<select value={value} onChange={e => onChange(e.target.value)} className="bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[var(--accent-green)]/60">{options.map(o => (<option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>))}</select>) :
+      type === "checkbox" ? (<label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} className="accent-[var(--accent-green)]" /><span className="text-[10px] text-[var(--text-primary)]">{label}</span></label>) :
+        type === "color" ? (<div className="flex items-center gap-2"><input type="color" value={value} onChange={e => onChange(e.target.value)} className="w-7 h-7 rounded cursor-pointer bg-transparent border border-[var(--border)]" /><input type="text" value={value} onChange={e => onChange(e.target.value)} className="flex-1 bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none font-mono" /></div>) :
+          (<input type={type} value={value} min={min} max={max} onChange={e => onChange(type === "number" ? Number(e.target.value) : e.target.value)} className="bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[var(--accent-green)]/60" />)}
   </div>);
 }
 
@@ -1624,21 +1625,21 @@ function IconPicker({ value, onChange }) {
         <button
           type="button"
           onClick={() => setOpen(v => !v)}
-          className="flex-1 h-8 rounded border border-[#334155] bg-[#0F172A] text-white flex items-center gap-2 px-2 hover:border-[#22C55E]/60 transition-colors"
+          className="flex-1 h-8 rounded border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-primary)] flex items-center gap-2 px-2 hover:border-[var(--accent-green)]/60 transition-colors"
         >
           <span className="w-6 h-6 flex items-center justify-center text-lg">
             {selected.icon || "—"}
           </span>
-          <span className="text-[10px] text-[#CBD5E1]">
+          <span className="text-[10px] text-[var(--text-soft)]">
             {selected.label}
           </span>
-          <span className="ml-auto text-[#64748B]">⌄</span>
+          <span className="ml-auto text-[var(--text-dim)]">⌄</span>
         </button>
         {value && (
           <button
             type="button"
             onClick={() => onChange("")}
-            className="w-8 h-8 rounded border border-[#334155] text-[#64748B] hover:text-white hover:bg-[#1E293B]"
+            className="w-8 h-8 rounded border border-[var(--border)] text-[var(--text-dim)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)]"
             title="Remove icon"
           >
             ×
@@ -1647,7 +1648,7 @@ function IconPicker({ value, onChange }) {
       </div>
 
       {open && (
-        <div className="absolute z-[100] left-0 right-0 mt-1 p-2 rounded-lg border border-[#334155] bg-[#0B1120] shadow-2xl">
+        <div className="absolute z-[100] left-0 right-0 mt-1 p-2 rounded-lg border border-[var(--border)] bg-[var(--panel-canvas)] shadow-2xl">
           <div className="grid grid-cols-6 gap-1 max-h-48 overflow-y-auto" style={{ scrollbarWidth: "thin" }}>
             {TEXTBOX_ICONS.map((item, index) => (
               <button
@@ -1658,10 +1659,10 @@ function IconPicker({ value, onChange }) {
                   onChange(item.value);
                   setOpen(false);
                 }}
-                className="h-8 rounded flex items-center justify-center text-base border border-transparent hover:border-[#22C55E]/50 hover:bg-[#1E293B] transition-colors"
+                className="h-8 rounded flex items-center justify-center text-base border border-transparent hover:border-[var(--accent-green)]/50 hover:bg-[var(--border-soft)] transition-colors"
                 style={{
                   background: value === item.value ? "rgba(34,197,94,0.12)" : "transparent",
-                  color: value === item.value ? "#22C55E" : "#CBD5E1"
+                  color: value === item.value ? "var(--accent-green)" : "var(--text-soft)"
                 }}
               >
                 {item.icon || "—"}
@@ -1674,11 +1675,11 @@ function IconPicker({ value, onChange }) {
   );
 }
 
-function PropSection({ title, children }) { return (<div className="flex flex-col gap-2 pb-3 border-b border-[#1E293B]"><span className="text-[9px] font-bold text-[#22C55E] uppercase tracking-widest pt-2">{title}</span>{children}</div>); }
+function PropSection({ title, children }) { return (<div className="flex flex-col gap-2 pb-3 border-b border-[var(--border-soft)]"><span className="text-[9px] font-bold text-[var(--accent-green)] uppercase tracking-widest pt-2">{title}</span>{children}</div>); }
 
 // ── PROPERTY PANEL ──────────────────────────────────────────────
 function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, canvasHeight, availableDevices = [] }) {
-  if (!widget) return (<div className="flex flex-col items-center justify-center h-full text-center px-4"><span className="text-3xl opacity-20 mb-2">🖱</span><p className="text-[#475569] text-[10px]">Click a widget on the canvas to edit its properties</p></div>);
+  if (!widget) return (<div className="flex flex-col items-center justify-center h-full text-center px-4"><span className="text-3xl opacity-20 mb-2">🖱</span><p className="text-[var(--text-muted)] text-[10px]">Click a widget on the canvas to edit its properties</p></div>);
   const { type, props: p, x, y } = widget;
 
   const set = useCallback((key, val) => {
@@ -1693,7 +1694,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
 
   const isOn = p.builderState === 1;
 
-  return (<div className="flex flex-col h-full overflow-hidden"><div className="flex items-center justify-between px-3 py-2.5 border-b border-[#1E293B] shrink-0"><div className="flex items-center gap-2"><span className="text-base">◻</span><span className="text-white font-bold text-xs capitalize">{type || 'Unknown'}</span></div><div className="flex items-center gap-1"><button onClick={onDuplicate} title="Duplicate" className="w-6 h-6 rounded flex items-center justify-center text-[#475569] hover:text-[#3B82F6] hover:bg-[#1E3A5F] transition-colors"><IconDupe /></button><button onClick={onDelete} title="Delete" className="w-6 h-6 rounded flex items-center justify-center text-[#475569] hover:text-[#EF4444] hover:bg-[#7F1D1D]/20 transition-colors"><IconTrash /></button></div></div><div className="flex-1 overflow-y-auto px-3 flex flex-col gap-0" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #0F172A" }}>
+  return (<div className="flex flex-col h-full overflow-hidden"><div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--border-soft)] shrink-0"><div className="flex items-center gap-2"><span className="text-base">◻</span><span className="text-[var(--text-primary)] font-bold text-xs capitalize">{type || 'Unknown'}</span></div><div className="flex items-center gap-1"><button onClick={onDuplicate} title="Duplicate" className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-blue)] hover:bg-[var(--bg-hover)] transition-colors"><IconDupe /></button><button onClick={onDelete} title="Delete" className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--status-red-bg)]/20 transition-colors"><IconTrash /></button></div></div><div className="flex-1 overflow-y-auto px-3 flex flex-col gap-0" style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border) var(--bg-canvas)" }}>
 
     <PropSection title="Position & Size"><div className="grid grid-cols-2 gap-2">
       <PropInput label="X" type="number" min={0} value={x} onChange={handleXChange} />
@@ -1709,13 +1710,13 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
         <PropSection title="Device / Address">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
                 Device
               </label>
               <select
                 value={p.device || ""}
                 onChange={e => set("device", e.target.value)}
-                className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
               >
                 <option value="">Select device...</option>
                 {availableDevices
@@ -1753,7 +1754,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             value={p.variable || ""}
             onChange={v => set("variable", v)}
           />
-          <div className="text-[8px] text-[#64748B] mt-0.5">
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
             Button is WRITE only. Use Coil or Holding Register.
             Discrete Input and Input Register are intentionally not available because they are read-only.
           </div>
@@ -1780,9 +1781,9 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
               onClick={() => set("builderState", 1)}
               className="h-8 rounded-lg border text-[9px] font-bold transition-all"
               style={{
-                background: isOn ? "#00BFFF" : "#0F172A",
-                borderColor: isOn ? "#00BFFF" : "#334155",
-                color: isOn ? "#06111F" : "#64748B",
+                background: isOn ? "var(--accent-cyan)" : "var(--bg-canvas)",
+                borderColor: isOn ? "var(--accent-cyan)" : "var(--border)",
+                color: isOn ? "var(--panel-canvas)" : "var(--text-dim)",
                 boxShadow: isOn ? "0 0 12px rgba(0,191,255,0.25)" : "none"
               }}
             >
@@ -1793,15 +1794,15 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
               onClick={() => set("builderState", 0)}
               className="h-8 rounded-lg border text-[9px] font-bold transition-all"
               style={{
-                background: !isOn ? "#1E293B" : "#0F172A",
-                borderColor: !isOn ? "#64748B" : "#334155",
-                color: !isOn ? "#FFFFFF" : "#64748B"
+                background: !isOn ? "var(--border-soft)" : "var(--bg-canvas)",
+                borderColor: !isOn ? "var(--text-dim)" : "var(--border)",
+                color: !isOn ? "#FFFFFF" : "var(--text-dim)"
               }}
             >
               ○ OFF
             </button>
           </div>
-          <div className="text-[8px] text-[#64748B] mt-1">
+          <div className="text-[8px] text-[var(--text-dim)] mt-1">
             Builder preview only. Runtime value comes from the bound variable/device.
           </div>
         </PropSection>
@@ -1844,13 +1845,13 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Background"
             type="color"
-            value={p.onBackground || "#00BFFF"}
+            value={p.onBackground || "var(--accent-cyan)"}
             onChange={v => set("onBackground", v)}
           />
           <PropInput
             label="Border"
             type="color"
-            value={p.onBorder || "#00BFFF"}
+            value={p.onBorder || "var(--accent-cyan)"}
             onChange={v => set("onBorder", v)}
           />
           <PropInput
@@ -1865,19 +1866,19 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Background"
             type="color"
-            value={p.offBackground || "#0F172A"}
+            value={p.offBackground || "var(--bg-canvas)"}
             onChange={v => set("offBackground", v)}
           />
           <PropInput
             label="Border"
             type="color"
-            value={p.offBorder || "#123B5A"}
+            value={p.offBorder || "var(--panel-mid)"}
             onChange={v => set("offBorder", v)}
           />
           <PropInput
             label="Text"
             type="color"
-            value={p.offTextColor || "#7F9DB8"}
+            value={p.offTextColor || "var(--panel-line)"}
             onChange={v => set("offTextColor", v)}
           />
         </PropSection>
@@ -1891,13 +1892,13 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
         <PropSection title="Device / Address">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
                 Device
               </label>
               <select
                 value={p.device || ""}
                 onChange={e => set("device", e.target.value)}
-                className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
               >
                 <option value="">Select device...</option>
                 {availableDevices
@@ -1935,7 +1936,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             value={p.variable || ""}
             onChange={v => set("variable", v)}
           />
-          <div className="text-[8px] text-[#64748B] mt-0.5">
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
             Light is READ only. It supports Coil, Discrete Input, Holding Register and Input Register.
             Runtime converts the read value to ON/OFF using Value ON / Value OFF.
           </div>
@@ -1962,9 +1963,9 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
               onClick={() => set("builderState", 1)}
               className="h-8 rounded-lg border text-[9px] font-bold transition-all"
               style={{
-                background: isOn ? "#00BFFF" : "#0F172A",
-                borderColor: isOn ? "#00BFFF" : "#334155",
-                color: isOn ? "#06111F" : "#64748B",
+                background: isOn ? "var(--accent-cyan)" : "var(--bg-canvas)",
+                borderColor: isOn ? "var(--accent-cyan)" : "var(--border)",
+                color: isOn ? "var(--panel-canvas)" : "var(--text-dim)",
                 boxShadow: isOn ? "0 0 12px rgba(0,191,255,0.25)" : "none"
               }}
             >
@@ -1975,15 +1976,15 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
               onClick={() => set("builderState", 0)}
               className="h-8 rounded-lg border text-[9px] font-bold transition-all"
               style={{
-                background: !isOn ? "#1E293B" : "#0F172A",
-                borderColor: !isOn ? "#64748B" : "#334155",
-                color: !isOn ? "#FFFFFF" : "#64748B"
+                background: !isOn ? "var(--border-soft)" : "var(--bg-canvas)",
+                borderColor: !isOn ? "var(--text-dim)" : "var(--border)",
+                color: !isOn ? "#FFFFFF" : "var(--text-dim)"
               }}
             >
               ○ OFF
             </button>
           </div>
-          <div className="text-[8px] text-[#64748B] mt-1">
+          <div className="text-[8px] text-[var(--text-dim)] mt-1">
             Builder preview only. Runtime value comes from the bound variable/device.
           </div>
         </PropSection>
@@ -2017,7 +2018,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Color ON"
             type="color"
-            value={p.onColor || "#00BFFF"}
+            value={p.onColor || "var(--accent-cyan)"}
             onChange={v => set("onColor", v)}
           />
         </PropSection>
@@ -2026,7 +2027,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Color OFF"
             type="color"
-            value={p.offColor || "#1E293B"}
+            value={p.offColor || "var(--border-soft)"}
             onChange={v => set("offColor", v)}
           />
         </PropSection>
@@ -2042,7 +2043,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             value={p.variable || ""}
             onChange={v => set("variable", v)}
           />
-          <div className="text-[8px] text-[#64748B] mt-0.5">
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
             When a variable is assigned, runtime displays its current value.
           </div>
           <PropInput
@@ -2143,13 +2144,13 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Background"
             type="color"
-            value={p.backgroundColor || "#07111F"}
+            value={p.backgroundColor || "var(--panel-canvas)"}
             onChange={v => set("backgroundColor", v)}
           />
           <PropInput
             label="Border"
             type="color"
-            value={p.borderColor || "#123B5A"}
+            value={p.borderColor || "var(--panel-mid)"}
             onChange={v => set("borderColor", v)}
           />
           <div className="grid grid-cols-2 gap-2">
@@ -2249,7 +2250,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
         </PropSection>
 
         <PropSection title="Trend Trigger">
-          <div className="text-[8px] text-[#64748B] leading-relaxed">
+          <div className="text-[8px] text-[var(--text-dim)] leading-relaxed">
             When enabled, the configured trigger address controls the trend: value 1 starts recording and value 0 stops recording.
           </div>
 
@@ -2261,13 +2262,13 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           />
 
           <div>
-            <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+            <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
               Trigger Device
             </label>
             <select
               value={p.triggerDevice || ""}
               onChange={e => set("triggerDevice", e.target.value)}
-              className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+              className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
             >
               <option value="">Select device...</option>
               {availableDevices
@@ -2318,7 +2319,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
         </PropSection>
 
         <PropSection title="Realtime Series">
-          <div className="text-[8px] text-[#64748B]">
+          <div className="text-[8px] text-[var(--text-dim)]">
             One realtime signal is shown by default. Add more PLC series only when needed.
           </div>
 
@@ -2332,26 +2333,26 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             return (
               <div
                 key={series.id || `series-${index}`}
-                className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2.5 flex flex-col gap-2"
+                className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] p-2.5 flex flex-col gap-2"
               >
-                <div className="flex items-center justify-between gap-2 pb-1 border-b border-[#1E293B]">
+                <div className="flex items-center justify-between gap-2 pb-1 border-b border-[var(--border-soft)]">
                   <div className="flex items-center gap-2 min-w-0">
                     <span
                       className="w-2.5 h-2.5 rounded-full shrink-0"
                       style={{ background: series.color || LINECHART_SERIES_COLORS[index % 4], boxShadow: `0 0 7px ${series.color || LINECHART_SERIES_COLORS[index % 4]}` }}
                     />
                     <div className="min-w-0">
-                      <div className="text-[9px] text-white font-bold truncate">SERIES {index + 1}</div>
-                      <div className="text-[7px] text-[#64748B] uppercase tracking-wider">Realtime PLC signal</div>
+                      <div className="text-[9px] text-[var(--text-primary)] font-bold truncate">SERIES {index + 1}</div>
+                      <div className="text-[7px] text-[var(--text-dim)] uppercase tracking-wider">Realtime PLC signal</div>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <label className="flex items-center gap-1.5 cursor-pointer text-[8px] text-[#CBD5E1]">
+                    <label className="flex items-center gap-1.5 cursor-pointer text-[8px] text-[var(--text-soft)]">
                       <input
                         type="checkbox"
                         checked={series.enabled !== false}
                         onChange={e => updateSeries("enabled", e.target.checked)}
-                        className="accent-[#22C55E]"
+                        className="accent-[var(--accent-green)]"
                       />
                       ON
                     </label>
@@ -2363,7 +2364,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
                           next.splice(index, 1);
                           set("series", next);
                         }}
-                        className="w-6 h-6 rounded border border-[#334155] text-[#64748B] hover:text-[#EF4444] hover:border-[#EF4444]/60 hover:bg-[#1A0F14] text-[11px] transition-colors"
+                        className="w-6 h-6 rounded border border-[var(--border)] text-[var(--text-dim)] hover:text-[var(--accent-red)] hover:border-[var(--accent-red)]/60 hover:bg-[var(--status-red-bg)] text-[11px] transition-colors"
                         title="Remove series"
                       >
                         ×
@@ -2379,13 +2380,13 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
                 />
 
                 <div>
-                  <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+                  <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
                     Device
                   </label>
                   <select
                     value={series.device || ""}
                     onChange={e => updateSeries("device", e.target.value)}
-                    className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+                    className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
                   >
                     <option value="">Select device...</option>
                     {availableDevices
@@ -2429,7 +2430,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
                 const current = Array.isArray(p.series) ? p.series : [];
                 set("series", [...current, createLineChartSeries(current.length)]);
               }}
-              className="h-8 rounded-lg border border-[#334155] bg-[#0F172A] text-[#22C55E] text-[9px] font-bold hover:bg-[#1E293B] transition-colors"
+              className="h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--accent-green)] text-[9px] font-bold hover:bg-[var(--border-soft)] transition-colors"
             >
               + ADD SERIES
             </button>
@@ -2466,43 +2467,43 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
         <PropSection title="Appearance">
           <div className="flex flex-col gap-2">
 
-            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+            <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] p-2">
               <PropInput
                 label="Background"
                 type="color"
-                value={p.backgroundColor || "#071421"}
+                value={p.backgroundColor || "var(--panel-canvas)"}
                 onChange={v => set("backgroundColor", v)}
               />
             </div>
 
-            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+            <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] p-2">
               <PropInput
                 label="Border"
                 type="color"
-                value={p.borderColor || "#123B5A"}
+                value={p.borderColor || "var(--panel-mid)"}
                 onChange={v => set("borderColor", v)}
               />
             </div>
 
-            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+            <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] p-2">
               <PropInput
                 label="Grid"
                 type="color"
-                value={p.gridColor || "#16324A"}
+                value={p.gridColor || "var(--panel-mid)"}
                 onChange={v => set("gridColor", v)}
               />
             </div>
 
-            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+            <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] p-2">
               <PropInput
                 label="Axis Text"
                 type="color"
-                value={p.labelColor || "#7F9DB8"}
+                value={p.labelColor || "var(--panel-line)"}
                 onChange={v => set("labelColor", v)}
               />
             </div>
 
-            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+            <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] p-2">
               <PropInput
                 label="Chart Text"
                 type="color"
@@ -2511,7 +2512,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
               />
             </div>
 
-            <div className="rounded-lg border border-[#1E293B] bg-[#0B1120] p-2">
+            <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] p-2">
               <PropInput
                 label="Line Width"
                 type="number"
@@ -2535,13 +2536,13 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
         <PropSection title="Device / Address">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
                 Device
               </label>
               <select
                 value={p.device || ""}
                 onChange={e => set("device", e.target.value)}
-                className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
               >
                 <option value="">Select device...</option>
                 {availableDevices
@@ -2579,7 +2580,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             value={p.variable || ""}
             onChange={v => set("variable", v)}
           />
-          <div className="text-[8px] text-[#64748B] mt-0.5">
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
             Gauge is READ only and uses Holding Register only.
             Runtime reads the Holding Register numeric value and binds it to the gauge.
           </div>
@@ -2587,7 +2588,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
 
         <PropSection title="Gauge Type & Header">
           <div className="flex flex-col gap-1">
-            <span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">
+            <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
               Instrument
             </span>
 
@@ -2602,22 +2603,22 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
                     onClick={() => set("gaugeType", item.value)}
                     className="h-9 rounded-lg border flex items-center gap-2 px-2 text-left transition-all"
                     style={{
-                      background: active ? "rgba(0,191,255,0.10)" : "#0F172A",
-                      borderColor: active ? "#00BFFF" : "#334155",
-                      color: active ? "#FFFFFF" : "#94A3B8",
+                      background: active ? "rgba(0,191,255,0.10)" : "var(--bg-canvas)",
+                      borderColor: active ? "var(--accent-cyan)" : "var(--border)",
+                      color: active ? "#FFFFFF" : "var(--text-secondary)",
                       boxShadow: active ? "0 0 10px rgba(0,191,255,0.12)" : "none"
                     }}
                   >
                     <span
                       className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
                       style={{
-                        background: active ? "rgba(0,191,255,0.12)" : "#07111F",
-                        color: active ? "#00BFFF" : "#64748B"
+                        background: active ? "rgba(0,191,255,0.12)" : "var(--panel-canvas)",
+                        color: active ? "var(--accent-cyan)" : "var(--text-dim)"
                       }}
                     >
                       <GaugeTypeIcon
                         type={item.value}
-                        color={active ? "#00BFFF" : "#64748B"}
+                        color={active ? "var(--accent-cyan)" : "var(--text-dim)"}
                         size={17}
                       />
                     </span>
@@ -2642,7 +2643,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             value={p.unit || ""}
             onChange={v => set("unit", v)}
           />
-          <div className="text-[8px] text-[#64748B] -mt-1">
+          <div className="text-[8px] text-[var(--text-dim)] -mt-1">
             Suggested: {GAUGE_TYPES.find(g => g.value === (p.gaugeType || "temp"))?.unit || ""}
           </div>
 
@@ -2720,7 +2721,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             onChange={v => set("simulationValue", Number(v))}
           />
 
-          <div className="text-[8px] text-[#64748B] mt-0.5">
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
             Builder preview only. Runtime value will come from the bound variable.
           </div>
         </PropSection>
@@ -2759,28 +2760,28 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Gauge Background"
             type="color"
-            value={p.backgroundColor || "#071421"}
+            value={p.backgroundColor || "var(--panel-canvas)"}
             onChange={v => set("backgroundColor", v)}
           />
 
           <PropInput
             label="Gauge Border"
             type="color"
-            value={p.borderColor || "#18334A"}
+            value={p.borderColor || "var(--panel-mid)"}
             onChange={v => set("borderColor", v)}
           />
 
           <PropInput
             label="Progress Color"
             type="color"
-            value={p.progressColor || "#00BFFF"}
+            value={p.progressColor || "var(--accent-cyan)"}
             onChange={v => set("progressColor", v)}
           />
 
           <PropInput
             label="Track Color"
             type="color"
-            value={p.trackColor || "#172B3F"}
+            value={p.trackColor || "var(--panel-mid)"}
             onChange={v => set("trackColor", v)}
           />
 
@@ -2794,21 +2795,21 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Icon Color"
             type="color"
-            value={p.iconColor || p.progressColor || "#00BFFF"}
+            value={p.iconColor || p.progressColor || "var(--accent-cyan)"}
             onChange={v => set("iconColor", v)}
           />
 
           <PropInput
             label="Unit Color"
             type="color"
-            value={p.unitColor || p.progressColor || "#00BFFF"}
+            value={p.unitColor || p.progressColor || "var(--accent-cyan)"}
             onChange={v => set("unitColor", v)}
           />
 
           <PropInput
             label="Tick / Scale Color"
             type="color"
-            value={p.labelColor || "#7F9DB8"}
+            value={p.labelColor || "var(--panel-line)"}
             onChange={v => set("labelColor", v)}
           />
         </PropSection>
@@ -2823,13 +2824,13 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
         <PropSection title="Device / Address">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[9px] font-semibold text-[#64748B] uppercase tracking-wider mb-1">
+              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
                 Device
               </label>
               <select
                 value={p.device || ""}
                 onChange={e => set("device", e.target.value)}
-                className="w-full h-8 px-2 rounded border border-[#334155] bg-[#0B1120] text-[#E2E8F0] text-[10px] font-mono outline-none focus:border-[#22C55E]"
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
               >
                 <option value="">Select device...</option>
                 {availableDevices
@@ -2867,7 +2868,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             value={p.variable || ""}
             onChange={v => set("variable", v)}
           />
-          <div className="text-[8px] text-[#64748B] mt-0.5">
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
             Gauge is READ only and uses Holding Register only.
             Runtime reads the Holding Register numeric value and binds it to the gauge.
           </div>
@@ -2875,7 +2876,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
 
         <PropSection title="Gauge Type & Header">
           <div className="flex flex-col gap-1">
-            <span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">
+            <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">
               Instrument
             </span>
 
@@ -2890,22 +2891,22 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
                     onClick={() => set("gaugeType", item.value)}
                     className="h-9 rounded-lg border flex items-center gap-2 px-2 text-left transition-all"
                     style={{
-                      background: active ? "rgba(0,191,255,0.10)" : "#0F172A",
-                      borderColor: active ? "#00BFFF" : "#334155",
-                      color: active ? "#FFFFFF" : "#94A3B8",
+                      background: active ? "rgba(0,191,255,0.10)" : "var(--bg-canvas)",
+                      borderColor: active ? "var(--accent-cyan)" : "var(--border)",
+                      color: active ? "#FFFFFF" : "var(--text-secondary)",
                       boxShadow: active ? "0 0 10px rgba(0,191,255,0.12)" : "none"
                     }}
                   >
                     <span
                       className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
                       style={{
-                        background: active ? "rgba(0,191,255,0.12)" : "#07111F",
-                        color: active ? "#00BFFF" : "#64748B"
+                        background: active ? "rgba(0,191,255,0.12)" : "var(--panel-canvas)",
+                        color: active ? "var(--accent-cyan)" : "var(--text-dim)"
                       }}
                     >
                       <GaugeTypeIcon
                         type={item.value}
-                        color={active ? "#00BFFF" : "#64748B"}
+                        color={active ? "var(--accent-cyan)" : "var(--text-dim)"}
                         size={17}
                       />
                     </span>
@@ -2930,7 +2931,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             value={p.unit || ""}
             onChange={v => set("unit", v)}
           />
-          <div className="text-[8px] text-[#64748B] -mt-1">
+          <div className="text-[8px] text-[var(--text-dim)] -mt-1">
             Suggested: {GAUGE_TYPES.find(g => g.value === (p.gaugeType || "temp"))?.unit || ""}
           </div>
 
@@ -3008,7 +3009,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
             onChange={v => set("simulationValue", Number(v))}
           />
 
-          <div className="text-[8px] text-[#64748B] mt-0.5">
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
             Builder preview only. Runtime value will come from the bound variable.
           </div>
         </PropSection>
@@ -3047,28 +3048,28 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Gauge Background"
             type="color"
-            value={p.backgroundColor || "#071421"}
+            value={p.backgroundColor || "var(--panel-canvas)"}
             onChange={v => set("backgroundColor", v)}
           />
 
           <PropInput
             label="Gauge Border"
             type="color"
-            value={p.borderColor || "#18334A"}
+            value={p.borderColor || "var(--panel-mid)"}
             onChange={v => set("borderColor", v)}
           />
 
           <PropInput
             label="Progress Color"
             type="color"
-            value={p.progressColor || "#00BFFF"}
+            value={p.progressColor || "var(--accent-cyan)"}
             onChange={v => set("progressColor", v)}
           />
 
           <PropInput
             label="Track Color"
             type="color"
-            value={p.trackColor || "#172B3F"}
+            value={p.trackColor || "var(--panel-mid)"}
             onChange={v => set("trackColor", v)}
           />
 
@@ -3082,21 +3083,21 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Icon Color"
             type="color"
-            value={p.iconColor || p.progressColor || "#00BFFF"}
+            value={p.iconColor || p.progressColor || "var(--accent-cyan)"}
             onChange={v => set("iconColor", v)}
           />
 
           <PropInput
             label="Unit Color"
             type="color"
-            value={p.unitColor || p.progressColor || "#00BFFF"}
+            value={p.unitColor || p.progressColor || "var(--accent-cyan)"}
             onChange={v => set("unitColor", v)}
           />
 
           <PropInput
             label="Tick / Scale Color"
             type="color"
-            value={p.labelColor || "#7F9DB8"}
+            value={p.labelColor || "var(--panel-line)"}
             onChange={v => set("labelColor", v)}
           />
         </PropSection>
@@ -3144,13 +3145,13 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
           <PropInput
             label="Fill"
             type="color"
-            value={p.fill || "#123B5A"}
+            value={p.fill || "var(--panel-mid)"}
             onChange={v => set("fill", v)}
           />
           <PropInput
             label="Border"
             type="color"
-            value={p.borderColor || "#00BFFF"}
+            value={p.borderColor || "var(--accent-cyan)"}
             onChange={v => set("borderColor", v)}
           />
           <PropInput
@@ -3324,54 +3325,54 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
   const displayHeight = CANVAS_H * scale;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm font-sans">
-      <div className="flex flex-col rounded-2xl overflow-hidden border border-[#334155] shadow-2xl" style={{ width: "min(98vw, 1800px)", height: "min(96vh, 900px)", background: "#0B1120" }}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E293B] shrink-0" style={{ background: "#111827" }}>
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm font-sans">
+      <ModalPanel className="flex flex-col rounded-2xl overflow-hidden border border-[var(--border)] shadow-2xl" style={{ width: "min(98vw, 1800px)", height: "min(96vh, 900px)", background: "var(--panel-canvas)" }}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
           <div className="flex items-center gap-3">
-            <span className="text-[#22C55E] font-black text-lg tracking-tighter">WIK</span>
-            <div className="w-px h-5 bg-[#334155]" />
-            <span className="text-white font-bold text-sm">Page Builder</span>
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[#22C55E]/15 text-[#22C55E] border border-[#22C55E]/30">CP{String(cpNumber).padStart(2, "0")}</span>
+            <span className="text-[var(--accent-green)] font-black text-lg tracking-tighter">WIK</span>
+            <div className="w-px h-5 bg-[var(--border)]" />
+            <span className="text-[var(--text-primary)] font-bold text-sm">Page Builder</span>
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30">CP{String(cpNumber).padStart(2, "0")}</span>
           </div>
           <div className="flex items-center gap-2">
-            <select value={canvasPreset.width} onChange={e => { const newPreset = CANVAS_PRESETS.find(p => p.width === Number(e.target.value)); if (newPreset) setCanvasPreset(newPreset); }} className="bg-[#1E293B] border border-[#334155] text-white text-[10px] rounded px-2 h-7 outline-none cursor-pointer">{CANVAS_PRESETS.map(p => (<option key={p.width} value={p.width}>{p.label}</option>))}</select>
-            {saveMsg && <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saveMsg.startsWith("✓") ? "text-[#22C55E] bg-[#22C55E]/10" : "text-[#EF4444] bg-[#EF4444]/10"}`}>{saveMsg}</span>}
-            <button onClick={clearCanvas} className="h-7 px-3 rounded-lg border border-[#334155] text-[#94A3B8] hover:bg-[#1E293B] text-[10px] font-bold transition-colors">Clear</button>
-            <button onClick={save} disabled={saving} className="h-7 px-4 rounded-lg bg-[#22C55E] hover:bg-[#16A34A] text-[#052E16] font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-[#052E16] border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Layout"}</button>
-            <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[#475569] hover:text-white hover:bg-[#1E293B] transition-colors"><IconX /></button>
+            <select value={canvasPreset.width} onChange={e => { const newPreset = CANVAS_PRESETS.find(p => p.width === Number(e.target.value)); if (newPreset) setCanvasPreset(newPreset); }} className="bg-[var(--border-soft)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none cursor-pointer">{CANVAS_PRESETS.map(p => (<option key={p.width} value={p.width}>{p.label}</option>))}</select>
+            {saveMsg && <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saveMsg.startsWith("✓") ? "text-[var(--accent-green)] bg-[var(--accent-green)]/10" : "text-[var(--accent-red)] bg-[var(--accent-red)]/10"}`}>{saveMsg}</span>}
+            <button onClick={clearCanvas} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] text-[10px] font-bold transition-colors">Clear</button>
+            <button onClick={save} disabled={saving} className="h-7 px-4 rounded-lg bg-[var(--accent-green)] hover:bg-[var(--accent-green-dark)] text-[var(--status-green-bg)] font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-[var(--status-green-bg)] border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Layout"}</button>
+            <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)] transition-colors"><IconX /></button>
           </div>
         </div>
         <div className="flex flex-1 overflow-hidden min-h-0">
-          <div className="shrink-0 border-r border-[#1E293B] flex flex-col" style={{ width: 272, background: "#0F172A" }}>
-            <div className="px-3 pt-3 pb-2 shrink-0"><p className="text-[#22C55E] text-[9px] font-bold uppercase tracking-widest mb-2">Components</p><input value={paletteSearch} onChange={e => setPaletteSearch(e.target.value)} placeholder="Search…" className="w-full bg-[#1E293B] border border-[#334155] text-white text-[10px] rounded-lg px-2 h-7 outline-none placeholder-[#334155] focus:border-[#22C55E]/50" /></div>
-            <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-1.5 mt-2" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #0F172A" }}>
+          <div className="shrink-0 border-r border-[var(--border-soft)] flex flex-col" style={{ width: 272, background: "var(--bg-canvas)" }}>
+            <div className="px-3 pt-3 pb-2 shrink-0"><p className="text-[var(--accent-green)] text-[9px] font-bold uppercase tracking-widest mb-2">Components</p><input value={paletteSearch} onChange={e => setPaletteSearch(e.target.value)} placeholder="Search…" className="w-full bg-[var(--border-soft)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded-lg px-2 h-7 outline-none placeholder-[var(--border)] focus:border-[var(--accent-green)]/50" /></div>
+            <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-1.5 mt-2" style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border) var(--bg-canvas)" }}>
               {filteredPalette.map(comp => (
                 <div
                   key={comp.type}
                   draggable
                   onDragStart={e => e.dataTransfer.setData("component-type", comp.type)}
-                  className="relative flex items-center gap-3 px-3 py-2.5 rounded-lg border border-[#1E293B]/40 bg-[#0F172A]/50 hover:border-[#22C55E]/40 hover:bg-[#1E293B] cursor-grab active:cursor-grabbing transition-all duration-200 group overflow-hidden shadow-sm hover:shadow-md"
+                  className="relative flex items-center gap-3 px-3 py-2.5 rounded-lg border border-[var(--border-soft)]/40 bg-[var(--bg-canvas)]/50 hover:border-[var(--accent-green)]/40 hover:bg-[var(--border-soft)] cursor-grab active:cursor-grabbing transition-all duration-200 group overflow-hidden shadow-sm hover:shadow-md"
                 >
                   {/* Aksen garis di sebelah kiri saat hover */}
-                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#22C55E] scale-y-0 group-hover:scale-y-100 transition-transform duration-200 origin-center rounded-r-sm shadow-[0_0_8px_#22C55E]" />
+                  <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[var(--accent-green)] scale-y-0 group-hover:scale-y-100 transition-transform duration-200 origin-center rounded-r-sm shadow-[0_0_8px_var(--accent-green)]" />
 
                   {/* Wadah Ikon */}
-                  <div className="w-8 h-8 rounded bg-[#07111F] border border-[#1E293B] group-hover:border-[#22C55E]/50 flex items-center justify-center text-[#22C55E] shrink-0 transition-all duration-200 group-hover:shadow-[0_0_10px_rgba(34,197,94,0.15)] group-hover:scale-105">
+                  <div className="w-8 h-8 rounded bg-[var(--panel-canvas)] border border-[var(--border-soft)] group-hover:border-[var(--accent-green)]/50 flex items-center justify-center text-[var(--accent-green)] shrink-0 transition-all duration-200 group-hover:shadow-[0_0_10px_rgba(34,197,94,0.15)] group-hover:scale-105">
                     <span className="text-sm">{comp.icon}</span>
                   </div>
 
                   {/* Teks Label & Deskripsi */}
                   <div className="flex flex-col min-w-0 flex-1">
-                    <span className="text-[#E2E8F0] text-[11px] font-bold tracking-wide leading-tight group-hover:text-white transition-colors">
+                    <span className="text-[var(--text-primary)] text-[11px] font-bold tracking-wide leading-tight group-hover:text-[var(--text-primary)] transition-colors">
                       {comp.label}
                     </span>
-                    <span className="text-[#64748B] text-[9px] leading-tight truncate group-hover:text-[#94A3B8] transition-colors mt-0.5">
+                    <span className="text-[var(--text-dim)] text-[9px] leading-tight truncate group-hover:text-[var(--text-secondary)] transition-colors mt-0.5">
                       {comp.desc}
                     </span>
                   </div>
 
                   {/* Ikon Drag (Grip) yang muncul saat hover */}
-                  <div className="opacity-0 group-hover:opacity-100 text-[#475569] group-hover:text-[#22C55E]/70 transition-opacity mr-1 shrink-0">
+                  <div className="opacity-0 group-hover:opacity-100 text-[var(--text-muted)] group-hover:text-[var(--accent-green)]/70 transition-opacity mr-1 shrink-0">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="9" cy="5" r="1.5" /><circle cx="9" cy="12" r="1.5" /><circle cx="9" cy="19" r="1.5" />
                       <circle cx="15" cy="5" r="1.5" /><circle cx="15" cy="12" r="1.5" /><circle cx="15" cy="19" r="1.5" />
@@ -3381,20 +3382,20 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
               ))}
             </div>
           </div>
-          <div ref={canvasContainerRef} className="flex-1 min-w-0 overflow-hidden min-h-0 flex items-center justify-center px-8 py-4" style={{ background: "#080E1A" }}>
-            {loading ? (<div className="flex items-center gap-2 text-[#22C55E] text-xs mt-20"><div className="w-4 h-4 border-2 border-[#22C55E] border-t-transparent rounded-full animate-spin" /> Loading layout…</div>) : (
+          <div ref={canvasContainerRef} className="flex-1 min-w-0 overflow-hidden min-h-0 flex items-center justify-center px-8 py-4" style={{ background: "var(--panel-canvas)" }}>
+            {loading ? (<div className="flex items-center gap-2 text-[var(--accent-green)] text-xs mt-20"><div className="w-4 h-4 border-2 border-[var(--accent-green)] border-t-transparent rounded-full animate-spin" /> Loading layout…</div>) : (
               <div style={{ width: displayWidth, height: displayHeight, position: "relative", flex: "0 0 auto" }}>
-                <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={() => setSelected(null)} className="relative origin-top-left" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "#0F172A", border: "1px solid #1E293B", borderRadius: 8, backgroundImage: "radial-gradient(circle, #1E293B 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
-                  {widgets.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-4xl opacity-10 mb-2">🖱</span><p className="text-[#1E293B] text-sm font-mono">Drag components here</p></div>)}
+                <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={() => setSelected(null)} className="relative origin-top-left" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
+                  {widgets.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-4xl opacity-10 mb-2">🖱</span><p className="text-[var(--border-soft)] text-sm font-mono">Drag components here</p></div>)}
                   {widgets.map(widget => {
                     const isSel = widget.id === selected;
-                    return (<div key={widget.id} id={`widget-${widget.id}`} onMouseDown={e => startDrag(e, widget.id)} onClick={e => { e.stopPropagation(); setSelected(widget.id); }} className="absolute select-none" style={{ left: widget.x, top: widget.y, width: widget.props.width, height: widget.props.height, cursor: dragInfo?.id === widget.id ? "grabbing" : "grab", outline: isSel ? "2px solid #22C55E" : "1px solid transparent", outlineOffset: 2, borderRadius: 6, zIndex: isSel ? 10 : 1 }}><div className="w-full h-full overflow-hidden" style={{ borderRadius: 6 }}><WidgetPreview widget={widget} onUpdate={handleWidgetUpdate} /></div>{isSel && <div className="absolute -top-5 left-0 flex items-center gap-1 pointer-events-none"><span className="text-[#22C55E] text-[9px] font-bold bg-[#0B1120] px-1.5 py-0.5 rounded font-mono capitalize">{widget.type}</span></div>}{isSel && <div onMouseDown={e => startResize(e, widget.id)} className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize" style={{ background: "#22C55E", borderRadius: "2px 0 4px 0", zIndex: 20 }} />}</div>);
+                    return (<div key={widget.id} id={`widget-${widget.id}`} onMouseDown={e => startDrag(e, widget.id)} onClick={e => { e.stopPropagation(); setSelected(widget.id); }} className="absolute select-none" style={{ left: widget.x, top: widget.y, width: widget.props.width, height: widget.props.height, cursor: dragInfo?.id === widget.id ? "grabbing" : "grab", outline: isSel ? "2px solid var(--accent-green)" : "1px solid transparent", outlineOffset: 2, borderRadius: 6, zIndex: isSel ? 10 : 1 }}><div className="w-full h-full overflow-hidden" style={{ borderRadius: 6 }}><WidgetPreview widget={widget} onUpdate={handleWidgetUpdate} /></div>{isSel && <div className="absolute -top-5 left-0 flex items-center gap-1 pointer-events-none"><span className="text-[var(--accent-green)] text-[9px] font-bold bg-[var(--panel-canvas)] px-1.5 py-0.5 rounded font-mono capitalize">{widget.type}</span></div>}{isSel && <div onMouseDown={e => startResize(e, widget.id)} className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize" style={{ background: "var(--accent-green)", borderRadius: "2px 0 4px 0", zIndex: 20 }} />}</div>);
                   })}
                 </div>
               </div>
             )}
           </div>
-          <div className="shrink-0 border-l border-[#1E293B] flex flex-col" style={{ width: 296, background: "#0F172A" }}>
+          <div className="shrink-0 border-l border-[var(--border-soft)] flex flex-col" style={{ width: 296, background: "var(--bg-canvas)" }}>
             <PropertyPanel
               widget={selectedWidget}
               onChange={updated => setWidgets(ws => ws.map(w => w.id === updated.id ? updated : w))}
@@ -3406,12 +3407,12 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
             />
           </div>
         </div>
-        <div className="flex items-center justify-between px-4 py-1.5 border-t border-[#1E293B] shrink-0" style={{ background: "#080E1A" }}>
-          <span className="text-[#334155] text-[9px] font-mono">{widgets.length} widget{widgets.length !== 1 ? "s" : ""} · Canvas {CANVAS_W}×{CANVAS_H}px · Grid {GRID}px</span>
-          {selectedWidget && <span className="text-[#475569] text-[9px] font-mono">x:{selectedWidget.x} y:{selectedWidget.y} · {selectedWidget.props.width}×{selectedWidget.props.height}</span>}
-          <span className="text-[#334155] text-[9px] font-mono">Del = delete · drag to move · ↘ to resize</span>
+        <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--panel-canvas)" }}>
+          <span className="text-[var(--border)] text-[9px] font-mono">{widgets.length} widget{widgets.length !== 1 ? "s" : ""} · Canvas {CANVAS_W}×{CANVAS_H}px · Grid {GRID}px</span>
+          {selectedWidget && <span className="text-[var(--text-muted)] text-[9px] font-mono">x:{selectedWidget.x} y:{selectedWidget.y} · {selectedWidget.props.width}×{selectedWidget.props.height}</span>}
+          <span className="text-[var(--border)] text-[9px] font-mono">Del = delete · drag to move · ↘ to resize</span>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }

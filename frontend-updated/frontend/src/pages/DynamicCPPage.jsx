@@ -9,29 +9,29 @@ import { useTCPPLC } from "../hooks/useTCPPLC";
 
 const THEME_PRESETS = {
   "wik_cyan": {
-    accent: "#00BFFF", background: "#07111F", border: "#123B5A", text: "#FFFFFF", secondary: "#7F9DB8", success: "#39FF88", warning: "#FFB020", danger: "#FF3B4D"
+    accent: "var(--accent-cyan)", background: "var(--panel-canvas)", border: "var(--panel-mid)", text: "#FFFFFF", secondary: "var(--panel-line)", success: "var(--accent-green-neon)", warning: "var(--accent-orange)", danger: "var(--accent-red-bright)"
   },
   "industrial_blue": {
-    accent: "#3B82F6", background: "#080E1A", border: "#1E3A5F", text: "#E2E8F0", secondary: "#94A3B8", success: "#22C55E", warning: "#F59E0B", danger: "#EF4444"
+    accent: "var(--accent-blue)", background: "var(--panel-canvas)", border: "var(--bg-hover)", text: "var(--text-primary)", secondary: "var(--text-secondary)", success: "var(--accent-green)", warning: "var(--accent-orange-alt)", danger: "var(--accent-red)"
   },
   "emerald": {
-    accent: "#22C55E", background: "#07150F", border: "#155E3A", text: "#FFFFFF", secondary: "#8BA99A", success: "#39FF88", warning: "#FFB020", danger: "#FF3B4D"
+    accent: "var(--accent-green)", background: "var(--status-green-bg)", border: "var(--status-green-solid)", text: "#FFFFFF", secondary: "var(--swatch-sage)", success: "var(--accent-green-neon)", warning: "var(--accent-orange)", danger: "var(--accent-red-bright)"
   },
   "amber": {
-    accent: "#FFB020", background: "#181107", border: "#654B15", text: "#FFFFFF", secondary: "#B6A27A", success: "#39FF88", warning: "#FFB020", danger: "#FF3B4D"
+    accent: "var(--accent-orange)", background: "var(--status-orange-bg)", border: "var(--status-orange-bg)", text: "#FFFFFF", secondary: "var(--swatch-tan)", success: "var(--accent-green-neon)", warning: "var(--accent-orange)", danger: "var(--accent-red-bright)"
   },
   "red_alert": {
-    accent: "#EF4444", background: "#1A0C0C", border: "#5F1A1A", text: "#FCA5A5", secondary: "#A66E6E", success: "#22C55E", warning: "#FFB020", danger: "#EF4444"
+    accent: "var(--accent-red)", background: "var(--status-red-bg)", border: "var(--status-red-bg)", text: "var(--accent-red-soft)", secondary: "var(--swatch-rose)", success: "var(--accent-green)", warning: "var(--accent-orange)", danger: "var(--accent-red)"
   }
 };
 
 const DEFAULT_VISUAL = {
   theme: "wik_cyan",
-  accentColor: "#00BFFF",
-  backgroundColor: "#07111F",
-  borderColor: "#123B5A",
+  accentColor: "var(--accent-cyan)",
+  backgroundColor: "var(--panel-canvas)",
+  borderColor: "var(--panel-mid)",
   textColor: "#FFFFFF",
-  secondaryTextColor: "#7F9DB8",
+  secondaryTextColor: "var(--panel-line)",
   borderWidth: 1,
   borderRadius: 12,
   glow: true,
@@ -48,7 +48,7 @@ const getVisual = (props) => {
 //  END OF DESIGN SYSTEM
 // ──────────────────────────────────────────────────────────────────
 
-function GaugeTypeIcon({ type = "temp", color = "#00BFFF", size = 28 }) {
+function GaugeTypeIcon({ type = "temp", color = "var(--accent-cyan)", size = 28 }) {
   const common = {
     width: size,
     height: size,
@@ -137,12 +137,12 @@ function RuntimeButton({ widget, value, onChange }) {
     onChange?.(isOn ? 0 : 1);
   };
 
-  const onBg = p.onBackground || v.accentColor || "#00BFFF";
-  const offBg = p.offBackground || v.backgroundColor || "#0F172A";
-  const onBorder = p.onBorder || v.accentColor || "#00BFFF";
-  const offBorder = p.offBorder || v.borderColor || "#123B5A";
+  const onBg = p.onBackground || v.accentColor || "var(--accent-cyan)";
+  const offBg = p.offBackground || v.backgroundColor || "var(--bg-canvas)";
+  const onBorder = p.onBorder || v.accentColor || "var(--accent-cyan)";
+  const offBorder = p.offBorder || v.borderColor || "var(--panel-mid)";
   const onText = p.onTextColor || v.textColor || "#FFFFFF";
-  const offText = p.offTextColor || v.secondaryTextColor || "#7F9DB8";
+  const offText = p.offTextColor || v.secondaryTextColor || "var(--panel-line)";
   const label = isOn ? (p.labelOn || "ON") : (p.labelOff || "OFF");
   const fontSize = p.fontSize || 18;
 
@@ -155,7 +155,7 @@ function RuntimeButton({ widget, value, onChange }) {
   };
 
   if (variant === "neon") {
-    btnStyle.background = `linear-gradient(135deg, ${v.backgroundColor || "#07111F"}, ${isOn ? onBg : offBg})`;
+    btnStyle.background = `linear-gradient(135deg, ${v.backgroundColor || "var(--panel-canvas)"}, ${isOn ? onBg : offBg})`;
   }
 
   return (
@@ -198,8 +198,8 @@ function RuntimeLight({ widget, value }) {
   const p = widget.props || {};
   const v = getVisual(p);
   const isOn = Number(value) === 1;
-  const onColor = p.onColor || v.accentColor || "#00BFFF";
-  const offColor = p.offColor || "#1E293B";
+  const onColor = p.onColor || v.accentColor || "var(--accent-cyan)";
+  const offColor = p.offColor || "var(--border-soft)";
   const showLabel = p.showLabel !== false;
 
   return (
@@ -236,8 +236,8 @@ function RuntimeLight({ widget, value }) {
 function RuntimeShape({ widget }) {
   const p = widget.props || {};
   const type = p.shapeType || "rectangle";
-  const fill = p.fill || "#123B5A";
-  const borderColor = p.borderColor || "#00BFFF";
+  const fill = p.fill || "var(--panel-mid)";
+  const borderColor = p.borderColor || "var(--accent-cyan)";
   const borderWidth = Number(p.borderWidth ?? 1);
   const radius = Number(p.radius ?? 8);
   const rotation = Number(p.rotation ?? 0);
@@ -415,10 +415,10 @@ function RuntimeGauge({ widget, value }) {
     const title = p.title || "VALUE";
     const gaugeType = p.gaugeType || "temp";
 
-    const accent = p.progressColor || "#00BFFF";
-    const track = p.trackColor || "#1A2C3D";
+    const accent = p.progressColor || "var(--accent-cyan)";
+    const track = p.trackColor || "var(--panel-line)";
     const textColor = p.textColor || "#FFFFFF";
-    const labelColor = p.labelColor || "#71879B";
+    const labelColor = p.labelColor || "var(--panel-line)";
 
     const gaugeId = `gauge-${widget.id}`;
     const cx = 100;
@@ -485,9 +485,9 @@ function RuntimeGauge({ widget, value }) {
             </linearGradient>
 
             <radialGradient id={`${gaugeId}-face`} cx="50%" cy="45%" r="70%">
-              <stop offset="0%" stopColor={p.backgroundColor || "#102133"} />
-              <stop offset="72%" stopColor={p.backgroundColor || "#071421"} />
-              <stop offset="100%" stopColor={p.backgroundColor || "#050D16"} />
+              <stop offset="0%" stopColor={p.backgroundColor || "var(--panel-mid)"} />
+              <stop offset="72%" stopColor={p.backgroundColor || "var(--panel-canvas)"} />
+              <stop offset="100%" stopColor={p.backgroundColor || "var(--panel-canvas)"} />
             </radialGradient>
 
             <filter
@@ -514,7 +514,7 @@ function RuntimeGauge({ widget, value }) {
             cy={cy}
             r="88"
             fill={`url(#${gaugeId}-face)`}
-            stroke={p.borderColor || "#18334A"}
+            stroke={p.borderColor || "var(--panel-mid)"}
             strokeWidth="1"
           />
 
@@ -522,7 +522,7 @@ function RuntimeGauge({ widget, value }) {
           <path
             d={arcPath(start, end, 84)}
             fill="none"
-            stroke="#24445C"
+            stroke="var(--panel-line)"
             strokeWidth="2"
             strokeDasharray="1 4"
           />
@@ -739,7 +739,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
   const chartH = H - top - bottom;
   const decimals = Math.max(0, Number(p.decimals ?? 1));
 
-  const colors = ["#00BFFF", "#EF4444", "#22C55E", "#FFB020"];
+  const colors = ["var(--accent-cyan)", "var(--accent-red)", "var(--accent-green)", "var(--accent-orange)"];
 
   const getColor = (s, index) =>
     s?.color || colors[index % colors.length];
@@ -822,12 +822,12 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
     history.length > 0 && values.length > 0;
 
   const chartId = `linechart-${widget.id}`;
-  const bg = p.backgroundColor || "#071421";
-  const border = p.borderColor || "#123B5A";
+  const bg = p.backgroundColor || "var(--panel-canvas)";
+  const border = p.borderColor || "var(--panel-mid)";
   const textColor = p.textColor || "#FFFFFF";
-  const labelColor = p.labelColor || "#7F9DB8";
-  const gridColor = p.gridColor || "#16324A";
-  const accent = p.accentColor || "#00BFFF";
+  const labelColor = p.labelColor || "var(--panel-line)";
+  const gridColor = p.gridColor || "var(--panel-mid)";
+  const accent = p.accentColor || "var(--accent-cyan)";
 
   const title = p.title || "PROCESS TREND";
   const unit = p.unit || "";
@@ -931,11 +931,11 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
             width={badgeW}
             height="24"
             rx="6"
-            fill={running ? "#06351F" : "#18202A"}
+            fill={running ? "var(--status-green-bg)" : "var(--panel-line)"}
             stroke={
               running
-                ? "#0A5C35"
-                : "#2B3A49"
+                ? "var(--status-green-solid)"
+                : "var(--panel-line)"
             }
             strokeWidth="0.7"
           />
@@ -949,7 +949,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
                 L ${badgeX + 21} ${badgeY + 11}
                 L ${badgeX + 26} ${badgeY + 11}`}
             fill="none"
-            stroke={running ? "#39FF88" : "#64748B"}
+            stroke={running ? "var(--accent-green-neon)" : "var(--text-dim)"}
             strokeWidth="1.4"
             strokeLinecap="round"
             strokeLinejoin="round"
@@ -958,7 +958,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
           <text
             x={badgeX + 33}
             y={badgeY + 15}
-            fill={running ? "#39FF88" : "#94A3B8"}
+            fill={running ? "var(--accent-green-neon)" : "var(--text-secondary)"}
             fontSize="8"
             fontWeight="700"
             letterSpacing="0.35"
@@ -971,7 +971,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
               x={badgeX + badgeW - 9}
               y={badgeY + 15}
               textAnchor="middle"
-              fill="#39FF88"
+              fill="var(--accent-green-neon)"
               fontSize="10"
               fontWeight="700"
             >
@@ -985,7 +985,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
           <text
             x={badgeX}
             y="48"
-            fill="#64748B"
+            fill="var(--text-dim)"
             fontSize="7"
             fontWeight="600"
           >
@@ -1001,7 +1001,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
           y1="14"
           x2={chartRight}
           y2={H - 14}
-          stroke="#21405A"
+          stroke="var(--panel-line)"
           strokeWidth="0.8"
         />
 
@@ -1029,7 +1029,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
                 <text
                   x={chartRight + 42}
                   y={rowTop + 2}
-                  fill="#CBD5E1"
+                  fill="var(--text-soft)"
                   fontSize="8"
                   fontWeight="600"
                   letterSpacing="0.35"
@@ -1073,7 +1073,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
                     y1={rowTop + 42}
                     x2={W - 14}
                     y2={rowTop + 42}
-                    stroke="#1E3347"
+                    stroke="var(--panel-line)"
                     strokeWidth="0.7"
                   />
                 )}
@@ -1217,7 +1217,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
               x={left + chartW / 2}
               y={top + chartH / 2}
               textAnchor="middle"
-              fill="#48647B"
+              fill="var(--panel-line)"
               fontSize="9"
               fontWeight="600"
               letterSpacing="0.8"
@@ -1240,7 +1240,7 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
               y1={top + chartH}
               x2={chartRight}
               y2={top + chartH}
-              stroke="#31516A"
+              stroke="var(--panel-line)"
               strokeWidth="0.8"
             />
 
@@ -1285,8 +1285,8 @@ function RuntimeLineChart({ widget, history = [], running = true }) {
             r="3"
             fill={
               running
-                ? "#39FF88"
-                : "#475569"
+                ? "var(--accent-green-neon)"
+                : "var(--text-muted)"
             }
             opacity="0.9"
           />
@@ -2165,7 +2165,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const addLog = useCallback(
     (
       message,
-      color = "#22C55E"
+      color = "var(--accent-green)"
     ) => {
       const time =
         new Date().toLocaleTimeString(
@@ -2218,7 +2218,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
         if (!data.success) {
           addLog(
             `Logic error: ${data.message}`,
-            "#EF4444"
+            "var(--accent-red)"
           );
           return;
         }
@@ -2242,7 +2242,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
               addLog(
                 command.message,
                 command.color ||
-                  "#22C55E"
+                  "var(--accent-green)"
               );
               break;
 
@@ -2256,7 +2256,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
       } catch (err) {
         addLog(
           `Scan error: ${err.message}`,
-          "#EF4444"
+          "var(--accent-red)"
         );
 
         console.error(err);
@@ -2359,7 +2359,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
             addLog(
               `PLC write failed: ${err.message}`,
-              "#EF4444"
+              "var(--accent-red)"
             );
 
             return;
@@ -2399,7 +2399,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
   if (!cpNumber) {
     return (
-      <div className="flex-1 flex items-center justify-center text-[#EF4444] text-xs font-mono">
+      <div className="flex-1 flex items-center justify-center text-[var(--accent-red)] text-xs font-mono">
         Error: No CP Number provided.
       </div>
     );
@@ -2408,8 +2408,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="flex items-center gap-2 text-[#22C55E] text-xs">
-          <div className="w-4 h-4 border-2 border-[#22C55E] border-t-transparent rounded-full animate-spin" />
+        <div className="flex items-center gap-2 text-[var(--accent-green)] text-xs">
+          <div className="w-4 h-4 border-2 border-[var(--accent-green)] border-t-transparent rounded-full animate-spin" />
           Loading page layout…
         </div>
       </div>
@@ -2423,11 +2423,11 @@ export default function DynamicCPPage({ cpNumber, user }) {
           ⚠
         </span>
 
-        <p className="text-[#EF4444] text-sm">
+        <p className="text-[var(--accent-red)] text-sm">
           {error}
         </p>
 
-        <p className="text-[#475569] text-xs">
+        <p className="text-[var(--text-muted)] text-xs">
           Make sure you have saved a layout
           in the Page Builder.
         </p>
@@ -2442,12 +2442,12 @@ export default function DynamicCPPage({ cpNumber, user }) {
           🔧
         </span>
 
-        <p className="text-white font-semibold">
+        <p className="text-[var(--text-primary)] font-semibold">
           No layout configured for CP
           {cpNumber}
         </p>
 
-        <p className="text-[#475569] text-xs">
+        <p className="text-[var(--text-muted)] text-xs">
           Open Page Builder (Engineer →
           Settings) to design this CP page.
         </p>
@@ -2468,7 +2468,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
   return (
     <div
       ref={containerRef}
-      className="flex-1 bg-[#0F172A] overflow-hidden font-sans p-4 flex justify-center"
+      className="flex-1 bg-[var(--bg-canvas)] overflow-hidden font-sans p-4 flex justify-center"
     >
       <div
         style={{
@@ -2607,7 +2607,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       {/* Optional communication diagnostic */}
       {tcpDeviceError && (
-        <div className="fixed bottom-2 right-2 px-3 py-1.5 rounded-lg bg-[#1E293B]/95 border border-[#7F1D1D] text-[#FCA5A5] text-[9px] font-mono shadow-xl">
+        <div className="fixed bottom-2 right-2 px-3 py-1.5 rounded-lg bg-[var(--border-soft)]/95 border border-[var(--status-red-bg)] text-[var(--accent-red-soft)] text-[9px] font-mono shadow-xl">
           TCP device list: {tcpDeviceError}
         </div>
       )}

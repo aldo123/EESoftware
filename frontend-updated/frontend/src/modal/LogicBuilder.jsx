@@ -1,6 +1,7 @@
 // src/modal/LogicBuilder.jsx
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from "react";
 import { API } from "../service/api";
+import { ModalBackdrop, ModalPanel } from "../components/motion";
 
 // ── Node type definitions ─────────────────────────────────────────────────────
 const NODE_TYPES = [
@@ -127,17 +128,17 @@ const NodeSummary = memo(function NodeSummary({ node }) {
 
 const Field = ({ label, children }) => (
   <div className="flex flex-col gap-0.5">
-    <span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">{label}</span>
+    <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">{label}</span>
     {children}
   </div>
 );
 const Input = ({ value, onChange: oc, placeholder = "" }) => (
   <input value={value ?? ""} onChange={e => oc(e.target.value)} placeholder={placeholder}
-    className="bg-[#0F172A] border border-[#334155] text-white text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60" />
+    className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60" />
 );
 const Select = ({ value, onChange: oc, options }) => (
   <select value={value ?? ""} onChange={e => oc(e.target.value)}
-    className="bg-[#0F172A] border border-[#334155] text-white text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60">
+    className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60">
     {options.map(o => <option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>)}
   </select>
 );
@@ -153,7 +154,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
   if (!node) return (
     <div className="flex flex-col items-center justify-center h-full text-center px-4">
       <span className="text-3xl opacity-20 mb-2">🖱</span>
-      <p className="text-[#475569] text-[10px]">Click a node to configure it</p>
+      <p className="text-[var(--text-muted)] text-[10px]">Click a node to configure it</p>
     </div>
   );
 
@@ -171,12 +172,12 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
 
   return (
     <div className="flex flex-col h-full overflow-hidden" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.stopPropagation()}>
-      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[#1E293B] shrink-0">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--border-soft)] shrink-0">
         <span className="text-base">{def?.icon}</span>
-        <span className="text-white font-bold text-xs">{def?.label}</span>
+        <span className="text-[var(--text-primary)] font-bold text-xs">{def?.label}</span>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #0F172A" }}>
+      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
         {node.type === "scan_input" && (<>
           <Field label="Scanner Device">
             <Select value={c.device} onChange={v => setLocal("device", v)} options={[{ value: "", label: "Select device…" }, ...commDevices.map(d => ({ value: d.name, label: `${d.name} (${d.port || ""})` }))]} />
@@ -207,7 +208,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
 
         {/* 🔥 CONFIGURABLE CHECK VOLTAGE PANEL - Urutan sudah diperbaiki sesuai keinginan Anda */}
         {node.type === "check_voltage" && (<>
-          <div className="flex flex-col gap-3 pb-3 mb-1 border-b border-[#1E293B]">
+          <div className="flex flex-col gap-3 pb-3 mb-1 border-b border-[var(--border-soft)]">
             <p className="text-[#22C55E] text-[10px] font-bold">Step 1: Product Code Lookup</p>
             <Field label="Product Mapping Section">
               <Select value={c.product_mapping_section} onChange={v => setLocal("product_mapping_section", v)}
@@ -219,7 +220,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
             </Field>
           </div>
 
-          <div className="flex flex-col gap-3 pb-3 mb-1 border-b border-[#1E293B]">
+          <div className="flex flex-col gap-3 pb-3 mb-1 border-b border-[var(--border-soft)]">
             <p className="text-[#22C55E] text-[10px] font-bold">Step 2: Actual Part Voltage</p>
             <Field label="Part Mapping Section">
               <Select value={c.part_mapping_section} onChange={v => setLocal("part_mapping_section", v)}
@@ -231,7 +232,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
             </Field>
           </div>
 
-          <div className="flex flex-col gap-3 pb-3 mb-1 border-b border-[#1E293B]">
+          <div className="flex flex-col gap-3 pb-3 mb-1 border-b border-[var(--border-soft)]">
             <p className="text-[#22C55E] text-[10px] font-bold">Step 3: Required Voltage Lookup</p>
             <Field label="Rules Section (with _table)">
               <Select value={c.rule_table_section} onChange={v => setLocal("rule_table_section", v)}
@@ -274,7 +275,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
               <Input value={c.expected_value} onChange={v => setLocal("expected_value", v)} />
             </Field>
           )}
-          <p className="text-[#475569] text-[9px] mt-1">
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">
             If condition passes → follow <b style={{ color: "#22C55E" }}>Green (True)</b>. If fails → follow <b style={{ color: "#EF4444" }}>Red (False)</b>.
           </p>
         </>)}
@@ -284,11 +285,11 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
           <Field label="Key Column (WHERE)"><Input value={c.key_col} onChange={v => setLocal("key_col", v)} placeholder="product_code" /></Field>
           <Field label="Key value from field key"><Input value={c.key_source} onChange={v => setLocal("key_source", v)} placeholder="product_matrix" /></Field>
           <div className="flex flex-col gap-1">
-            <span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">Fields to fetch</span>
+            <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Fields to fetch</span>
             {(c.fields || []).map((f, i) => (
               <div key={i} className="flex gap-1 items-center">
                 <Input value={f.col} onChange={v => { const nf = [...c.fields]; nf[i] = { ...nf[i], col: v }; setLocal("fields", nf); }} placeholder="db_column" />
-                <span className="text-[#475569] text-[9px]">→</span>
+                <span className="text-[var(--text-muted)] text-[9px]">→</span>
                 <Input value={f.target} onChange={v => { const nf = [...c.fields]; nf[i] = { ...nf[i], target: v }; setLocal("fields", nf); }} placeholder="field_key" />
                 <button onClick={() => setLocal("fields", c.fields.filter((_, j) => j !== i))} className="text-[#EF4444] hover:text-white p-0.5 shrink-0"><IconX /></button>
               </div>
@@ -316,11 +317,11 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
         {node.type === "update_table" && (<>
           <Field label="Table widget ID (from Page Builder)"><Input value={c.table_widget} onChange={v => setLocal("table_widget", v)} placeholder="widget id or title" /></Field>
           <div className="flex flex-col gap-1">
-            <span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">Column → value mapping</span>
+            <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Column → value mapping</span>
             {(c.columns || []).map((col, i) => (
               <div key={i} className="flex gap-1 items-center">
                 <Input value={col.header} onChange={v => { const nc = [...c.columns]; nc[i] = { ...nc[i], header: v }; setLocal("columns", nc); }} placeholder="Column header" />
-                <span className="text-[#475569] text-[9px]">←</span>
+                <span className="text-[var(--text-muted)] text-[9px]">←</span>
                 <Input value={col.source} onChange={v => { const nc = [...c.columns]; nc[i] = { ...nc[i], source: v }; setLocal("columns", nc); }} placeholder="field_key" />
                 <button onClick={() => setLocal("columns", c.columns.filter((_, j) => j !== i))} className="text-[#EF4444] hover:text-white p-0.5 shrink-0"><IconX /></button>
               </div>
@@ -359,11 +360,11 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
         {node.type === "submit_move" && (<>
           <Field label="MySQL Table to insert"><Input value={c.table} onChange={v => setLocal("table", v)} placeholder="traceability" /></Field>
           <div className="flex flex-col gap-1">
-            <span className="text-[9px] font-bold text-[#475569] uppercase tracking-wider">Field key → DB column mapping</span>
+            <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Field key → DB column mapping</span>
             {(c.fields_map || []).map((f, i) => (
               <div key={i} className="flex gap-1 items-center">
                 <Input value={f.field_key} onChange={v => { const nm = [...c.fields_map]; nm[i] = { ...nm[i], field_key: v }; setLocal("fields_map", nm); }} placeholder="field_key" />
-                <span className="text-[#475569] text-[9px]">→</span>
+                <span className="text-[var(--text-muted)] text-[9px]">→</span>
                 <Input value={f.col} onChange={v => { const nm = [...c.fields_map]; nm[i] = { ...nm[i], col: v }; setLocal("fields_map", nm); }} placeholder="db_column" />
                 <button onClick={() => setLocal("fields_map", c.fields_map.filter((_, j) => j !== i))} className="text-[#EF4444] hover:text-white p-0.5 shrink-0"><IconX /></button>
               </div>
@@ -373,7 +374,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, commDevices, cpN
         </>)}
       </div>
 
-      <div className="p-3 border-t border-[#1E293B] shrink-0">
+      <div className="p-3 border-t border-[var(--border-soft)] shrink-0">
         <button onClick={applyChanges} className="w-full py-2 rounded-lg bg-[#22C55E] hover:bg-[#16A34A] text-white font-bold text-xs transition-colors shadow-lg">
           ✨ Apply Settings to Node
         </button>
@@ -601,13 +602,13 @@ export default function LogicBuilder({ cpNumber, onClose }) {
 
   // ── Render ────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm font-sans">
-      <div className="flex flex-col rounded-2xl overflow-hidden border border-[#334155] shadow-2xl" style={{ width: "min(98vw, 1700px)", height: "min(96vh, 900px)", background: "#0B1120" }}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-[#1E293B] shrink-0" style={{ background: "#111827" }}>
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm font-sans">
+      <ModalPanel className="flex flex-col rounded-2xl overflow-hidden border border-[var(--border)] shadow-2xl" style={{ width: "min(98vw, 1700px)", height: "min(96vh, 900px)", background: "var(--bg-surface)" }}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
           <div className="flex items-center gap-3">
             <span className="text-[#22C55E] font-black text-lg tracking-tighter">WIK</span>
-            <div className="w-px h-5 bg-[#334155]" />
-            <span className="text-white font-bold text-sm">Logic Builder</span>
+            <div className="w-px h-5 bg-[var(--border)]" />
+            <span className="text-[var(--text-primary)] font-bold text-sm">Logic Builder</span>
             <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[#3B82F6]/15 text-[#3B82F6] border border-[#3B82F6]/30">CP{String(cpNumber).padStart(2, "0")}</span>
           </div>
 
@@ -622,43 +623,43 @@ export default function LogicBuilder({ cpNumber, onClose }) {
                 {saveMsg}
               </span>
             )}
-            <button onClick={() => { setNodes([]); setConnections([]); setSelected(null); }} className="h-7 px-3 rounded-lg border border-[#334155] text-[#94A3B8] hover:bg-[#1E293B] text-[10px] font-bold transition-colors">Clear</button>
+            <button onClick={() => { setNodes([]); setConnections([]); setSelected(null); }} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-[10px] font-bold transition-colors">Clear</button>
             <button onClick={save} disabled={saving} className="h-7 px-4 rounded-lg bg-[#3B82F6] hover:bg-[#2563EB] text-white font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Flow"}</button>
-            <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[#475569] hover:text-white hover:bg-[#1E293B] transition-colors"><IconX /></button>
+            <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"><IconX /></button>
           </div>
         </div>
         <div className="flex flex-1 overflow-hidden min-h-0">
-          <div className="w-48 shrink-0 border-r border-[#1E293B] flex flex-col" style={{ background: "#0F172A" }}>
-            <div className="px-3 pt-3 pb-2 shrink-0"><p className="text-[#3B82F6] text-[9px] font-bold uppercase tracking-widest mb-2">Logic Nodes</p><input value={paletteSearch} onChange={e => setPaletteSearch(e.target.value)} placeholder="Search…" className="w-full bg-[#1E293B] border border-[#334155] text-white text-[10px] rounded-lg px-2 h-7 outline-none placeholder-[#334155] focus:border-[#3B82F6]/50" /></div>
-            <div className="flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-3" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 #0F172A" }}>
+          <div className="w-48 shrink-0 border-r border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
+            <div className="px-3 pt-3 pb-2 shrink-0"><p className="text-[#3B82F6] text-[9px] font-bold uppercase tracking-widest mb-2">Logic Nodes</p><input value={paletteSearch} onChange={e => setPaletteSearch(e.target.value)} placeholder="Search…" className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded-lg px-2 h-7 outline-none placeholder-[var(--text-faint)] focus:border-[#3B82F6]/50" /></div>
+            <div className="flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-3" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
               {Object.entries(categories).map(([cat, items]) => (
                 <div key={cat}>
-                  <p className="text-[8px] font-bold uppercase tracking-widest px-1 mb-1" style={{ color: items[0] ? NODE_TYPES.find(t => t.category === cat)?.color : "#475569" }}>{CATEGORY_LABELS[cat]}</p>
-                  <div className="flex flex-col gap-1">{items.map(node => (<div key={node.type} draggable onDragStart={e => e.dataTransfer.setData("node-type", node.type)} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[#1E293B] hover:border-opacity-50 cursor-grab active:cursor-grabbing transition-colors" style={{ borderColor: "#1E293B" }} onMouseEnter={e => e.currentTarget.style.borderColor = node.color + "60"} onMouseLeave={e => e.currentTarget.style.borderColor = "#1E293B"}><span className="text-sm w-5 text-center shrink-0">{node.icon}</span><div className="flex flex-col min-w-0"><span className="text-white text-[10px] font-semibold leading-tight">{node.label}</span><span className="text-[#475569] text-[8px] leading-tight truncate">{node.desc}</span></div></div>))}</div>
+                  <p className="text-[8px] font-bold uppercase tracking-widest px-1 mb-1" style={{ color: items[0] ? NODE_TYPES.find(t => t.category === cat)?.color : "var(--text-muted)" }}>{CATEGORY_LABELS[cat]}</p>
+                  <div className="flex flex-col gap-1">{items.map(node => (<div key={node.type} draggable onDragStart={e => e.dataTransfer.setData("node-type", node.type)} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[var(--border-soft)] hover:border-opacity-50 cursor-grab active:cursor-grabbing transition-colors" onMouseEnter={e => e.currentTarget.style.borderColor = node.color + "60"} onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border-soft)"}><span className="text-sm w-5 text-center shrink-0">{node.icon}</span><div className="flex flex-col min-w-0"><span className="text-[var(--text-primary)] text-[10px] font-semibold leading-tight">{node.label}</span><span className="text-[var(--text-muted)] text-[8px] leading-tight truncate">{node.desc}</span></div></div>))}</div>
                 </div>
               ))}
             </div>
           </div>
-          <div className="flex-1 overflow-auto min-h-0 relative" style={{ background: "#080E1A", scrollbarWidth: "thin", scrollbarColor: "#334155 #080E1A" }}>
+          <div className="flex-1 overflow-auto min-h-0 relative" style={{ background: "var(--bg-surface-2)", scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
             {loading ? (<div className="flex items-center justify-center h-full gap-2 text-[#3B82F6] text-xs"><div className="w-4 h-4 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin" /> Loading flow…</div>) : (
-              <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleDrop} onClick={(e) => { if (e.target === e.currentTarget) { setSelected(null); setSelectedEdge(null); } }} className="relative" 
+              <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleDrop} onClick={(e) => { if (e.target === e.currentTarget) { setSelected(null); setSelectedEdge(null); } }} className="relative"
                    // ✅ PERBAIKAN: Gunakan state dinamis untuk width dan height
-                   style={{ width: canvasSize.width, height: canvasSize.height, background: "#0F172A", backgroundImage: "radial-gradient(circle, #1E293B 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
-                {nodes.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-5xl opacity-10 mb-3">⚡</span><p className="text-[#1E293B] text-sm font-mono">Drag logic nodes here to build your flow</p></div>)}
+                   style={{ width: canvasSize.width, height: canvasSize.height, background: "var(--bg-surface-2)", backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
+                {nodes.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-5xl opacity-10 mb-3">⚡</span><p className="text-[var(--text-faint)] text-sm font-mono">Drag logic nodes here to build your flow</p></div>)}
                 <ConnectionLines connections={connections} nodes={nodes} draggingConnection={draggingConn} onSelectEdge={setSelectedEdge} />
                 {nodes.map(node => (<NodeCard key={node.id} node={node} selected={node.id === selected} onSelect={setSelected} onDragStart={startNodeDrag} onDelete={id => { setNodes(ns => ns.filter(n => n.id !== id)); setConnections(cs => cs.filter(c => c.fromId !== id && c.toId !== id)); if (selected === id) setSelected(null); }} onPortMouseDown={startPortDrag} onPortMouseUp={finishConnection} />))}
               </div>
             )}
           </div>
-          <div className="w-64 shrink-0 border-l border-[#1E293B] flex flex-col" style={{ background: "#0F172A" }}>
+          <div className="w-64 shrink-0 border-l border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
             <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} commDevices={commDevices} cpNumber={cpNumber} settingsSchema={settingsSchema} />
           </div>
         </div>
-        <div className="flex items-center justify-between px-4 py-1.5 border-t border-[#1E293B] shrink-0" style={{ background: "#080E1A" }}>
-          <span className="text-[#334155] text-[9px] font-mono">{nodes.length} node{nodes.length !== 1 ? "s" : ""} · {connections.length} connection{connections.length !== 1 ? "s" : ""}</span>
-          <span className="text-[#334155] text-[9px] font-mono">Del = delete node · drag port → port to connect · ✓ green = true · ✗ red = false</span>
+        <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
+          <span className="text-[var(--text-faint)] text-[9px] font-mono">{nodes.length} node{nodes.length !== 1 ? "s" : ""} · {connections.length} connection{connections.length !== 1 ? "s" : ""}</span>
+          <span className="text-[var(--text-faint)] text-[9px] font-mono">Del = delete node · drag port → port to connect · ✓ green = true · ✗ red = false</span>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }

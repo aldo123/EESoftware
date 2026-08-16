@@ -178,7 +178,7 @@ const MaintenancePage = forwardRef(({
 
   // ── Render ────────────────────────────────────────────────────
   return (
-    <div className="flex-1 flex flex-col bg-[#0B1120] overflow-hidden font-sans" style={{ padding: "12px 12px 12px 12px" }}>
+    <div className="flex-1 flex flex-col bg-[var(--bg-canvas)] overflow-hidden font-sans transition-colors" style={{ padding: "12px 12px 12px 12px" }}>
 
       {/* ══════════════════════════════════════════════════════════
           ROW 1 — KPI STRIP (full width)
@@ -190,15 +190,15 @@ const MaintenancePage = forwardRef(({
           className="relative overflow-hidden rounded-2xl flex-shrink-0"
           style={{
             width: 260,
-            background: "linear-gradient(135deg,#1A2540 0%,#0F172A 100%)",
-            border: "1px solid #2A3A5C",
+            background: "linear-gradient(135deg, var(--card-grad-start) 0%, var(--bg-surface) 100%)",
+            border: "1px solid var(--border)",
             padding: "14px 16px",
           }}
         >
           <div className="absolute top-0 right-0 w-28 h-28 rounded-full blur-2xl" style={{ background: "#22C55E18" }} />
           <div className="relative z-10 flex flex-col h-full justify-between">
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[#7A8FB0] text-[10px] font-bold tracking-widest uppercase">Machine Status</span>
+              <span className="text-[var(--text-secondary)] text-[10px] font-bold tracking-widest uppercase">Machine Status</span>
               {status !== "IDLE" && (
                 <span className="px-1.5 py-0.5 text-white text-[9px] font-bold rounded-full animate-pulse" style={{ background: "#EF4444" }}>LIVE</span>
               )}
@@ -208,12 +208,12 @@ const MaintenancePage = forwardRef(({
               <span className="font-bold text-lg leading-tight" style={{ color: statusColor }}>{statusLabel}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[#7A8FB0] text-[10px]">
+              <span className="text-[var(--text-secondary)] text-[10px]">
                 Since {downtimeStart ? new Date(downtimeStart).toLocaleTimeString() : "—"}
               </span>
               <span
-                className="font-mono font-bold text-white text-sm px-2 py-1 rounded-lg"
-                style={{ background: "#0B1120", border: "1px solid #2A3A5C" }}
+                className="font-mono font-bold text-[var(--text-primary)] text-sm px-2 py-1 rounded-lg"
+                style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
               >
                 {formatDuration(duration)}
               </span>
@@ -232,15 +232,15 @@ const MaintenancePage = forwardRef(({
             key={item.label}
             className="flex-1 flex flex-col items-center justify-center rounded-xl text-center"
             style={{
-              background: "linear-gradient(135deg,#1A2540 0%,#0F172A 100%)",
-              border: "1px solid #2A3A5C",
+              background: "linear-gradient(135deg, var(--card-grad-start) 0%, var(--bg-surface) 100%)",
+              border: "1px solid var(--border)",
               padding: "10px 8px",
             }}
           >
-            <span className="text-[#7A8FB0] text-[9px] font-bold tracking-widest uppercase mb-1">{item.label}</span>
+            <span className="text-[var(--text-secondary)] text-[9px] font-bold tracking-widest uppercase mb-1">{item.label}</span>
             <span className="text-2xl leading-none mb-1">{item.icon}</span>
             <span className="font-bold text-xl leading-tight" style={{ color: item.color }}>{item.value}</span>
-            <span className="text-[#7A8FB0] text-[10px] mt-0.5">{item.sub}</span>
+            <span className="text-[var(--text-secondary)] text-[10px] mt-0.5">{item.sub}</span>
           </div>
         ))}
 
@@ -249,12 +249,12 @@ const MaintenancePage = forwardRef(({
           className="rounded-xl flex-shrink-0"
           style={{
             width: 220,
-            background: "linear-gradient(135deg,#1A2540 0%,#0F172A 100%)",
-            border: "1px solid #2A3A5C",
+            background: "linear-gradient(135deg, var(--card-grad-start) 0%, var(--bg-surface) 100%)",
+            border: "1px solid var(--border)",
             padding: "12px 14px",
           }}
         >
-          <span className="text-[#7A8FB0] text-[9px] font-bold tracking-widest uppercase block mb-2">Active Downtime Info</span>
+          <span className="text-[var(--text-secondary)] text-[9px] font-bold tracking-widest uppercase block mb-2">Active Downtime Info</span>
           <div className="grid gap-y-1" style={{ gridTemplateColumns: "auto 1fr" }}>
             {[
                 ["ID", downtimeId || "—"],
@@ -262,11 +262,11 @@ const MaintenancePage = forwardRef(({
                 ["Technician", user?.username || "—"],
             ].map(([k, v]) => (
                 <Fragment key={k}>
-                    <span className="text-[#7A8FB0] text-[10px] pr-2">
+                    <span className="text-[var(--text-secondary)] text-[10px] pr-2">
                         {k}
                     </span>
 
-                    <span className="text-white text-[10px] font-bold font-mono truncate">
+                    <span className="text-[var(--text-primary)] text-[10px] font-bold font-mono truncate">
                         {v}
                     </span>
                 </Fragment>
@@ -291,8 +291,8 @@ const MaintenancePage = forwardRef(({
             className="rounded-xl flex flex-col shrink-0 relative"
             style={{
               height: 188,
-              background: "linear-gradient(135deg,#1A2540 0%,#0F172A 100%)",
-              border: "1px solid #2A3A5C",
+              background: "linear-gradient(135deg, var(--card-grad-start) 0%, var(--bg-surface) 100%)",
+              border: "1px solid var(--border)",
               padding: "10px 14px 8px 8px",
               overflow: "visible",
             }}
@@ -300,7 +300,7 @@ const MaintenancePage = forwardRef(({
           >
             {/* Title row */}
             <div className="flex justify-between items-center mb-2 shrink-0 pl-2">
-              <span className="text-white font-bold text-xs">
+              <span className="text-[var(--text-primary)] font-bold text-xs">
                 HOURLY DOWNTIME ({filterStartDate} to {filterEndDate})
               </span>
               <span className="text-[#22C55E] text-xs font-mono">Total : {kpi.totalDowntime}</span>
@@ -315,13 +315,13 @@ const MaintenancePage = forwardRef(({
                 <div
                   className="rounded-lg px-3 py-2 text-center"
                   style={{
-                    background: "#0B1120",
+                    background: "var(--bg-surface)",
                     border: "1px solid #3B82F6",
                     boxShadow: "0 4px 24px #00000099",
                     minWidth: 120,
                   }}
                 >
-                  <p className="text-[#7A8FB0] text-[9px] font-mono mb-0.5 whitespace-nowrap">
+                  <p className="text-[var(--text-secondary)] text-[9px] font-mono mb-0.5 whitespace-nowrap">
                     {String(tooltip.hour).padStart(2,"0")}:00 – {String(tooltip.hour).padStart(2,"0")}:59
                   </p>
                   <p className={`text-[12px] font-bold font-mono whitespace-nowrap ${tooltip.val > 0 ? "text-[#22C55E]" : "text-[#475569]"}`}>
@@ -353,12 +353,12 @@ const MaintenancePage = forwardRef(({
                   {/* Grid lines */}
                   <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
                     {[0,1,2,3].map(i => (
-                      <div key={i} className="w-full" style={{ borderTop: "1px solid #1E293B" }} />
+                      <div key={i} className="w-full" style={{ borderTop: "1px solid var(--border-soft)" }} />
                     ))}
                     <div />
                   </div>
                   {/* Baseline */}
-                  <div className="absolute bottom-0 left-0 right-0" style={{ borderTop: "1px solid #334155" }} />
+                  <div className="absolute bottom-0 left-0 right-0" style={{ borderTop: "1px solid var(--border)" }} />
 
                   {(() => {
                     const maxVal = Math.max(...chartData, 1);
@@ -385,7 +385,7 @@ const MaintenancePage = forwardRef(({
                                 ? "linear-gradient(to top,#2563EB,#60A5FA,#93C5FD)"
                                 : val > 0
                                   ? "linear-gradient(to top,#1D4ED8,#3B82F6,#60A5FA)"
-                                  : isHovered ? "#2A3A5C" : "#1E293B",
+                                  : isHovered ? "var(--border)" : "var(--border-soft)",
                               boxShadow: isHovered ? "0 0 8px #60A5FA80" : val > 0 ? "0 0 4px #3B82F640" : "none",
                               transition: "height 0.5s cubic-bezier(0.34,1.2,0.64,1), background 0.15s",
                             }}
@@ -412,21 +412,21 @@ const MaintenancePage = forwardRef(({
           <div
             className="flex-1 flex flex-col overflow-hidden rounded-xl min-h-0"
             style={{
-              background: "linear-gradient(135deg,#1A2540 0%,#0F172A 100%)",
-              border: "1px solid #2A3A5C",
+              background: "linear-gradient(135deg, var(--card-grad-start) 0%, var(--bg-surface) 100%)",
+              border: "1px solid var(--border)",
             }}
           >
             {/* Filter bar */}
             <div
               className="flex items-center gap-2 px-3 py-2 shrink-0"
-              style={{ borderBottom: "1px solid #2A3A5C", background: "#0F172A80" }}
+              style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-surface-2)" }}
             >
-              <span className="text-[#7A8FB0] text-[10px] font-semibold">Date Start</span>
+              <span className="text-[var(--text-secondary)] text-[10px] font-semibold">Date Start</span>
               <input type="date" value={filterStartDate} onChange={e => setFilterStartDate(e.target.value)}
-                className="bg-[#0B1120] border border-[#2A3A5C] text-white rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#22C55E]" />
-              <span className="text-[#7A8FB0] text-[10px] font-semibold">Date End</span>
+                className="bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#22C55E]" />
+              <span className="text-[var(--text-secondary)] text-[10px] font-semibold">Date End</span>
               <input type="date" value={filterEndDate} onChange={e => setFilterEndDate(e.target.value)}
-                className="bg-[#0B1120] border border-[#2A3A5C] text-white rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#22C55E]" />
+                className="bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-[#22C55E]" />
               <button onClick={fetchData} disabled={loading}
                 className="bg-[#22C55E] hover:bg-[#16A34A] text-[#0B1120] px-3 py-1 rounded-lg text-xs font-bold transition-colors disabled:opacity-50">
                 🔄 Refresh
@@ -443,14 +443,14 @@ const MaintenancePage = forwardRef(({
             {/* Scrollable table body */}
             <div className="flex-1 overflow-auto custom-scrollbar min-h-0">
               <table className="w-full text-xs">
-                <thead className="sticky top-0 z-10" style={{ background: "#0F172A" }}>
-                  <tr className="text-[#7A8FB0] uppercase tracking-wider text-[10px]">
+                <thead className="sticky top-0 z-10" style={{ background: "var(--bg-surface-2)" }}>
+                  <tr className="text-[var(--text-secondary)] uppercase tracking-wider text-[10px]">
                     {["No","Date","Start Time","End Time","Duration","Downtime Type","Root Cause","Corrective Action","Technician"].map(h => (
                       <th key={h} className="p-2 text-center whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[#1E293B]">
+                <tbody className="divide-y divide-[var(--border-soft)]">
                   {tableData.map((row, idx) => {
                     const dateStr  = row.start_time ? new Date(row.start_time).toLocaleDateString("id-ID") : "—";
                     const startT   = row.start_time ? new Date(row.start_time).toLocaleTimeString("id-ID",{hour:"2-digit",minute:"2-digit"}) : "—";
@@ -458,26 +458,26 @@ const MaintenancePage = forwardRef(({
                     const tc       = typeColors[row.downtime_type];
                     return (
                       <tr key={row.downtime_id ?? row.id ?? `${row.start_time}-${idx}`} className="hover:bg-[#1E3A5F]/30 transition-colors">
-                        <td className="p-2 text-center text-white font-mono">{(currentPage-1)*10+idx+1}</td>
-                        <td className="p-2 text-center text-white">{dateStr}</td>
-                        <td className="p-2 text-center text-white">{startT}</td>
-                        <td className="p-2 text-center text-white">{endT}</td>
-                        <td className="p-2 text-center text-white font-mono">{row.duration || "—"}</td>
+                        <td className="p-2 text-center text-[var(--text-primary)] font-mono">{(currentPage-1)*10+idx+1}</td>
+                        <td className="p-2 text-center text-[var(--text-primary)]">{dateStr}</td>
+                        <td className="p-2 text-center text-[var(--text-primary)]">{startT}</td>
+                        <td className="p-2 text-center text-[var(--text-primary)]">{endT}</td>
+                        <td className="p-2 text-center text-[var(--text-primary)] font-mono">{row.duration || "—"}</td>
                         <td className="p-2 text-center">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
                             style={{ background: (tc||"#94A3B8")+"20", color: tc||"#E2E8F0" }}>
                             {row.downtime_type || "—"}
                           </span>
                         </td>
-                        <td className="p-2 text-white max-w-[110px] truncate">{row.root_cause       || "—"}</td>
-                        <td className="p-2 text-white max-w-[110px] truncate">{row.corrective_action|| "—"}</td>
-                        <td className="p-2 text-white">{row.technician || "—"}</td>
+                        <td className="p-2 text-[var(--text-primary)] max-w-[110px] truncate">{row.root_cause       || "—"}</td>
+                        <td className="p-2 text-[var(--text-primary)] max-w-[110px] truncate">{row.corrective_action|| "—"}</td>
+                        <td className="p-2 text-[var(--text-primary)]">{row.technician || "—"}</td>
                       </tr>
                     );
                   })}
                   {tableData.length === 0 && (
                     <tr>
-                      <td colSpan="9" className="p-10 text-center text-[#7A8FB0]">No downtime records found</td>
+                      <td colSpan="9" className="p-10 text-center text-[var(--text-secondary)]">No downtime records found</td>
                     </tr>
                   )}
                 </tbody>
@@ -487,7 +487,7 @@ const MaintenancePage = forwardRef(({
             {/* Pagination */}
             <div
               className="flex justify-between items-center px-3 py-2 shrink-0"
-              style={{ borderTop: "1px solid #2A3A5C", background: "#0F172A80" }}
+              style={{ borderTop: "1px solid var(--border)", background: "var(--bg-surface-2)" }}
             >
               <div className="flex gap-1">
                 {[
@@ -500,15 +500,15 @@ const MaintenancePage = forwardRef(({
                   <button key={b.page ?? b.label} onClick={b.action}
                     className="px-2.5 py-1 rounded-lg text-xs transition-colors"
                     style={{
-                      background: b.page === currentPage ? "#22C55E" : "#1A2540",
-                      color:      b.page === currentPage ? "#0B1120"  : "#7A8FB0",
+                      background: b.page === currentPage ? "#22C55E" : "var(--bg-elevated)",
+                      color:      b.page === currentPage ? "#0B1120"  : "var(--text-secondary)",
                       fontWeight: b.page === currentPage ? "700"      : "400",
                     }}>
                     {b.label}
                   </button>
                 ))}
               </div>
-              <span className="text-[#7A8FB0] text-[10px] font-mono">Total Records : {totalRecords}</span>
+              <span className="text-[var(--text-secondary)] text-[10px] font-mono">Total Records : {totalRecords}</span>
             </div>
           </div>
         </div>
@@ -518,15 +518,15 @@ const MaintenancePage = forwardRef(({
           className="flex flex-col rounded-xl shrink-0"
           style={{
             width: 320,
-            background: "linear-gradient(135deg,#1A2540 0%,#0F172A 100%)",
-            border: "1px solid #2A3A5C",
+            background: "linear-gradient(135deg, var(--card-grad-start) 0%, var(--bg-surface) 100%)",
+            border: "1px solid var(--border)",
             padding: "14px 14px",
           }}
         >
           {/* Header */}
           <div className="flex items-center gap-2 mb-3 shrink-0">
             <span className="text-[#EF4444] text-base">⚡</span>
-            <span className="text-white font-bold text-xs tracking-wide">ROOT CAUSE &amp; CORRECTIVE ACTION</span>
+            <span className="text-[var(--text-primary)] font-bold text-xs tracking-wide">ROOT CAUSE &amp; CORRECTIVE ACTION</span>
             {downtimeActive && (
               <span className="ml-auto px-2 py-0.5 text-white text-[9px] font-bold rounded-full animate-pulse" style={{ background: "#EF4444" }}>ACTIVE</span>
             )}
@@ -544,9 +544,9 @@ const MaintenancePage = forwardRef(({
                 disabled={!downtimeActive}
                 placeholder="Describe the root cause..."
                 maxLength={500}
-                className="flex-1 w-full bg-[#0B1120] border border-[#2A3A5C] text-white rounded-lg p-2 text-xs focus:outline-none focus:border-[#22C55E] transition-colors resize-none disabled:opacity-40"
+                className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg p-2 text-xs focus:outline-none focus:border-[#22C55E] transition-colors resize-none disabled:opacity-40"
               />
-              <div className="text-right text-[#7A8FB0] text-[9px] mt-0.5">{rootCause.length} / 500</div>
+              <div className="text-right text-[var(--text-secondary)] text-[9px] mt-0.5">{rootCause.length} / 500</div>
             </div>
 
             {/* Corrective Action */}
@@ -558,9 +558,9 @@ const MaintenancePage = forwardRef(({
                 disabled={!downtimeActive}
                 placeholder="What action was taken?"
                 maxLength={500}
-                className="flex-1 w-full bg-[#0B1120] border border-[#2A3A5C] text-white rounded-lg p-2 text-xs focus:outline-none focus:border-[#22C55E] transition-colors resize-none disabled:opacity-40"
+                className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg p-2 text-xs focus:outline-none focus:border-[#22C55E] transition-colors resize-none disabled:opacity-40"
               />
-              <div className="text-right text-[#7A8FB0] text-[9px] mt-0.5">{correctiveAction.length} / 500</div>
+              <div className="text-right text-[var(--text-secondary)] text-[9px] mt-0.5">{correctiveAction.length} / 500</div>
             </div>
 
             {/* Downtime Type */}
@@ -570,7 +570,7 @@ const MaintenancePage = forwardRef(({
                 value={downtimeType}
                 onChange={e => setDowntimeType(e.target.value)}
                 disabled={!downtimeActive}
-                className="w-full bg-[#0B1120] border border-[#2A3A5C] text-white rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-[#22C55E] transition-colors disabled:opacity-40"
+                className="w-full bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg px-2 py-2 text-xs focus:outline-none focus:border-[#22C55E] transition-colors disabled:opacity-40"
               >
                 <option value="">Select downtime type...</option>
                 <option value="MECHANICAL">⚙️ MECHANICAL</option>
@@ -583,16 +583,16 @@ const MaintenancePage = forwardRef(({
 
             {/* Notes */}
             <div className="flex flex-col" style={{ flex: "0.6 1 0" }}>
-              <label className="text-[#7A8FB0] text-[10px] font-bold mb-1">Notes</label>
+              <label className="text-[var(--text-secondary)] text-[10px] font-bold mb-1">Notes</label>
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value)}
                 disabled={!downtimeActive}
                 placeholder="Additional notes..."
                 maxLength={500}
-                className="flex-1 w-full bg-[#0B1120] border border-[#2A3A5C] text-white rounded-lg p-2 text-xs focus:outline-none focus:border-[#22C55E] transition-colors resize-none disabled:opacity-40"
+                className="flex-1 w-full bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg p-2 text-xs focus:outline-none focus:border-[#22C55E] transition-colors resize-none disabled:opacity-40"
               />
-              <div className="text-right text-[#7A8FB0] text-[9px] mt-0.5">{notes.length} / 500</div>
+              <div className="text-right text-[var(--text-secondary)] text-[9px] mt-0.5">{notes.length} / 500</div>
             </div>
 
             {/* Error / warning */}
@@ -631,9 +631,9 @@ const MaintenancePage = forwardRef(({
                   ) : "✔ SAVE RCA & RETURN TO IDLE"}
                 </button>
               ) : (
-                <div className="text-center text-[#7A8FB0] text-[10px] py-4 border border-dashed border-[#2A3A5C] rounded-xl">
+                <div className="text-center text-[var(--text-secondary)] text-[10px] py-4 border border-dashed border-[var(--border)] rounded-xl">
                   <span className="block mb-0.5">No active downtime</span>
-                  <span className="block text-[9px]">Use the <strong className="text-white">Downtime</strong> button in the header to start.</span>
+                  <span className="block text-[9px]">Use the <strong className="text-[var(--text-primary)]">Downtime</strong> button in the header to start.</span>
                 </div>
               )}
             </div>
@@ -645,7 +645,7 @@ const MaintenancePage = forwardRef(({
 
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-track  { background: #0F172A; }
+        .custom-scrollbar::-webkit-scrollbar-track  { background: var(--bg-surface); }
         .custom-scrollbar::-webkit-scrollbar-thumb  { background: #3B82F6; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #60A5FA; }
       `}</style>

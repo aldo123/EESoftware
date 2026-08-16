@@ -1,6 +1,60 @@
 // src/modal/SettingModal.jsx
 import { useState, useEffect } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { API } from "../service/api";
+import { ModalBackdrop, ModalPanel } from "../components/motion";
+import { useTheme } from "../context/ThemeContext";
+
+const IconSun = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="4" />
+    <line x1="12" y1="2" x2="12" y2="4" /><line x1="12" y1="20" x2="12" y2="22" />
+    <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+    <line x1="2" y1="12" x2="4" y2="12" /><line x1="20" y1="12" x2="22" y2="12" />
+    <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+  </svg>
+);
+
+const IconMoon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+  </svg>
+);
+
+// ── Appearance: Light / Dark toggle ──────────────────────────
+function AppearanceSection() {
+  const { theme, setTheme } = useTheme();
+  const isLight = theme === "light";
+
+  return (
+    <div>
+      <p className="text-xs font-mono text-[#22C55E] uppercase tracking-widest mb-3">Appearance</p>
+      <div className="bg-[var(--bg-surface-2)] rounded-xl border border-[var(--border-soft)] overflow-hidden">
+        <div className="flex items-center gap-4 px-4 py-3">
+          <span className="text-[var(--text-secondary)] text-sm w-44 shrink-0">Theme</span>
+          <div className="flex-1 flex bg-[var(--bg-surface)] rounded-lg p-1 border border-[var(--border)] max-w-[220px]">
+            <button
+              type="button"
+              onClick={() => setTheme("dark")}
+              className={`relative flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${!isLight ? "text-white" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+            >
+              {!isLight && <motion.span layoutId="theme-pill" className="absolute inset-0 bg-[#22C55E] rounded-md" transition={{ type: "spring", stiffness: 500, damping: 40 }} />}
+              <span className="relative flex items-center gap-1.5"><IconMoon /> Dark</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTheme("light")}
+              className={`relative flex-1 py-1.5 rounded-md text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 ${isLight ? "text-[#052E16]" : "text-[var(--text-muted)] hover:text-[var(--text-secondary)]"}`}
+            >
+              {isLight && <motion.span layoutId="theme-pill" className="absolute inset-0 bg-[#22C55E] rounded-md" transition={{ type: "spring", stiffness: 500, damping: 40 }} />}
+              <span className="relative flex items-center gap-1.5"><IconSun /> Light</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ── Icons ───────────────────────────────────────────────────────
 const IconX = () => (
@@ -76,30 +130,30 @@ function ProductFormModal({ isEdit, initialData, onSave, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#0F172A] border border-[#1E293B] rounded-xl w-[380px] shadow-2xl p-6">
-        <h3 className="text-white font-semibold text-lg mb-4">
+    <ModalBackdrop className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="bg-[var(--bg-surface)] border border-[var(--border-soft)] rounded-xl w-[380px] shadow-2xl p-6">
+        <h3 className="text-[var(--text-primary)] font-semibold text-lg mb-4">
           {isEdit ? "Edit Product Rule" : "Add Product Rule"}
         </h3>
         <div className="space-y-3">
           <div>
-            <label className="text-[#94A3B8] text-sm block mb-1">Product</label>
+            <label className="text-[var(--text-secondary)] text-sm block mb-1">Product</label>
             <input
               type="text"
               value={product}
               onChange={(e) => setProduct(e.target.value)}
-              className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
               placeholder="e.g. 1"
               autoFocus
             />
           </div>
           <div>
-            <label className="text-[#94A3B8] text-sm block mb-1">Part Voltage</label>
+            <label className="text-[var(--text-secondary)] text-sm block mb-1">Part Voltage</label>
             <input
               type="text"
               value={voltage}
               onChange={(e) => setVoltage(e.target.value)}
-              className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
               placeholder="e.g. 127V"
             />
           </div>
@@ -107,7 +161,7 @@ function ProductFormModal({ isEdit, initialData, onSave, onClose }) {
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-[#94A3B8] hover:text-white border border-[#334155] hover:border-[#475569] rounded-lg transition-colors"
+            className="px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--text-muted)] rounded-lg transition-colors"
           >
             Cancel
           </button>
@@ -118,8 +172,8 @@ function ProductFormModal({ isEdit, initialData, onSave, onClose }) {
             {isEdit ? "Save" : "Add"}
           </button>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }
 
@@ -153,29 +207,29 @@ function DeviceFormModal({ isEdit, initialData, onSave, onClose }) {
   };
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#0F172A] border border-[#1E293B] rounded-xl w-[420px] max-h-[90vh] overflow-y-auto shadow-2xl p-6">
-        <h3 className="text-white font-semibold text-lg mb-4">
+    <ModalBackdrop className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="bg-[var(--bg-surface)] border border-[var(--border-soft)] rounded-xl w-[420px] max-h-[90vh] overflow-y-auto shadow-2xl p-6">
+        <h3 className="text-[var(--text-primary)] font-semibold text-lg mb-4">
           {isEdit ? "Edit Device" : "Add Device"}
         </h3>
         <div className="space-y-3">
           <div>
-            <label className="text-[#94A3B8] text-sm block mb-1">Device Name</label>
+            <label className="text-[var(--text-secondary)] text-sm block mb-1">Device Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
               placeholder="e.g. PSN"
               autoFocus
             />
           </div>
           <div>
-            <label className="text-[#94A3B8] text-sm block mb-1">Type</label>
+            <label className="text-[var(--text-secondary)] text-sm block mb-1">Type</label>
             <select
               value={type}
               onChange={(e) => setType(e.target.value)}
-              className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+              className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
             >
               <option value="TCP">TCP</option>
               <option value="COM">COM</option>
@@ -184,22 +238,22 @@ function DeviceFormModal({ isEdit, initialData, onSave, onClose }) {
           {type === "TCP" ? (
             <>
               <div>
-                <label className="text-[#94A3B8] text-sm block mb-1">IP Address</label>
+                <label className="text-[var(--text-secondary)] text-sm block mb-1">IP Address</label>
                 <input
                   type="text"
                   value={ip}
                   onChange={(e) => setIp(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+                  className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
                   placeholder="192.168.108.1"
                 />
               </div>
               <div>
-                <label className="text-[#94A3B8] text-sm block mb-1">Port</label>
+                <label className="text-[var(--text-secondary)] text-sm block mb-1">Port</label>
                 <input
                   type="text"
                   value={port}
                   onChange={(e) => setPort(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+                  className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
                   placeholder="9004"
                 />
               </div>
@@ -207,51 +261,51 @@ function DeviceFormModal({ isEdit, initialData, onSave, onClose }) {
           ) : (
             <>
               <div>
-                <label className="text-[#94A3B8] text-sm block mb-1">COM Port</label>
+                <label className="text-[var(--text-secondary)] text-sm block mb-1">COM Port</label>
                 <input
                   type="text"
                   value={comPort}
                   onChange={(e) => setComPort(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+                  className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
                   placeholder="COM3"
                 />
               </div>
               <div>
-                <label className="text-[#94A3B8] text-sm block mb-1">Baudrate</label>
+                <label className="text-[var(--text-secondary)] text-sm block mb-1">Baudrate</label>
                 <select
                   value={baudrate}
                   onChange={(e) => setBaudrate(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+                  className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
                 >
                   {BAUD_OPTIONS.map((b) => <option key={b}>{b}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-[#94A3B8] text-sm block mb-1">Parity</label>
+                <label className="text-[var(--text-secondary)] text-sm block mb-1">Parity</label>
                 <select
                   value={parity}
                   onChange={(e) => setParity(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+                  className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
                 >
                   {PARITY_OPTIONS.map((p) => <option key={p}>{p}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-[#94A3B8] text-sm block mb-1">Data Bits</label>
+                <label className="text-[var(--text-secondary)] text-sm block mb-1">Data Bits</label>
                 <select
                   value={dataBits}
                   onChange={(e) => setDataBits(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+                  className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
                 >
                   {DATA_BITS_OPTIONS.map((b) => <option key={b}>{b}</option>)}
                 </select>
               </div>
               <div>
-                <label className="text-[#94A3B8] text-sm block mb-1">Stop Bits</label>
+                <label className="text-[var(--text-secondary)] text-sm block mb-1">Stop Bits</label>
                 <select
                   value={stopBits}
                   onChange={(e) => setStopBits(e.target.value)}
-                  className="w-full bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
+                  className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-2 focus:outline-none focus:border-[#22C55E] transition-colors"
                 >
                   {STOP_BITS_OPTIONS.map((b) => <option key={b}>{b}</option>)}
                 </select>
@@ -262,7 +316,7 @@ function DeviceFormModal({ isEdit, initialData, onSave, onClose }) {
         <div className="flex justify-end gap-2 mt-5">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm text-[#94A3B8] hover:text-white border border-[#334155] hover:border-[#475569] rounded-lg transition-colors"
+            className="px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--text-muted)] rounded-lg transition-colors"
           >
             Cancel
           </button>
@@ -273,8 +327,8 @@ function DeviceFormModal({ isEdit, initialData, onSave, onClose }) {
             {isEdit ? "Save" : "Add"}
           </button>
         </div>
-      </div>
-    </div>
+      </ModalPanel>
+    </ModalBackdrop>
   );
 }
 
@@ -384,24 +438,24 @@ export default function SettingModal({ onClose, onSaved }) {
   // ── Render ───────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
         <div className="w-8 h-8 border-2 border-[#22C55E] border-t-transparent rounded-full animate-spin" />
-      </div>
+      </ModalBackdrop>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="bg-[#0F172A] border border-[#1E293B] rounded-2xl w-[640px] max-h-[85vh] flex flex-col shadow-2xl">
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="bg-[var(--bg-surface)] border border-[var(--border-soft)] rounded-2xl w-[640px] max-h-[85vh] flex flex-col shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[#1E293B]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-soft)]">
           <div>
-            <p className="text-xs text-[#64748B] uppercase tracking-widest font-mono mb-0.5">Configuration</p>
-            <h2 className="text-white font-semibold text-base">System Configuration</h2>
+            <p className="text-xs text-[var(--text-muted)] uppercase tracking-widest font-mono mb-0.5">Configuration</p>
+            <h2 className="text-[var(--text-primary)] font-semibold text-base">System Configuration</h2>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-[#64748B] hover:text-white hover:bg-[#1E293B] transition-colors"
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
           >
             <IconX />
           </button>
@@ -409,6 +463,8 @@ export default function SettingModal({ onClose, onSaved }) {
 
         {/* Body */}
         <div className="overflow-y-auto flex-1 px-6 py-4 space-y-6">
+          <AppearanceSection />
+
           {Object.entries(entries).map(([section, fields]) => {
             const orderedKeys = FIELD_ORDER[section] || Object.keys(fields);
             const keysToRender = orderedKeys.filter(key => key in fields);
@@ -418,7 +474,7 @@ export default function SettingModal({ onClose, onSaved }) {
             return (
               <div key={section}>
                 <p className="text-xs font-mono text-[#22C55E] uppercase tracking-widest mb-3">{section}</p>
-                <div className="bg-[#111827] rounded-xl border border-[#1E293B] overflow-hidden">
+                <div className="bg-[var(--bg-surface-2)] rounded-xl border border-[var(--border-soft)] overflow-hidden">
                   {allKeys.map((key, i, arr) => {
                     const val = fields[key];
                     let options = null;
@@ -430,15 +486,15 @@ export default function SettingModal({ onClose, onSaved }) {
                       <div
                         key={key}
                         className={`flex items-center gap-4 px-4 py-3 ${
-                          i < arr.length - 1 ? "border-b border-[#1E293B]" : ""
+                          i < arr.length - 1 ? "border-b border-[var(--border-soft)]" : ""
                         }`}
                       >
-                        <span className="text-[#94A3B8] text-sm w-44 shrink-0">{key}</span>
+                        <span className="text-[var(--text-secondary)] text-sm w-44 shrink-0">{key}</span>
                         {options ? (
                           <select
                             value={entries[section]?.[key] ?? val}
                             onChange={(e) => handleFieldChange(section, key, e.target.value)}
-                            className="flex-1 bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
+                            className="flex-1 bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
                           >
                             {options.map((opt) => (
                               <option key={opt}>{opt}</option>
@@ -449,7 +505,7 @@ export default function SettingModal({ onClose, onSaved }) {
                             type="text"
                             value={entries[section]?.[key] ?? val}
                             onChange={(e) => handleFieldChange(section, key, e.target.value)}
-                            className="flex-1 bg-[#0F172A] border border-[#334155] text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
+                            className="flex-1 bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
                           />
                         )}
                       </div>
@@ -463,7 +519,7 @@ export default function SettingModal({ onClose, onSaved }) {
           {/* ── Product Rules Table ────────────────────────────── */}
           <div>
             <p className="text-xs font-mono text-[#22C55E] uppercase tracking-widest mb-3">Product Rules</p>
-            <div className="bg-[#111827] rounded-xl border border-[#1E293B] overflow-hidden">
+            <div className="bg-[var(--bg-surface-2)] rounded-xl border border-[var(--border-soft)] overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-[#1E3A5F]">
                   <tr>
@@ -474,9 +530,9 @@ export default function SettingModal({ onClose, onSaved }) {
                 </thead>
                 <tbody>
                   {productRows.map((row, idx) => (
-                    <tr key={idx} className="border-t border-[#1E293B]">
-                      <td className="py-2 px-3 text-center text-[#F8FAFC]">{row.Product}</td>
-                      <td className="py-2 px-3 text-center text-[#F8FAFC]">{row["Part Voltage"]}</td>
+                    <tr key={idx} className="border-t border-[var(--border-soft)]">
+                      <td className="py-2 px-3 text-center text-[var(--text-primary)]">{row.Product}</td>
+                      <td className="py-2 px-3 text-center text-[var(--text-primary)]">{row["Part Voltage"]}</td>
                       <td className="py-2 px-3 text-center">
                         <button
                           type="button"
@@ -501,7 +557,7 @@ export default function SettingModal({ onClose, onSaved }) {
                   ))}
                 </tbody>
               </table>
-              <div className="p-2 border-t border-[#1E293B]">
+              <div className="p-2 border-t border-[var(--border-soft)]">
                 <button
                   type="button"
                   onClick={() => setShowAddProduct(true)}
@@ -516,7 +572,7 @@ export default function SettingModal({ onClose, onSaved }) {
           {/* ── Communication Devices Table ─────────────────────── */}
           <div>
             <p className="text-xs font-mono text-[#22C55E] uppercase tracking-widest mb-3">Communication Devices</p>
-            <div className="bg-[#111827] rounded-xl border border-[#1E293B] overflow-hidden">
+            <div className="bg-[var(--bg-surface-2)] rounded-xl border border-[var(--border-soft)] overflow-hidden">
               <table className="w-full text-sm">
                 <thead className="bg-[#1E3A5F]">
                   <tr>
@@ -535,10 +591,10 @@ export default function SettingModal({ onClose, onSaved }) {
                       config = `${row["COM Port"] || ""} @ ${row.Baudrate || ""}`;
                     }
                     return (
-                      <tr key={idx} className="border-t border-[#1E293B]">
-                        <td className="py-2 px-3 text-center text-[#F8FAFC]">{row["Device Name"]}</td>
-                        <td className="py-2 px-3 text-center text-[#F8FAFC]">{row.Type}</td>
-                        <td className="py-2 px-3 text-center text-[#94A3B8] text-xs font-mono">{config}</td>
+                      <tr key={idx} className="border-t border-[var(--border-soft)]">
+                        <td className="py-2 px-3 text-center text-[var(--text-primary)]">{row["Device Name"]}</td>
+                        <td className="py-2 px-3 text-center text-[var(--text-primary)]">{row.Type}</td>
+                        <td className="py-2 px-3 text-center text-[var(--text-secondary)] text-xs font-mono">{config}</td>
                         <td className="py-2 px-3 text-center">
                           <button
                             type="button"
@@ -564,7 +620,7 @@ export default function SettingModal({ onClose, onSaved }) {
                   })}
                 </tbody>
               </table>
-              <div className="p-2 border-t border-[#1E293B]">
+              <div className="p-2 border-t border-[var(--border-soft)]">
                 <button
                   type="button"
                   onClick={() => setShowAddDevice(true)}
@@ -578,7 +634,7 @@ export default function SettingModal({ onClose, onSaved }) {
         </div>
 
         {/* Footer */}
-        <div className="flex flex-col gap-2 px-6 py-4 border-t border-[#1E293B]">
+        <div className="flex flex-col gap-2 px-6 py-4 border-t border-[var(--border-soft)]">
           <div className="flex items-center justify-between">
             <p className={`text-sm transition-all duration-300 flex items-center gap-1.5 ${saved ? "text-[#22C55E] opacity-100" : "opacity-0"}`}>
               <IconCheck /> Saved successfully
@@ -587,7 +643,7 @@ export default function SettingModal({ onClose, onSaved }) {
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 text-sm text-[#94A3B8] hover:text-white border border-[#334155] hover:border-[#475569] rounded-lg transition-colors"
+                className="px-4 py-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border)] hover:border-[var(--text-muted)] rounded-lg transition-colors"
               >
                 Cancel
               </button>
@@ -603,39 +659,45 @@ export default function SettingModal({ onClose, onSaved }) {
             </div>
           </div>
         </div>
-      </div>
+      </ModalPanel>
 
       {/* ── Modal Popups ────────────────────────────────────────── */}
-      {showAddProduct && (
-        <ProductFormModal
-          isEdit={false}
-          onSave={(p, v) => { addProductRow(p, v); setShowAddProduct(false); }}
-          onClose={() => setShowAddProduct(false)}
-        />
-      )}
-      {showEditProduct && (
-        <ProductFormModal
-          isEdit={true}
-          initialData={editProductData}
-          onSave={(p, v) => { editProductRow(editProductIndex, p, v); setShowEditProduct(false); }}
-          onClose={() => setShowEditProduct(false)}
-        />
-      )}
-      {showAddDevice && (
-        <DeviceFormModal
-          isEdit={false}
-          onSave={(d) => { addDeviceRow(d); setShowAddDevice(false); }}
-          onClose={() => setShowAddDevice(false)}
-        />
-      )}
-      {showEditDevice && (
-        <DeviceFormModal
-          isEdit={true}
-          initialData={editDeviceData}
-          onSave={(d) => { editDeviceRow(editDeviceIndex, d); setShowEditDevice(false); }}
-          onClose={() => setShowEditDevice(false)}
-        />
-      )}
-    </div>
+      <AnimatePresence>
+        {showAddProduct && (
+          <ProductFormModal
+            key="add-product"
+            isEdit={false}
+            onSave={(p, v) => { addProductRow(p, v); setShowAddProduct(false); }}
+            onClose={() => setShowAddProduct(false)}
+          />
+        )}
+        {showEditProduct && (
+          <ProductFormModal
+            key="edit-product"
+            isEdit={true}
+            initialData={editProductData}
+            onSave={(p, v) => { editProductRow(editProductIndex, p, v); setShowEditProduct(false); }}
+            onClose={() => setShowEditProduct(false)}
+          />
+        )}
+        {showAddDevice && (
+          <DeviceFormModal
+            key="add-device"
+            isEdit={false}
+            onSave={(d) => { addDeviceRow(d); setShowAddDevice(false); }}
+            onClose={() => setShowAddDevice(false)}
+          />
+        )}
+        {showEditDevice && (
+          <DeviceFormModal
+            key="edit-device"
+            isEdit={true}
+            initialData={editDeviceData}
+            onSave={(d) => { editDeviceRow(editDeviceIndex, d); setShowEditDevice(false); }}
+            onClose={() => setShowEditDevice(false)}
+          />
+        )}
+      </AnimatePresence>
+    </ModalBackdrop>
   );
 }
