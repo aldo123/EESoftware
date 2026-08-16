@@ -843,11 +843,11 @@ export default function MainPage({ user: initialUser, onLogout }) {
         {/* SIDEBAR KIRI (collapsible) */}
         <motion.aside
           initial={false}
-          animate={{ width: sidebarOpen ? 130 : 0 }}
+          animate={{ width: sidebarOpen ? 150 : 0 }}
           transition={{ duration: 0.22, ease: EASE_OUT }}
           className="bg-[var(--bg-surface-2)] border-r border-[var(--border-soft)] flex flex-col shrink-0 overflow-hidden transition-colors"
         >
-          <div className="w-[130px] h-full flex flex-col">
+          <div className="w-[150px] h-full flex flex-col">
             <nav className="pt-2 flex flex-col gap-0.5">
               {MENU_ITEMS.map(label => {
                 const disabled = (label === "Maintenance" || label === "Reference") && !isEngineer;
@@ -880,15 +880,51 @@ export default function MainPage({ user: initialUser, onLogout }) {
             {/* COMM DEVICE di sidebar kiri */}
             <div className="mx-2 mb-3 rounded-lg border border-[var(--border)] overflow-hidden" style={{ background: "var(--bg-surface-2)" }}>
               <div className="px-3 pt-3 pb-1">
-                <p className="text-[#22C55E] text-[9px] font-bold tracking-widest uppercase mb-2">COMM DEVICE</p>
+                <p className="text-[#22C55E] text-[9px] font-bold tracking-widest uppercase mb-2">
+                  COMM DEVICE
+                </p>
+
                 <div className="flex flex-col gap-1">
-                  {commDevices.length === 0 && <p className="text-[var(--text-primary)] text-[9px] font-mono">No devices</p>}
-                  {commDevices.map(dev => (
-                    <div key={dev.name} className="flex items-center gap-1.5">
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dev.connected ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} />
-                      <span className={`text-[9px] font-mono truncate ${dev.connected ? "text-[#22C55E]" : "text-[#EF4444]"}`}>
+                  {commDevices.length === 0 && (
+                    <p className="text-[var(--text-primary)] text-[9px] font-mono">
+                      No devices
+                    </p>
+                  )}
+
+                  {commDevices.map((dev, index) => (
+                    <div
+                      key={`${dev.name}-${dev.connection || index}`}
+                      className="flex items-center gap-1.5 min-w-0"
+                    >
+                      {/* Status */}
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${dev.connected
+                            ? "bg-[#22C55E]"
+                            : "bg-[#EF4444]"
+                          }`}
+                      />
+
+                      {/* Device Name */}
+                      <span
+                        className={`text-[9px] font-mono truncate shrink-0 ${dev.connected
+                            ? "text-[#22C55E]"
+                            : "text-[#EF4444]"
+                          }`}
+                      >
                         {dev.name}
                       </span>
+
+                      {/* COM / IP */}
+                      {dev.connection && (
+                        <span
+                          className={`text-[8px] font-mono truncate min-w-0 ${dev.connected
+                              ? "text-[var(--text-muted)]"
+                              : "text-[#EF4444]/70"
+                            }`}
+                        >
+                          {dev.connection}
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
