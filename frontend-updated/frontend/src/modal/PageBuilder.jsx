@@ -49,7 +49,10 @@ const getVisual = (props) => {
 // ──────────────────────────────────────────────────────────────────
 
 const GRID = 5;
-const CANVAS_PRESETS = [{ label: "Optimal (1260x800)", width: 1260, height: 800 }];
+const CANVAS_PRESETS = [{ label: "Full HD • 1980 × 1080", width: 1980, height: 1080 }];
+
+const DEFAULT_CANVAS = { width: 1980, height: 1080 };
+const canvasKey = (width, height) => `${width}x${height}`;
 
 
 // ── TEXT BOX ICON LIBRARY ──────────────────────────────────────────
@@ -1678,7 +1681,7 @@ function IconPicker({ value, onChange }) {
 function PropSection({ title, children }) { return (<div className="flex flex-col gap-2 pb-3 border-b border-[var(--border-soft)]"><span className="text-[9px] font-bold text-[var(--accent-green)] uppercase tracking-widest pt-2">{title}</span>{children}</div>); }
 
 // ── PROPERTY PANEL ──────────────────────────────────────────────
-function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, canvasHeight, availableDevices = [] }) {
+function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction, canvasWidth, canvasHeight, availableDevices = [] }) {
   if (!widget) return (<div className="flex flex-col items-center justify-center h-full text-center px-4"><span className="text-3xl opacity-20 mb-2">🖱</span><p className="text-[var(--text-muted)] text-[10px]">Click a widget on the canvas to edit its properties</p></div>);
   const { type, props: p, x, y } = widget;
 
@@ -1694,7 +1697,26 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
 
   const isOn = p.builderState === 1;
 
-  return (<div className="flex flex-col h-full overflow-hidden"><div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--border-soft)] shrink-0"><div className="flex items-center gap-2"><span className="text-base">◻</span><span className="text-[var(--text-primary)] font-bold text-xs capitalize">{type || 'Unknown'}</span></div><div className="flex items-center gap-1"><button onClick={onDuplicate} title="Duplicate" className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-blue)] hover:bg-[var(--bg-hover)] transition-colors"><IconDupe /></button><button onClick={onDelete} title="Delete" className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--status-red-bg)]/20 transition-colors"><IconTrash /></button></div></div><div className="flex-1 overflow-y-auto px-3 flex flex-col gap-0" style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border) var(--bg-canvas)" }}>
+  return (<div className="flex flex-col h-full overflow-hidden"><div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--border-soft)] shrink-0">
+      <div className="flex items-center gap-2 min-w-0">
+        <span className="text-base shrink-0">◻</span>
+        <span className="text-[var(--text-primary)] font-bold text-xs capitalize truncate">{type || 'Unknown'}</span>
+      </div>
+      <div className="flex items-center gap-1 shrink-0">
+        <button type="button" onClick={() => onLayerAction?.("front")} title="Bring to Front" aria-label="Bring to Front"
+          className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-green)] hover:bg-[var(--accent-green)]/10 transition-colors text-[11px] font-bold">⇈</button>
+        <button type="button" onClick={() => onLayerAction?.("forward")} title="Bring Forward" aria-label="Bring Forward"
+          className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-green)] hover:bg-[var(--accent-green)]/10 transition-colors text-[11px] font-bold">↑</button>
+        <button type="button" onClick={() => onLayerAction?.("backward")} title="Send Backward" aria-label="Send Backward"
+          className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-orange)] hover:bg-[var(--accent-orange)]/10 transition-colors text-[11px] font-bold">↓</button>
+        <button type="button" onClick={() => onLayerAction?.("back")} title="Send to Back" aria-label="Send to Back"
+          className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-orange)] hover:bg-[var(--accent-orange)]/10 transition-colors text-[11px] font-bold">⇊</button>
+        <button type="button" onClick={onDuplicate} title="Duplicate" aria-label="Duplicate"
+          className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-blue)] hover:bg-[var(--bg-hover)] transition-colors"><IconDupe /></button>
+        <button type="button" onClick={onDelete} title="Delete" aria-label="Delete"
+          className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--status-red-bg)]/20 transition-colors"><IconTrash /></button>
+      </div>
+    </div><div className="flex-1 overflow-y-auto px-3 flex flex-col gap-0" style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border) var(--bg-canvas)" }}>
 
     <PropSection title="Position & Size"><div className="grid grid-cols-2 gap-2">
       <PropInput label="X" type="number" min={0} value={x} onChange={handleXChange} />
@@ -3170,8 +3192,6 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, canvasWidth, c
 }
 
 export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }) {
-  const [canvasPreset, setCanvasPreset] = useState(CANVAS_PRESETS[0]);
-  const CANVAS_W = canvasPreset.width, CANVAS_H = canvasPreset.height;
   const [widgets, setWidgets] = useState([]);
   const [selected, setSelected] = useState(null);
   const [dragInfo, setDragInfo] = useState(null);
@@ -3183,6 +3203,44 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
   const canvasRef = useRef(null);
   const canvasContainerRef = useRef(null);
   const [scale, setScale] = useState(1);
+  const [canvasPreset, setCanvasPreset] = useState(
+    CANVAS_PRESETS.find(p => p.width === DEFAULT_CANVAS.width && p.height === DEFAULT_CANVAS.height) || CANVAS_PRESETS[0]
+  );
+  const CANVAS_W = canvasPreset.width;
+  const CANVAS_H = canvasPreset.height;
+
+  // Layer order is represented by the widgets array and a normalized zIndex.
+  // Higher zIndex is always rendered above lower zIndex.
+  const normalizeLayerOrder = useCallback((list) => {
+    return list.map((w, index) => ({ ...w, zIndex: index + 1 }));
+  }, []);
+
+  const handleLayerAction = useCallback((action) => {
+    if (!selected) return;
+    setWidgets(prev => {
+      const index = prev.findIndex(w => w.id === selected);
+      if (index < 0) return prev;
+
+      const next = [...prev];
+      const [item] = next.splice(index, 1);
+
+      if (action === "front") {
+        next.push(item);
+      } else if (action === "back") {
+        next.unshift(item);
+      } else if (action === "forward") {
+        const target = Math.min(index + 1, next.length);
+        next.splice(target, 0, item);
+      } else if (action === "backward") {
+        const target = Math.max(index - 1, 0);
+        next.splice(target, 0, item);
+      } else {
+        next.splice(index, 0, item);
+      }
+
+      return normalizeLayerOrder(next);
+    });
+  }, [selected, normalizeLayerOrder]);
 
   const handleWidgetUpdate = useCallback((updatedWidget) => {
     setWidgets(prevWidgets =>
@@ -3194,33 +3252,57 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     if (!cpNumber) { setLoading(false); return; }
     fetch(`${API}/api/page-config/${cpNumber}`)
       .then(r => r.ok ? r.json() : { widgets: [] })
-      .then(d => { setWidgets(d.widgets || []); setLoading(false); })
+      .then(d => {
+        // Design canvas is fixed to Full HD.
+        setCanvasPreset(CANVAS_PRESETS[0]);
+        const loadedWidgets = Array.isArray(d.widgets) ? d.widgets : [];
+        const hasSavedLayer = loadedWidgets.some(w => Number.isFinite(Number(w?.zIndex)));
+        const orderedWidgets = hasSavedLayer
+          ? [...loadedWidgets].sort((a, b) => Number(a?.zIndex ?? 0) - Number(b?.zIndex ?? 0))
+          : loadedWidgets;
+        setWidgets(orderedWidgets.map((w, index) => ({ ...w, zIndex: index + 1 })));
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, [cpNumber]);
 
+  // The selected resolution is the DESIGN HMI canvas.
+  // The Builder always fits this canvas completely inside the editor.
+  // The saved x/y/width/height values remain in DESIGN pixels.
+  // Dynamic Page can later scale these design pixels to its own display resolution.
   useEffect(() => {
     const container = canvasContainerRef.current;
     if (!container) return;
 
     const updateScale = () => {
-      const availableWidth = Math.max(0, container.clientWidth - 16);
-      const availableHeight = Math.max(0, container.clientHeight - 16);
-
-      // Canvas keeps its fixed logical size (CANVAS_W × CANVAS_H).
-      // Only its display scale changes to fit the available viewport.
+      // Keep the 1920×1080 design canvas fully visible inside the Builder.
+      // Only the editor preview is scaled; logical widget coordinates remain Full HD pixels.
+      const availableWidth = Math.max(1, container.clientWidth - 64);
+      const availableHeight = Math.max(1, container.clientHeight - 32);
       const widthScale = availableWidth / CANVAS_W;
       const heightScale = availableHeight / CANVAS_H;
-      const newScale = Math.max(0.4, Math.min(1, widthScale, heightScale));
-
-      setScale(prev => Math.abs(prev - newScale) < 0.001 ? prev : newScale);
+      const next = Math.min(1, widthScale, heightScale);
+      const safeScale = Math.max(0.05, Number.isFinite(next) ? next : 1);
+      setScale(prev => Math.abs(prev - safeScale) < 0.001 ? prev : safeScale);
     };
 
     updateScale();
-
     const observer = new ResizeObserver(updateScale);
     observer.observe(container);
-
     return () => observer.disconnect();
+  }, [CANVAS_W, CANVAS_H]);
+
+  // Keep widgets inside the newly selected logical canvas.
+  useEffect(() => {
+    setWidgets(prev => prev.map(w => {
+      const p = w.props || {};
+      const width = Math.min(Math.max(1, Number(p.width || 1)), CANVAS_W);
+      const height = Math.min(Math.max(1, Number(p.height || 1)), CANVAS_H);
+      const x = Math.max(0, Math.min(Number(w.x || 0), CANVAS_W - width));
+      const y = Math.max(0, Math.min(Number(w.y || 0), CANVAS_H - height));
+      if (x === w.x && y === w.y && width === p.width && height === p.height) return w;
+      return { ...w, x, y, props: { ...p, width, height } };
+    }));
   }, [CANVAS_W, CANVAS_H]);
 
   const handleCanvasDrop = useCallback((e) => {
@@ -3309,13 +3391,39 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
   const save = useCallback(async () => {
     setSaving(true); setSaveMsg("");
     try {
-      const r = await fetch(`${API}/api/page-config/${cpNumber}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ widgets }) });
+      const canvas = { width: CANVAS_W, height: CANVAS_H };
+      const r = await fetch(`${API}/api/page-config/${cpNumber}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          widgets: normalizeLayerOrder(widgets),
+          canvas,
+          // Design resolution: Dynamic Page uses this as the source coordinate system.
+          canvasWidth: CANVAS_W,
+          canvasHeight: CANVAS_H,
+          designCanvasWidth: CANVAS_W,
+          designCanvasHeight: CANVAS_H,
+        }),
+      });
       const d = await r.json();
       if (d.success) setSaveMsg("✓ Saved!"); else setSaveMsg("✗ Save failed");
     } catch { setSaveMsg("✗ Network error"); }
     setSaving(false);
     setTimeout(() => setSaveMsg(""), 3000);
-  }, [cpNumber, widgets]);
+  }, [cpNumber, widgets, CANVAS_W, CANVAS_H, normalizeLayerOrder]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (!selected) return;
+      const target = e.target;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
+      if (e.ctrlKey || e.metaKey) return;
+      if (e.key === "]") { e.preventDefault(); handleLayerAction(e.shiftKey ? "front" : "forward"); }
+      if (e.key === "[") { e.preventDefault(); handleLayerAction(e.shiftKey ? "back" : "backward"); }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected, handleLayerAction]);
 
   const clearCanvas = useCallback(() => { setWidgets([]); setSelected(null); }, []);
   const selectedWidget = useMemo(() => widgets.find(w => w.id === selected) || null, [widgets, selected]);
@@ -3335,7 +3443,10 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
             <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30">CP{String(cpNumber).padStart(2, "0")}</span>
           </div>
           <div className="flex items-center gap-2">
-            <select value={canvasPreset.width} onChange={e => { const newPreset = CANVAS_PRESETS.find(p => p.width === Number(e.target.value)); if (newPreset) setCanvasPreset(newPreset); }} className="bg-[var(--border-soft)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none cursor-pointer">{CANVAS_PRESETS.map(p => (<option key={p.width} value={p.width}>{p.label}</option>))}</select>
+            <div className="flex items-center gap-1.5">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Canvas</span>
+              <span className="px-2 h-7 inline-flex items-center rounded border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 text-[var(--accent-green)] text-[10px] font-bold font-mono">FULL HD · 1980 × 1080</span>
+            </div>
             {saveMsg && <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saveMsg.startsWith("✓") ? "text-[var(--accent-green)] bg-[var(--accent-green)]/10" : "text-[var(--accent-red)] bg-[var(--accent-red)]/10"}`}>{saveMsg}</span>}
             <button onClick={clearCanvas} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] text-[10px] font-bold transition-colors">Clear</button>
             <button onClick={save} disabled={saving} className="h-7 px-4 rounded-lg bg-[var(--accent-green)] hover:bg-[var(--accent-green-dark)] text-[var(--status-green-bg)] font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-[var(--status-green-bg)] border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Layout"}</button>
@@ -3382,14 +3493,14 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
               ))}
             </div>
           </div>
-          <div ref={canvasContainerRef} className="flex-1 min-w-0 overflow-hidden min-h-0 flex items-center justify-center px-8 py-4" style={{ background: "var(--panel-canvas)" }}>
+          <div ref={canvasContainerRef} className="flex-1 min-w-0 min-h-0 overflow-hidden flex items-center justify-center px-4 py-3" style={{ background: "var(--panel-canvas)" }}>
             {loading ? (<div className="flex items-center gap-2 text-[var(--accent-green)] text-xs mt-20"><div className="w-4 h-4 border-2 border-[var(--accent-green)] border-t-transparent rounded-full animate-spin" /> Loading layout…</div>) : (
-              <div style={{ width: displayWidth, height: displayHeight, position: "relative", flex: "0 0 auto" }}>
-                <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={() => setSelected(null)} className="relative origin-top-left" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
+              <div style={{ width: displayWidth, height: displayHeight, position: "relative", flex: "0 0 auto", overflow: "hidden" }}>
+                <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={() => setSelected(null)} className="relative origin-top-left overflow-hidden" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
                   {widgets.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-4xl opacity-10 mb-2">🖱</span><p className="text-[var(--border-soft)] text-sm font-mono">Drag components here</p></div>)}
                   {widgets.map(widget => {
                     const isSel = widget.id === selected;
-                    return (<div key={widget.id} id={`widget-${widget.id}`} onMouseDown={e => startDrag(e, widget.id)} onClick={e => { e.stopPropagation(); setSelected(widget.id); }} className="absolute select-none" style={{ left: widget.x, top: widget.y, width: widget.props.width, height: widget.props.height, cursor: dragInfo?.id === widget.id ? "grabbing" : "grab", outline: isSel ? "2px solid var(--accent-green)" : "1px solid transparent", outlineOffset: 2, borderRadius: 6, zIndex: isSel ? 10 : 1 }}><div className="w-full h-full overflow-hidden" style={{ borderRadius: 6 }}><WidgetPreview widget={widget} onUpdate={handleWidgetUpdate} /></div>{isSel && <div className="absolute -top-5 left-0 flex items-center gap-1 pointer-events-none"><span className="text-[var(--accent-green)] text-[9px] font-bold bg-[var(--panel-canvas)] px-1.5 py-0.5 rounded font-mono capitalize">{widget.type}</span></div>}{isSel && <div onMouseDown={e => startResize(e, widget.id)} className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize" style={{ background: "var(--accent-green)", borderRadius: "2px 0 4px 0", zIndex: 20 }} />}</div>);
+                    return (<div key={widget.id} id={`widget-${widget.id}`} onMouseDown={e => startDrag(e, widget.id)} onClick={e => { e.stopPropagation(); setSelected(widget.id); }} className="absolute select-none" style={{ left: widget.x, top: widget.y, width: widget.props.width, height: widget.props.height, cursor: dragInfo?.id === widget.id ? "grabbing" : "grab", outline: isSel ? "2px solid var(--accent-green)" : "1px solid transparent", outlineOffset: 2, borderRadius: 6, zIndex: Number.isFinite(Number(widget.zIndex)) ? Number(widget.zIndex) : 1 }}><div className="w-full h-full overflow-hidden" style={{ borderRadius: 6 }}><WidgetPreview widget={widget} onUpdate={handleWidgetUpdate} /></div>{isSel && <div className="absolute -top-5 left-0 flex items-center gap-1 pointer-events-none"><span className="text-[var(--accent-green)] text-[9px] font-bold bg-[var(--panel-canvas)] px-1.5 py-0.5 rounded font-mono capitalize">{widget.type}</span></div>}{isSel && <div onMouseDown={e => startResize(e, widget.id)} className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize" style={{ background: "var(--accent-green)", borderRadius: "2px 0 4px 0", zIndex: 20 }} />}</div>);
                   })}
                 </div>
               </div>
@@ -3399,8 +3510,18 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
             <PropertyPanel
               widget={selectedWidget}
               onChange={updated => setWidgets(ws => ws.map(w => w.id === updated.id ? updated : w))}
-              onDelete={() => { setWidgets(ws => ws.filter(w => w.id !== selected)); setSelected(null); }}
-              onDuplicate={() => { if (!selectedWidget) return; const newId = uid(); let newX = selectedWidget.x + 16, newY = selectedWidget.y + 16; const maxX = CANVAS_W - selectedWidget.props.width, maxY = CANVAS_H - selectedWidget.props.height; newX = Math.min(newX, maxX); newY = Math.min(newY, maxY); const clone = { ...selectedWidget, id: newId, x: newX, y: newY }; setWidgets(ws => [...ws, clone]); setSelected(newId); }}
+              onDelete={() => { setWidgets(ws => normalizeLayerOrder(ws.filter(w => w.id !== selected))); setSelected(null); }}
+              onLayerAction={handleLayerAction}
+              onDuplicate={() => {
+                if (!selectedWidget) return;
+                const newId = uid();
+                let newX = selectedWidget.x + 16, newY = selectedWidget.y + 16;
+                const maxX = CANVAS_W - selectedWidget.props.width, maxY = CANVAS_H - selectedWidget.props.height;
+                newX = Math.min(newX, maxX); newY = Math.min(newY, maxY);
+                const clone = { ...selectedWidget, id: newId, x: newX, y: newY };
+                setWidgets(ws => normalizeLayerOrder([...ws, clone]));
+                setSelected(newId);
+              }}
               canvasWidth={CANVAS_W}
               canvasHeight={CANVAS_H}
                availableDevices={availableDevices}
@@ -3408,7 +3529,7 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
           </div>
         </div>
         <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--panel-canvas)" }}>
-          <span className="text-[var(--border)] text-[9px] font-mono">{widgets.length} widget{widgets.length !== 1 ? "s" : ""} · Canvas {CANVAS_W}×{CANVAS_H}px · Grid {GRID}px</span>
+          <span className="text-[var(--border)] text-[9px] font-mono">{widgets.length} widget{widgets.length !== 1 ? "s" : ""} · Design {CANVAS_W}×{CANVAS_H}px · Fit {Math.round(scale * 100)}% · Grid {GRID}px</span>
           {selectedWidget && <span className="text-[var(--text-muted)] text-[9px] font-mono">x:{selectedWidget.x} y:{selectedWidget.y} · {selectedWidget.props.width}×{selectedWidget.props.height}</span>}
           <span className="text-[var(--border)] text-[9px] font-mono">Del = delete · drag to move · ↘ to resize</span>
         </div>
