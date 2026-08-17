@@ -1,409 +1,1391 @@
 // src/widgets/textbox.jsx
 //
-// Everything about the "textbox" widget lives in this one file:
-//   - TextBoxDef            palette entry (label/icon/desc/defaultProps) for the Page Builder sidebar
-//   - TextBoxPreview        how it looks on the Page Builder canvas (design-time)
-//   - TextBoxPropertyPanel  the property panel shown when this widget is selected
-//   - RuntimeTextBox        how it looks/behaves on the live Dynamic CP Page
+// Universal HMI / Futuristic Text Box
+// - TextBoxDef            palette entry
+// - TextBoxPreview        Page Builder canvas preview
+// - TextBoxPropertyPanel  property panel
+// - RuntimeTextBox        Dynamic CP Page runtime
 //
-import { PropInput, PropSection, TEXTBOX_ICONS, getVisual, DEFAULT_VISUAL } from "./shared";
+// BASE PROGRAM COMPATIBILITY:
+// Keep the existing exports and runtime contract so PageBuilder.jsx,
+// DynamicCPPage.jsx and widgets/index.js do not need to change.
+
+import {
+  PropInput,
+  PropSection,
+  TEXTBOX_ICONS,
+  getVisual,
+  DEFAULT_VISUAL,
+} from "./shared";
 
 // ────────────────────────────────────────────────────────────────
-//  PALETTE DEFINITION
+// FRAME STYLES
+// Designed as clean industrial/HUD frames rather than decorative
+// random shapes. All frames use the same SVG renderer.
+// ────────────────────────────────────────────────────────────────
+
+export const TEXTBOX_FRAME_STYLES = [
+  { value: "standard", label: "Standard" },
+  { value: "cyber", label: "Cyber HUD" },
+  { value: "bracket", label: "Corner Bracket" },
+  { value: "chamfer", label: "Chamfer" },
+  { value: "hex", label: "Hex HUD" },
+  { value: "angular", label: "Angular HUD" },
+  { value: "double", label: "Double Line" },
+  { value: "corner", label: "Corner Lines" },
+  { value: "title", label: "Title Frame" },
+  { value: "capsule", label: "Capsule" },
+  { value: "terminal", label: "Terminal" },
+  { value: "scan", label: "Scan Frame" },
+];
+
+export const TEXTBOX_FRAME_PRESETS = [
+  { value: "cyan", label: "Cyber Cyan", color: "#00E5FF" },
+  { value: "blue", label: "Digital Blue", color: "#38BDF8" },
+  { value: "green", label: "Industrial Green", color: "#39FF88" },
+  { value: "amber", label: "Warning Amber", color: "#FFB020" },
+  { value: "red", label: "Alarm Red", color: "#FF4058" },
+  { value: "white", label: "Clean White", color: "#DCEBFF" },
+  { value: "custom", label: "Custom", color: "" },
+];
+
+const FRAME_PRESET_COLORS = {
+  cyan: "#00E5FF",
+  blue: "#38BDF8",
+  green: "#39FF88",
+  amber: "#FFB020",
+  red: "#FF4058",
+  white: "#DCEBFF",
+};
+
+const clamp = (value, min, max) =>
+  Math.min(max, Math.max(min, Number(value)));
+
+const resolveFrameColor = (p) => {
+  if (p.framePreset === "custom") return p.frameColor || "#00E5FF";
+  return (
+    p.frameColor ||
+    FRAME_PRESET_COLORS[p.framePreset || "cyan"] ||
+    "#00E5FF"
+  );
+};
+
+// Clean frame geometries.
+// ViewBox is always 0..100 so the frame scales correctly with the widget.
+const getFrameGeometry = (style, cut = 10) => {
+  const c = clamp(cut, 4, 24);
+
+  switch (style) {
+    case "cyber":
+      return {
+        path: `
+          M 2 16
+          L 16 2
+          L 70 2
+          L 76 8
+          L 98 8
+          L 98 84
+          L 84 98
+          L 30 98
+          L 24 92
+          L 2 92
+          Z
+        `,
+        accent: [
+          "M 18 2 L 26 2",
+          "M 76 8 L 90 8",
+          "M 84 98 L 92 90",
+          "M 2 84 L 2 72",
+        ],
+      };
+
+    case "bracket":
+      return {
+        path: `
+          M 24 2 H 4 V 22
+          M 76 2 H 96 V 22
+          M 4 78 V 98 H 24
+          M 96 78 V 98 H 76
+        `,
+        accent: [],
+      };
+
+    case "chamfer":
+      return {
+        path: `
+          M ${c} 2
+          H ${100 - c}
+          L 98 ${c}
+          V ${100 - c}
+          L ${100 - c} 98
+          H ${c}
+          L 2 ${100 - c}
+          V ${c}
+          Z
+        `,
+        accent: [],
+      };
+
+    case "hex":
+      return {
+        path: `
+          M 14 2
+          H 86
+          L 98 20
+          V 80
+          L 86 98
+          H 14
+          L 2 80
+          V 20
+          Z
+        `,
+        accent: [
+          "M 22 2 H 40",
+          "M 60 98 H 78",
+        ],
+      };
+
+    case "angular":
+      return {
+        path: `
+          M 2 20
+          L 20 2
+          H 82
+          L 98 18
+          V 82
+          L 82 98
+          H 18
+          L 2 82
+          Z
+        `,
+        accent: [
+          "M 32 2 H 50",
+          "M 50 98 H 68",
+        ],
+      };
+
+    case "double":
+      return {
+        path: `
+          M 2 14
+          L 14 2
+          H 86
+          L 98 14
+          V 86
+          L 86 98
+          H 14
+          L 2 86
+          Z
+        `,
+        inner: `
+          M 6 17
+          L 17 6
+          H 83
+          L 94 17
+          V 83
+          L 83 94
+          H 17
+          L 6 83
+          Z
+        `,
+        accent: [],
+      };
+
+    case "corner":
+      return {
+        path: `
+          M 30 2 H 2 V 30
+          M 70 2 H 98 V 30
+          M 2 70 V 98 H 30
+          M 98 70 V 98 H 70
+        `,
+        accent: [],
+      };
+
+    case "title":
+      return {
+        path: `
+          M 2 20 V 4 H 98 V 96 H 2 V 80
+        `,
+        accent: [
+          "M 12 20 H 42",
+          "M 58 20 H 88",
+          "M 12 96 H 32",
+          "M 68 96 H 88",
+        ],
+        titleBar: true,
+      };
+
+    case "capsule":
+      return {
+        capsule: true,
+        path: "",
+        accent: [],
+      };
+
+    case "terminal":
+      return {
+        path: `
+          M 12 2 H 88
+          M 2 12 V 88
+          M 12 98 H 88
+          M 98 12 V 88
+        `,
+        accent: [
+          "M 2 24 V 12 H 14",
+          "M 86 2 H 98 V 14",
+          "M 2 86 V 98 H 14",
+          "M 86 98 H 98 V 86",
+        ],
+      };
+
+    case "scan":
+      return {
+        path: `
+          M 18 2 H 82
+          M 98 18 V 82
+          M 82 98 H 18
+          M 2 82 V 18
+        `,
+        accent: [
+          "M 4 8 H 32",
+          "M 68 92 H 96",
+        ],
+      };
+
+    default:
+      return null;
+  }
+};
+
+// ────────────────────────────────────────────────────────────────
+// PALETTE DEFINITION
 // ────────────────────────────────────────────────────────────────
 
 export const textboxDef = {
-    type: "textbox",
-    label: "Text Box",
-    icon: "T",
-    desc: "Static text display",
-    defaultProps: {
-      text: "TEXT",
-      variable: "",
-      icon: "",
-      iconPosition: "left",
-      iconSize: 20,
-      iconGap: 8,
-      fontSize: 18,
-      fontWeight: "600",
-      textColor: "#FFFFFF",
-      iconColor: "#FFFFFF",
-      textAlign: "center",
-      verticalAlign: "center",
-      backgroundColor: "transparent",
-      borderColor: "transparent",
-      borderWidth: 0,
-      radius: 6,
-      padding: 8,
-      width: 220,
-      height: 60,
-      rotation: 0,
-      visual: { ...DEFAULT_VISUAL }
-    }
-  };
+  type: "textbox",
+  label: "Text Box",
+  icon: "T",
+  desc: "Universal futuristic HMI text display",
+
+  defaultProps: {
+    text: "TEXT",
+    variable: "",
+
+    // DATA INPUT
+    // Exactly two communication sources: TCP/IP or COM/RS232.
+    inputSource: "tcp",
+    inputType: "realtime",
+    device: "",
+    addressType: "holding_register",
+    address: "",
+    sourceDevice: "",
+
+    // Icon
+    icon: "",
+    iconPosition: "left",
+    iconVerticalAlign: "center",
+    iconSize: 20,
+    iconGap: 8,
+    iconOffsetX: 0,
+    iconOffsetY: 0,
+
+    // Text
+    fontSize: 18,
+    fontWeight: "600",
+    textColor: "#FFFFFF",
+    iconColor: "#FFFFFF",
+    textAlign: "center",
+    verticalAlign: "center",
+    textOffsetX: 0,
+    textOffsetY: 0,
+
+    // Existing/basic appearance
+    backgroundColor: "transparent",
+    borderColor: "transparent",
+    borderWidth: 0,
+    radius: 6,
+    padding: 8,
+    width: 220,
+    height: 60,
+    rotation: 0,
+
+    // Futuristic frame
+    frameStyle: "standard",
+    framePreset: "cyan",
+    frameColor: "#00E5FF",
+    frameWidth: 1.5,
+    frameOpacity: 1,
+    cornerSize: 10,
+    frameBackground: "rgba(3, 18, 30, 0.88)",
+    frameBackgroundOpacity: 0.88,
+
+    // Effects
+    frameGlow: false,
+    glowIntensity: 18,
+    innerGlow: false,
+    scanEffect: false,
+    scanSpeed: 2,
+
+    // Decorative controls
+    showFrameAccent: true,
+    showFrameDots: false,
+
+    visual: { ...DEFAULT_VISUAL },
+  },
+};
 
 // ────────────────────────────────────────────────────────────────
-//  PAGE BUILDER — CANVAS PREVIEW
+// HELPERS
 // ────────────────────────────────────────────────────────────────
 
-export function TextBoxPreview({ widget }) {
-  const p = widget.props || {};
+const getHorizontalPosition = (position) => {
+  if (position === "left") return "left";
+  if (position === "right") return "right";
+  return "center";
+};
 
-  const textValue = p.text ?? "TEXT";
-  const icon = p.icon || "";
-  const iconPosition = p.iconPosition || "left";
-  const iconSize = Number(p.iconSize ?? 20);
-  const fontSize = Number(p.fontSize ?? 18);
-  const fontWeight = p.fontWeight || "600";
-  const textColor = p.textColor || "#FFFFFF";
-  const iconColor = p.iconColor || textColor;
-  const textAlign = p.textAlign || "center";
-  const backgroundColor = p.backgroundColor || "transparent";
-  const borderColor = p.borderColor || "transparent";
-  const borderWidth = Math.max(0, Number(p.borderWidth ?? 0));
+const getVerticalPosition = (position) => {
+  if (position === "top") return "top";
+  if (position === "bottom") return "bottom";
+  return "center";
+};
+
+const getTranslateForPosition = (horizontal, vertical) => {
+  const x =
+    horizontal === "left" ? "0%" :
+    horizontal === "right" ? "0%" :
+    "-50%";
+
+  const y =
+    vertical === "top" ? "0%" :
+    vertical === "bottom" ? "0%" :
+    "-50%";
+
+  return `translate(${x}, ${y})`;
+};
+
+// ────────────────────────────────────────────────────────────────
+// SHARED SURFACE
+// Preview and Runtime intentionally use the exact same renderer.
+// ────────────────────────────────────────────────────────────────
+
+function TextBoxSurface({ p, textValue, preview = false }) {
+  const visual = getVisual(p);
+
+  const frameStyle = p.frameStyle || "standard";
+  const frameColor = resolveFrameColor(p);
+  const frameWidth = Math.max(0.5, Number(p.frameWidth ?? 1.5));
+  const frameOpacity = clamp(p.frameOpacity ?? 1, 0, 1);
+  const cornerSize = clamp(p.cornerSize ?? 10, 4, 24);
+
+  // Futuristic frames must NOT paint a rectangular background outside
+  // their actual frame geometry. Background is rendered/clipped separately
+  // inside the frame shape below.
+  const background =
+    frameStyle === "standard"
+      ? (p.backgroundColor ?? "transparent")
+      : "transparent";
+
+  const borderColor =
+    frameStyle === "standard"
+      ? (p.borderColor || "transparent")
+      : "transparent";
+
+  const borderWidth =
+    frameStyle === "standard"
+      ? Math.max(0, Number(p.borderWidth ?? 0))
+      : 0;
+
   const radius = Math.max(0, Number(p.radius ?? 6));
   const padding = Math.max(0, Number(p.padding ?? 8));
   const rotation = Number(p.rotation ?? 0);
 
-  const textJustify =
-    textAlign === "left" ? "flex-start" :
-    textAlign === "right" ? "flex-end" : "center";
+  const textColor = p.textColor || visual.textColor || "#FFFFFF";
+  const iconColor = p.iconColor || textColor;
+
+  const fontSize = Number(p.fontSize ?? 18);
+  const fontWeight = p.fontWeight || "600";
+  const textAlign = p.textAlign || "center";
+  const verticalAlign = p.verticalAlign || "center";
+
+  const icon = p.icon || "";
+  const iconPosition = p.iconPosition || "left";
+  const iconVerticalAlign = p.iconVerticalAlign || "center";
+  const iconSize = Number(p.iconSize ?? 20);
+
+  // IMPORTANT:
+  // Text and icon are now completely independent.
+  // Example:
+  //   textAlign = center
+  //   iconPosition = right
+  // -> text remains exactly centered while icon stays at the right.
+  const textOffsetX = Number(p.textOffsetX ?? 0);
+  const textOffsetY = Number(p.textOffsetY ?? 0);
+  const iconOffsetX = Number(p.iconOffsetX ?? 0);
+  const iconOffsetY = Number(p.iconOffsetY ?? 0);
+
+  const glowEnabled = p.frameGlow === true;
+  const glowIntensity = clamp(p.glowIntensity ?? 18, 0, 60);
+
+  const frame = getFrameGeometry(frameStyle, cornerSize);
+
+  const shadow =
+    glowEnabled
+      ? `0 0 ${glowIntensity}px ${frameColor}55, inset 0 0 ${
+          Math.max(4, glowIntensity * 0.45)
+        }px ${frameColor}16`
+      : p.innerGlow
+        ? `inset 0 0 ${Math.max(4, glowIntensity * 0.45)}px ${frameColor}18`
+        : "none";
+
+  const outerStyle = {
+    position: "relative",
+    width: "100%",
+    height: "100%",
+    background,
+    border: `${borderWidth}px solid ${borderColor}`,
+    borderRadius:
+      frameStyle === "capsule" ? "999px" : `${radius}px`,
+    transform: `rotate(${rotation}deg)`,
+    boxSizing: "border-box",
+    overflow: "hidden",
+    boxShadow: shadow,
+  };
+
+  const horizontalText =
+    textAlign === "left"
+      ? "left"
+      : textAlign === "right"
+        ? "right"
+        : "center";
+
+  const verticalText =
+    verticalAlign === "top"
+      ? "top"
+      : verticalAlign === "bottom"
+        ? "bottom"
+        : "center";
+
+  const textPositionStyle = {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top:
+      verticalText === "top"
+        ? padding
+        : verticalText === "bottom"
+          ? "auto"
+          : "50%",
+    bottom:
+      verticalText === "bottom"
+        ? padding
+        : verticalText === "top"
+          ? "auto"
+          : "auto",
+    transform:
+      verticalText === "center"
+        ? `translateY(-50%) translateX(${textOffsetX}px)`
+        : `translateX(${textOffsetX}px)`,
+    marginTop: verticalText === "top" ? textOffsetY : 0,
+    marginBottom: verticalText === "bottom" ? -textOffsetY : 0,
+    padding: `0 ${padding}px`,
+    boxSizing: "border-box",
+    textAlign: horizontalText,
+    pointerEvents: "none",
+    zIndex: 4,
+  };
+
+  const textStyle = {
+    display: "block",
+    width: "100%",
+    color: textColor,
+    fontSize: `${fontSize}px`,
+    fontWeight,
+    lineHeight: 1.2,
+    whiteSpace: "pre-wrap",
+    wordBreak: "break-word",
+    textShadow: glowEnabled
+      ? `0 0 ${Math.max(3, glowIntensity * 0.45)}px ${textColor}55`
+      : "none",
+  };
+
+  const iconHorizontal = getHorizontalPosition(iconPosition);
+  const iconVertical = getVerticalPosition(iconVerticalAlign);
+
+  const iconPositionStyle = {
+    position: "absolute",
+    zIndex: 4,
+    pointerEvents: "none",
+    ...(iconHorizontal === "left"
+      ? { left: padding }
+      : iconHorizontal === "right"
+        ? { right: padding }
+        : { left: "50%" }),
+    ...(iconVertical === "top"
+      ? { top: padding }
+      : iconVertical === "bottom"
+        ? { bottom: padding }
+        : { top: "50%" }),
+    transform:
+      getTranslateForPosition(iconHorizontal, iconVertical) +
+      ` translate(${iconOffsetX}px, ${iconOffsetY}px)`,
+  };
+
+  const iconStyle = {
+    color: iconColor,
+    fontSize: `${iconSize}px`,
+    lineHeight: 1,
+    display: "block",
+    textShadow: glowEnabled
+      ? `0 0 ${Math.max(3, glowIntensity * 0.5)}px ${iconColor}66`
+      : "none",
+  };
+
+  const filterId =
+    `textbox-glow-${p.__runtimeId || p.id || "preview"}`.replace(
+      /[^a-zA-Z0-9_-]/g,
+      ""
+    );
 
   return (
-    <div
-      className="relative w-full h-full"
-      style={{
-        background: backgroundColor,
-        border: `${borderWidth}px solid ${borderColor}`,
-        borderRadius: `${radius}px`,
-        padding: `${padding}px`,
-        transform: `rotate(${rotation}deg)`,
-        boxSizing: "border-box",
-        overflow: "hidden"
-      }}
-    >
-      <div
-        className="absolute inset-0 flex items-center pointer-events-none"
-        style={{
-          justifyContent: textJustify,
-          padding: `${padding}px`,
-          boxSizing: "border-box"
-        }}
-      >
-        <span
+    <div style={outerStyle}>
+      {/* subtle futuristic background */}
+      {frameStyle !== "standard" && (
+        <>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              background:
+                "linear-gradient(135deg, rgba(255,255,255,0.035), transparent 28%, transparent 72%, rgba(0,0,0,0.22))",
+            }}
+          />
+
+          <div
+            style={{
+              position: "absolute",
+              left: "10%",
+              right: "10%",
+              top: 0,
+              height: 1,
+              background: `linear-gradient(90deg, transparent, ${frameColor}66, transparent)`,
+              pointerEvents: "none",
+            }}
+          />
+        </>
+      )}
+
+      {/* Futuristic frame background
+          IMPORTANT: the background is clipped to the actual frame shape.
+          Nothing is painted outside the visible frame line. */}
+      {frameStyle !== "standard" && frame && !frame.capsule && frame.path && (
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
           style={{
-            color: textColor,
-            fontSize: `${fontSize}px`,
-            fontWeight,
-            lineHeight: 1.2,
-            textAlign,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word"
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
+            overflow: "visible",
+            zIndex: 0,
           }}
         >
-          {textValue}
-        </span>
+          <path
+            d={frame.path}
+            fill={p.frameBackground || "rgba(3, 18, 30, 0.88)"}
+            fillOpacity={clamp(p.frameBackgroundOpacity ?? 0.88, 0, 1)}
+          />
+        </svg>
+      )}
+
+      {/* Futuristic frame */}
+      {frameStyle !== "standard" && frame && (
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            inset: 0,
+            width: "100%",
+            height: "100%",
+            pointerEvents: "none",
+            overflow: "visible",
+            zIndex: 2,
+          }}
+        >
+          <defs>
+            <filter
+              id={filterId}
+              x="-50%"
+              y="-50%"
+              width="200%"
+              height="200%"
+            >
+              <feGaussianBlur stdDeviation="1.6" result="blur" />
+              <feMerge>
+                <feMergeNode in="blur" />
+                <feMergeNode in="SourceGraphic" />
+              </feMerge>
+            </filter>
+          </defs>
+
+          {glowEnabled && (
+            <path
+              d={frame.path}
+              fill="none"
+              stroke={frameColor}
+              strokeWidth={frameWidth * 3}
+              strokeOpacity="0.20"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              filter={`url(#${filterId})`}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+
+          <path
+            d={frame.path}
+            fill="none"
+            stroke={frameColor}
+            strokeWidth={frameWidth}
+            strokeOpacity={frameOpacity}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+
+          {frame.inner && (
+            <path
+              d={frame.inner}
+              fill="none"
+              stroke={frameColor}
+              strokeWidth={Math.max(0.5, frameWidth * 0.45)}
+              strokeOpacity={frameOpacity * 0.38}
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+
+          {p.showFrameAccent !== false &&
+            frame.accent?.map((d, i) => (
+              <path
+                key={`accent-${i}`}
+                d={d}
+                fill="none"
+                stroke={frameColor}
+                strokeWidth={Math.max(1, frameWidth * 1.15)}
+                strokeOpacity={frameOpacity}
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+        </svg>
+      )}
+
+      {/* Capsule frame
+          The dark/background fill is clipped to the capsule itself.
+          The rectangular area outside the capsule stays fully transparent. */}
+      {frameStyle === "capsule" && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            borderRadius: "999px",
+            background:
+              p.frameBackground || "rgba(3, 18, 30, 0.88)",
+            boxSizing: "border-box",
+            zIndex: 0,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              border: `${frameWidth}px solid ${frameColor}`,
+              borderRadius: "999px",
+              boxSizing: "border-box",
+              opacity: frameOpacity,
+              boxShadow: glowEnabled
+                ? `0 0 ${glowIntensity}px ${frameColor}55, inset 0 0 ${
+                    Math.max(4, glowIntensity * 0.4)
+                  }px ${frameColor}18`
+                : "none",
+            }}
+          />
+        </div>
+      )}
+
+      {/* Title-frame micro bar */}
+      {frameStyle === "title" && (
+        <div
+          style={{
+            position: "absolute",
+            top: 5,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "28%",
+            minWidth: 45,
+            height: 3,
+            background: frameColor,
+            opacity: frameOpacity,
+            boxShadow: glowEnabled ? `0 0 8px ${frameColor}` : "none",
+            zIndex: 3,
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
+      {/* Decorative dots */}
+      {p.showFrameDots === true && frameStyle !== "standard" && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 12,
+            display: "flex",
+            gap: 4,
+            zIndex: 5,
+            pointerEvents: "none",
+          }}
+        >
+          {[0, 1, 2].map((n) => (
+            <span
+              key={n}
+              style={{
+                width: 3,
+                height: 3,
+                borderRadius: "50%",
+                background: frameColor,
+                opacity: frameOpacity * (1 - n * 0.2),
+                boxShadow: glowEnabled
+                  ? `0 0 5px ${frameColor}`
+                  : "none",
+              }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Scan effect */}
+      {p.scanEffect === true && frameStyle !== "standard" && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: 0,
+            height: 1,
+            zIndex: 6,
+            pointerEvents: "none",
+            background: `linear-gradient(90deg, transparent, ${frameColor}, transparent)`,
+            boxShadow: `0 0 8px ${frameColor}`,
+            animation: `textboxScan ${
+              Math.max(0.5, Number(p.scanSpeed ?? 2))
+            }s linear infinite`,
+          }}
+        />
+      )}
+
+      {/* TEXT: independent position */}
+      <div style={textPositionStyle}>
+        <span style={textStyle}>{textValue}</span>
       </div>
 
-      {icon && iconPosition === "left" && (
-        <div
-          className="absolute inset-y-0 left-0 flex items-center pointer-events-none"
-          style={{ paddingLeft: `${padding}px` }}
-        >
-          <span style={{
-            color: iconColor,
-            fontSize: `${iconSize}px`,
-            lineHeight: 1
-          }}>
-            {icon}
-          </span>
+      {/* ICON: independent position */}
+      {icon && (
+        <div style={iconPositionStyle}>
+          <span style={iconStyle}>{icon}</span>
         </div>
       )}
 
-      {icon && iconPosition === "right" && (
-        <div
-          className="absolute inset-y-0 right-0 flex items-center pointer-events-none"
-          style={{ paddingRight: `${padding}px` }}
-        >
-          <span style={{
-            color: iconColor,
-            fontSize: `${iconSize}px`,
-            lineHeight: 1
-          }}>
-            {icon}
-          </span>
-        </div>
+      {p.scanEffect === true && (
+        <style>
+          {`
+            @keyframes textboxScan {
+              0% { transform: translateY(0); opacity: 0; }
+              8% { opacity: 0.7; }
+              92% { opacity: 0.7; }
+              100% { transform: translateY(100%); opacity: 0; }
+            }
+          `}
+        </style>
       )}
 
-      {icon && iconPosition === "center" && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span style={{
-            color: iconColor,
-            fontSize: `${iconSize}px`,
-            lineHeight: 1
-          }}>
-            {icon}
-          </span>
-        </div>
+      {preview && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            borderRadius:
+              frameStyle === "capsule" ? "999px" : `${radius}px`,
+          }}
+        />
       )}
     </div>
   );
 }
 
 // ────────────────────────────────────────────────────────────────
-//  PAGE BUILDER — PROPERTY PANEL
+// PAGE BUILDER — CANVAS PREVIEW
 // ────────────────────────────────────────────────────────────────
 
-export function TextBoxPropertyPanel({ p, set }) {
+export function TextBoxPreview({ widget }) {
+  const p = widget.props || {};
+
   return (
-  <>
-    <PropSection title="Data Binding">
-      <PropInput
-        label="Variable"
-        value={p.variable || ""}
-        onChange={v => set("variable", v)}
+    <div className="relative w-full h-full overflow-visible">
+      <TextBoxSurface
+        p={p}
+        textValue={p.text ?? "TEXT"}
+        preview
       />
-      <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
-        When a variable is assigned, runtime displays its current value.
-      </div>
-      <PropInput
-        label="Default Text"
-        value={p.text || "TEXT"}
-        onChange={v => set("text", v)}
-      />
-    </PropSection>
-
-    <PropSection title="Icon">
-      <PropInput
-        label="Icon"
-        options={TEXTBOX_ICONS.map(item => ({
-          value: item.value,
-          label: item.icon ? `${item.icon}  ${item.label}` : item.label
-        }))}
-        value={p.icon || ""}
-        onChange={v => set("icon", v)}
-      />
-      <PropInput
-        label="Position"
-        options={[
-          { value: "left", label: "Left" },
-          { value: "center", label: "Center" },
-          { value: "right", label: "Right" }
-        ]}
-        value={p.iconPosition || "left"}
-        onChange={v => set("iconPosition", v)}
-      />
-      <div className="grid grid-cols-2 gap-2">
-        <PropInput
-          label="Icon Size"
-          type="number"
-          min={8}
-          max={64}
-          value={p.iconSize ?? 20}
-          onChange={v => set("iconSize", Number(v))}
-        />
-        <PropInput
-          label="Icon Gap"
-          type="number"
-          min={0}
-          max={40}
-          value={p.iconGap ?? 8}
-          onChange={v => set("iconGap", Number(v))}
-        />
-      </div>
-    </PropSection>
-
-    <PropSection title="Text">
-      <div className="grid grid-cols-2 gap-2">
-        <PropInput
-          label="Font Size"
-          type="number"
-          min={8}
-          max={72}
-          value={p.fontSize ?? 18}
-          onChange={v => set("fontSize", Number(v))}
-        />
-        <PropInput
-          label="Weight"
-          options={[
-            { value: "400", label: "Normal" },
-            { value: "500", label: "Medium" },
-            { value: "600", label: "Semi Bold" },
-            { value: "700", label: "Bold" }
-          ]}
-          value={p.fontWeight || "600"}
-          onChange={v => set("fontWeight", v)}
-        />
-      </div>
-
-      <PropInput
-        label="Alignment"
-        options={[
-          { value: "left", label: "Left" },
-          { value: "center", label: "Center" },
-          { value: "right", label: "Right" }
-        ]}
-        value={p.textAlign || "center"}
-        onChange={v => set("textAlign", v)}
-      />
-    </PropSection>
-
-    <PropSection title="Appearance">
-      <PropInput
-        label="Text Color"
-        type="color"
-        value={p.textColor || "#FFFFFF"}
-        onChange={v => set("textColor", v)}
-      />
-      <PropInput
-        label="Icon Color"
-        type="color"
-        value={p.iconColor || "#FFFFFF"}
-        onChange={v => set("iconColor", v)}
-      />
-      <PropInput
-        label="Background"
-        type="color"
-        value={p.backgroundColor || "var(--panel-canvas)"}
-        onChange={v => set("backgroundColor", v)}
-      />
-      <PropInput
-        label="Border"
-        type="color"
-        value={p.borderColor || "var(--panel-mid)"}
-        onChange={v => set("borderColor", v)}
-      />
-      <div className="grid grid-cols-2 gap-2">
-        <PropInput
-          label="Border Width"
-          type="number"
-          min={0}
-          max={20}
-          value={p.borderWidth ?? 0}
-          onChange={v => set("borderWidth", Number(v))}
-        />
-        <PropInput
-          label="Radius"
-          type="number"
-          min={0}
-          max={50}
-          value={p.radius ?? 6}
-          onChange={v => set("radius", Number(v))}
-        />
-      </div>
-      <PropInput
-        label="Padding"
-        type="number"
-        min={0}
-        max={40}
-        value={p.padding ?? 8}
-        onChange={v => set("padding", Number(v))}
-      />
-    </PropSection>
-  </>
+    </div>
   );
 }
 
 // ────────────────────────────────────────────────────────────────
-//  DYNAMIC CP PAGE — RUNTIME
+// PAGE BUILDER — PROPERTY PANEL
+// ────────────────────────────────────────────────────────────────
+
+export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
+  return (
+    <>
+      <PropSection title="Data Input">
+        <PropInput
+          label="Input Source"
+          options={[
+            { value: "tcp", label: "TCP / IP" },
+            { value: "com", label: "COM / RS232" },
+          ]}
+          value={p.inputSource || "tcp"}
+          onChange={(v) => set("inputSource", v)}
+        />
+
+        <PropInput
+          label="Input Type"
+          options={[
+            { value: "realtime", label: "Realtime" },
+            { value: "sequential", label: "Sequential" },
+          ]}
+          value={p.inputType || "realtime"}
+          onChange={(v) => set("inputType", v)}
+        />
+
+        {(p.inputSource === "tcp" ||
+          String(p.inputSource || "").toLowerCase() === "tcpip" ||
+          String(p.inputSource || "").toLowerCase() === "tcp/ip") && (
+          <>
+            <div>
+              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                TCP / IP Device
+              </label>
+              <select
+                value={p.device || ""}
+                onChange={(e) => set("device", e.target.value)}
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+              >
+                <option value="">Select device...</option>
+                {availableDevices
+                  .filter((dev) => String(dev?.type || "").toUpperCase() === "TCP")
+                  .map((dev) => (
+                    <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
+                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <PropInput
+                label="Address"
+                value={p.address || ""}
+                onChange={(v) => set("address", v)}
+                placeholder="D100 / M100 / 100"
+              />
+              <PropInput
+                label="Address Type"
+                options={[
+                  { value: "coil", label: "Coil (FC01)" },
+                  { value: "discrete_input", label: "Discrete Input (FC02)" },
+                  { value: "holding_register", label: "Holding Register (FC03)" },
+                  { value: "input_register", label: "Input Register (FC04)" },
+                ]}
+                value={p.addressType || "holding_register"}
+                onChange={(v) => set("addressType", v)}
+              />
+            </div>
+          </>
+        )}
+
+        {(p.inputSource === "com" ||
+          String(p.inputSource || "").toLowerCase() === "rs232") && (
+          <>
+            <div>
+              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                COM / RS232 Source
+              </label>
+              <select
+                value={p.sourceDevice || ""}
+                onChange={(e) => set("sourceDevice", e.target.value)}
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+              >
+                <option value="">Select device...</option>
+                {availableDevices
+                  .filter((dev) => {
+                    const type = String(dev?.type || "").toUpperCase();
+                    return type === "COM" || type === "RS232";
+                  })
+                  .map((dev) => (
+                    <option key={`${dev.type || "COM"}-${dev.name}`} value={dev.name}>
+                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </>
+        )}
+
+        {p.inputType === "sequential" && (
+          <>
+            <PropInput
+              label="Logic Variable"
+              value={p.variable || ""}
+              onChange={(v) => set("variable", v)}
+              placeholder="Result / ScanData / PartSN"
+            />
+            <div className="text-[8px] text-[var(--text-dim)] leading-relaxed">
+              Sequential mode is disabled for direct communication input.
+              The Text Box only updates when Logic Builder enables the sequence
+              and writes this Logic Variable. Realtime displays communication input immediately.
+            </div>
+          </>
+        )}
+      </PropSection>
+
+      <PropSection title="Text Position">
+        <PropInput
+          label="Horizontal"
+          options={[
+            { value: "left", label: "Left" },
+            { value: "center", label: "Center" },
+            { value: "right", label: "Right" },
+          ]}
+          value={p.textAlign || "center"}
+          onChange={(v) => set("textAlign", v)}
+        />
+
+        <PropInput
+          label="Vertical"
+          options={[
+            { value: "top", label: "Top" },
+            { value: "center", label: "Center" },
+            { value: "bottom", label: "Bottom" },
+          ]}
+          value={p.verticalAlign || "center"}
+          onChange={(v) => set("verticalAlign", v)}
+        />
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Offset X"
+            type="number"
+            min={-500}
+            max={500}
+            value={p.textOffsetX ?? 0}
+            onChange={(v) => set("textOffsetX", Number(v))}
+          />
+          <PropInput
+            label="Offset Y"
+            type="number"
+            min={-500}
+            max={500}
+            value={p.textOffsetY ?? 0}
+            onChange={(v) => set("textOffsetY", Number(v))}
+          />
+        </div>
+      </PropSection>
+
+      <PropSection title="Icon">
+        <PropInput
+          label="Icon"
+          options={TEXTBOX_ICONS.map((item) => ({
+            value: item.value,
+            label: item.icon ? `${item.icon}  ${item.label}` : item.label,
+          }))}
+          value={p.icon || ""}
+          onChange={(v) => set("icon", v)}
+        />
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Horizontal"
+            options={[
+              { value: "left", label: "Left" },
+              { value: "center", label: "Center" },
+              { value: "right", label: "Right" },
+            ]}
+            value={p.iconPosition || "left"}
+            onChange={(v) => set("iconPosition", v)}
+          />
+
+          <PropInput
+            label="Vertical"
+            options={[
+              { value: "top", label: "Top" },
+              { value: "center", label: "Center" },
+              { value: "bottom", label: "Bottom" },
+            ]}
+            value={p.iconVerticalAlign || "center"}
+            onChange={(v) => set("iconVerticalAlign", v)}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Icon Size"
+            type="number"
+            min={8}
+            max={80}
+            value={p.iconSize ?? 20}
+            onChange={(v) => set("iconSize", Number(v))}
+          />
+
+          <PropInput
+            label="Icon Gap"
+            type="number"
+            min={0}
+            max={40}
+            value={p.iconGap ?? 8}
+            onChange={(v) => set("iconGap", Number(v))}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Offset X"
+            type="number"
+            min={-500}
+            max={500}
+            value={p.iconOffsetX ?? 0}
+            onChange={(v) => set("iconOffsetX", Number(v))}
+          />
+
+          <PropInput
+            label="Offset Y"
+            type="number"
+            min={-500}
+            max={500}
+            value={p.iconOffsetY ?? 0}
+            onChange={(v) => set("iconOffsetY", Number(v))}
+          />
+        </div>
+      </PropSection>
+
+      <PropSection title="Text Appearance">
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Font Size"
+            type="number"
+            min={8}
+            max={100}
+            value={p.fontSize ?? 18}
+            onChange={(v) => set("fontSize", Number(v))}
+          />
+
+          <PropInput
+            label="Weight"
+            options={[
+              { value: "400", label: "Normal" },
+              { value: "500", label: "Medium" },
+              { value: "600", label: "Semi Bold" },
+              { value: "700", label: "Bold" },
+            ]}
+            value={p.fontWeight || "600"}
+            onChange={(v) => set("fontWeight", v)}
+          />
+        </div>
+
+        <PropInput
+          label="Text Color"
+          type="color"
+          value={p.textColor || "#FFFFFF"}
+          onChange={(v) => set("textColor", v)}
+        />
+
+        <PropInput
+          label="Icon Color"
+          type="color"
+          value={p.iconColor || "#FFFFFF"}
+          onChange={(v) => set("iconColor", v)}
+        />
+      </PropSection>
+
+      <PropSection title="Frame Style">
+        <PropInput
+          label="Style"
+          options={TEXTBOX_FRAME_STYLES}
+          value={p.frameStyle || "standard"}
+          onChange={(v) => set("frameStyle", v)}
+        />
+
+        {p.frameStyle && p.frameStyle !== "standard" && (
+          <>
+            <PropInput
+              label="Color Preset"
+              options={TEXTBOX_FRAME_PRESETS.map((item) => ({
+                value: item.value,
+                label: item.label,
+              }))}
+              value={p.framePreset || "cyan"}
+              onChange={(v) => {
+                set("framePreset", v);
+                if (v !== "custom" && FRAME_PRESET_COLORS[v]) {
+                  set("frameColor", FRAME_PRESET_COLORS[v]);
+                }
+              }}
+            />
+
+            <PropInput
+              label="Frame Color"
+              type="color"
+              value={resolveFrameColor(p)}
+              onChange={(v) => {
+                set("framePreset", "custom");
+                set("frameColor", v);
+              }}
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              <PropInput
+                label="Frame Width"
+                type="number"
+                min={0.5}
+                max={8}
+                step={0.5}
+                value={p.frameWidth ?? 1.5}
+                onChange={(v) => set("frameWidth", Number(v))}
+              />
+
+              <PropInput
+                label="Corner Size"
+                type="number"
+                min={4}
+                max={24}
+                value={p.cornerSize ?? 10}
+                onChange={(v) => set("cornerSize", Number(v))}
+              />
+            </div>
+
+            <PropInput
+              label="Background"
+              type="color"
+              value="#03121E"
+              onChange={(v) => set("frameBackground", v)}
+            />
+
+            <PropInput
+              label="Background Opacity"
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={p.frameBackgroundOpacity ?? 0.88}
+              onChange={(v) => set("frameBackgroundOpacity", Number(v))}
+            />
+
+            <PropInput
+              label="Frame Opacity"
+              type="number"
+              min={0}
+              max={1}
+              step={0.05}
+              value={p.frameOpacity ?? 1}
+              onChange={(v) => set("frameOpacity", Number(v))}
+            />
+          </>
+        )}
+      </PropSection>
+
+      <PropSection title="Effects">
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Glow"
+            options={[
+              { value: false, label: "Off" },
+              { value: true, label: "On" },
+            ]}
+            value={p.frameGlow === true}
+            onChange={(v) => set("frameGlow", v === true || v === "true")}
+          />
+
+          <PropInput
+            label="Inner Glow"
+            options={[
+              { value: false, label: "Off" },
+              { value: true, label: "On" },
+            ]}
+            value={p.innerGlow === true}
+            onChange={(v) => set("innerGlow", v === true || v === "true")}
+          />
+        </div>
+
+        <PropInput
+          label="Glow Intensity"
+          type="number"
+          min={0}
+          max={60}
+          value={p.glowIntensity ?? 18}
+          onChange={(v) => set("glowIntensity", Number(v))}
+        />
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Frame Accent"
+            options={[
+              { value: true, label: "Show" },
+              { value: false, label: "Hide" },
+            ]}
+            value={p.showFrameAccent !== false}
+            onChange={(v) => set("showFrameAccent", v !== false && v !== "false")}
+          />
+
+          <PropInput
+            label="Frame Dots"
+            options={[
+              { value: false, label: "Hide" },
+              { value: true, label: "Show" },
+            ]}
+            value={p.showFrameDots === true}
+            onChange={(v) => set("showFrameDots", v === true || v === "true")}
+          />
+        </div>
+
+        <PropInput
+          label="Scan Effect"
+          options={[
+            { value: false, label: "Off" },
+            { value: true, label: "On" },
+          ]}
+          value={p.scanEffect === true}
+          onChange={(v) => set("scanEffect", v === true || v === "true")}
+        />
+
+        {p.scanEffect === true && (
+          <PropInput
+            label="Scan Speed (s)"
+            type="number"
+            min={0.5}
+            max={10}
+            step={0.5}
+            value={p.scanSpeed ?? 2}
+            onChange={(v) => set("scanSpeed", Number(v))}
+          />
+        )}
+      </PropSection>
+
+      <PropSection title="Basic Layout">
+        <PropInput
+          label="Padding"
+          type="number"
+          min={0}
+          max={60}
+          value={p.padding ?? 8}
+          onChange={(v) => set("padding", Number(v))}
+        />
+
+        {(!p.frameStyle || p.frameStyle === "standard") && (
+          <>
+            <PropInput
+              label="Background"
+              type="color"
+              value={p.backgroundColor || "#000000"}
+              onChange={(v) => set("backgroundColor", v)}
+            />
+
+            <PropInput
+              label="Border"
+              type="color"
+              value={p.borderColor || "#333333"}
+              onChange={(v) => set("borderColor", v)}
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              <PropInput
+                label="Border Width"
+                type="number"
+                min={0}
+                max={20}
+                value={p.borderWidth ?? 0}
+                onChange={(v) => set("borderWidth", Number(v))}
+              />
+
+              <PropInput
+                label="Radius"
+                type="number"
+                min={0}
+                max={50}
+                value={p.radius ?? 6}
+                onChange={(v) => set("radius", Number(v))}
+              />
+            </div>
+          </>
+        )}
+
+        <PropInput
+          label="Rotation"
+          type="number"
+          min={-360}
+          max={360}
+          value={p.rotation ?? 0}
+          onChange={(v) => set("rotation", Number(v))}
+        />
+      </PropSection>
+    </>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────
+// DYNAMIC CP PAGE — RUNTIME
 // ────────────────────────────────────────────────────────────────
 
 export function RuntimeTextBox({ widget, value }) {
   const p = widget.props || {};
-  const v = getVisual(p);
 
   const displayText =
     value === undefined || value === null
       ? (p.text ?? "TEXT")
       : String(value);
 
-  const icon = p.icon || "";
-  const iconPosition = p.iconPosition || "left";
-  const iconSize = Number(p.iconSize ?? 20);
-  const fontSize = Number(p.fontSize ?? 18);
-  const fontWeight = p.fontWeight || "600";
-  const textColor = p.textColor || v.textColor || "#FFFFFF";
-  const iconColor = p.iconColor || textColor;
-  const textAlign = p.textAlign || "center";
-  const backgroundColor = p.backgroundColor || "transparent";
-  const borderColor = p.borderColor || "transparent";
-  const borderWidth = Math.max(0, Number(p.borderWidth ?? 0));
-  const radius = Math.max(0, Number(p.radius ?? 6));
-  const padding = Math.max(0, Number(p.padding ?? 8));
-  const rotation = Number(p.rotation ?? 0);
-
-  const textJustify =
-    textAlign === "left" ? "flex-start" :
-    textAlign === "right" ? "flex-end" : "center";
+  const runtimeProps = {
+    ...p,
+    __runtimeId:
+      widget.id ||
+      `${widget.x || 0}-${widget.y || 0}-${p.frameStyle || "standard"}`,
+  };
 
   return (
     <div
-      className="absolute relative"
+      className="absolute"
       style={{
         left: widget.x,
         top: widget.y,
         width: p.width,
         height: p.height,
-        background: backgroundColor,
-        border: `${borderWidth}px solid ${borderColor}`,
-        borderRadius: `${radius}px`,
-        transform: `rotate(${rotation}deg)`,
-        boxSizing: "border-box",
-        overflow: "hidden"
+        overflow: "visible",
       }}
     >
-      <div
-        className="absolute inset-0 flex items-center pointer-events-none"
-        style={{
-          justifyContent: textJustify,
-          padding: `${padding}px`,
-          boxSizing: "border-box"
-        }}
-      >
-        <span
-          style={{
-            color: textColor,
-            fontSize: `${fontSize}px`,
-            fontWeight,
-            lineHeight: 1.2,
-            textAlign,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word"
-          }}
-        >
-          {displayText}
-        </span>
-      </div>
-
-      {icon && iconPosition === "left" && (
-        <div
-          className="absolute inset-y-0 left-0 flex items-center pointer-events-none"
-          style={{ paddingLeft: `${padding}px` }}
-        >
-          <span style={{ color: iconColor, fontSize: `${iconSize}px`, lineHeight: 1 }}>
-            {icon}
-          </span>
-        </div>
-      )}
-
-      {icon && iconPosition === "right" && (
-        <div
-          className="absolute inset-y-0 right-0 flex items-center pointer-events-none"
-          style={{ paddingRight: `${padding}px` }}
-        >
-          <span style={{ color: iconColor, fontSize: `${iconSize}px`, lineHeight: 1 }}>
-            {icon}
-          </span>
-        </div>
-      )}
-
-      {icon && iconPosition === "center" && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span style={{ color: iconColor, fontSize: `${iconSize}px`, lineHeight: 1 }}>
-            {icon}
-          </span>
-        </div>
-      )}
+      <TextBoxSurface
+        p={runtimeProps}
+        textValue={displayText}
+        preview={false}
+      />
     </div>
   );
 }

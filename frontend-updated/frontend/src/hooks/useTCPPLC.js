@@ -254,6 +254,21 @@ export function useTCPPLC({
     // LINE CHART
     // --------------------------------------------------------
 
+    // --------------------------------------------------------
+    // TEXT BOX
+    // --------------------------------------------------------
+    // TextBox is READ ONLY for TCP/IP + Realtime.
+    // DynamicCPPage decides whether the TextBox is configured as
+    // TCP/IP + Realtime before registering the binding.
+    if (component === "textbox") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
     if (component === "linechart") {
       return (
         type === "coil" ||
@@ -414,6 +429,12 @@ export function useTCPPLC({
         console.debug(
           `[useTCPPLC] Binding registered: ${widgetId} -> ${normalizedDevice.name} / ${type} / ${numericAddress}`
         );
+
+        if (normalizedWidgetType === "textbox") {
+          console.debug(
+            `[useTCPPLC] TextBox TCP realtime binding ready: ${widgetId} -> ${normalizedDevice.name} / ${type} / ${numericAddress}`
+          );
+        }
 
       },
       []
@@ -1036,12 +1057,14 @@ export function useTCPPLC({
                         // --------------------------------------------
 
                         if (
-                          binding.widgetType ===
-                          "linechart"
+                          (
+                            binding.widgetType === "linechart" ||
+                            binding.widgetType === "textbox"
+                          )
                         ) {
 
                           console.debug(
-                            `[useTCPPLC] Line chart value: ${binding.widgetId} -> ${binding.addressType} / ${binding.address} =`,
+                            `[useTCPPLC] ${binding.widgetType} value: ${binding.widgetId} -> ${binding.device?.name} / ${binding.addressType} / ${binding.address} =`,
                             value
                           );
 

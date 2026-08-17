@@ -38,6 +38,10 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fieldValues, setFieldValues] = useState({});
+  // COM + Realtime TextBox values are kept separately from Logic Builder fields.
+  // Sequential TextBoxes continue to use fieldValues only when Logic Builder
+  // explicitly writes to their variable.
+  const [comTextBoxValues, setComTextBoxValues] = useState({});
   const [logs, setLogs] = useState([]);
   const [tcpDevices, setTcpDevices] = useState([]);
   const [tcpDeviceError, setTcpDeviceError] = useState("");
@@ -178,6 +182,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     writeValue: writeTCPValue,
     registerBinding,
     clearBindings,
+    getValue: getTCPRuntimeValue,
   } = useTCPPLC({
     devices: tcpDevices,
     enabled: Boolean(cpNumber),
@@ -187,6 +192,17 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // ============================================================
   // Helpers
   // ============================================================
+
+  const normalizeInputSource = useCallback((source) => {
+    const value = String(source || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_/-]/g, "");
+
+    if (value === "tcp" || value === "tcpip") return "tcp";
+    if (value === "com" || value === "rs232" || value === "serial") return "com";
+    return value;
+  }, []);
 
   const normalizeType = useCallback((type) => {
     const value = String(type || "")
@@ -252,6 +268,15 @@ export default function DynamicCPPage({ cpNumber, user }) {
       return type === "holding_register";
     }
 
+    if (widgetType === "textbox") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
     if (widgetType === "linechart") {
       return (
         type === "coil" ||
@@ -300,19 +325,61 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       if (!addressType) return false;
 
-      // Enforce Page Builder capability at runtime.
+      if (widget.type === "textbox") {
+        const source = normalizeInputSource(p.inputSource);
+        const inputType = String(p.inputType || "realtime").trim().toLowerCase();
+
+        // COM + Realtime is fed by cp-scan, not Modbus/TCP.
+        // Sequential is controlled by Logic Builder.
+        if (source !== "tcp" || inputType !== "realtime") {
+          return false;
+        }
+      }
+
       if (!isValidPLCBinding(widget.type, addressType)) {
         return false;
       }
 
       return Boolean(getTCPDevice(p.device));
     },
-    [getTCPDevice, normalizeType]
+    [getTCPDevice, isValidPLCBinding, normalizeInputSource, normalizeType]
   );
 
   const getRuntimeValue = useCallback(
     (widget) => {
       const p = widget?.props || {};
+
+      // ----------------------------------------------------------
+      // TEXTBOX COMMUNICATION SOURCES
+      // ----------------------------------------------------------
+      if (widget?.type === "textbox") {
+        const source = normalizeInputSource(p.inputSource);
+        const inputType = String(p.inputType || "realtime").trim().toLowerCase();
+
+        // COM + Realtime: value comes directly from cp-scan.
+        if (source === "com" && inputType === "realtime") {
+          const value = comTextBoxValues[String(widget.id)];
+          return value !== undefined ? value : (p.text ?? "");
+        }
+
+        // TCP/IP + Realtime: value comes from useTCPPLC.
+        if (source === "tcp" && inputType === "realtime" && hasPLCBinding(widget)) {
+          const direct = tcpValues[String(widget.id)];
+          if (direct !== undefined) return direct;
+
+          const device = getTCPDevice(p.device);
+          const resolved = device
+            ? getTCPRuntimeValue({
+                widgetId: widget.id,
+                device,
+                addressType: p.addressType,
+                address: p.address,
+              })
+            : undefined;
+
+          return resolved !== undefined ? resolved : (p.text ?? "");
+        }
+      }
 
       // ----------------------------------------------------------
       // PLC is the source of truth when Device + Address exist.
@@ -333,7 +400,15 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       return fieldValues[variableName];
     },
-    [fieldValues, hasPLCBinding, tcpValues]
+    [
+      comTextBoxValues,
+      fieldValues,
+      getTCPDevice,
+      getTCPRuntimeValue,
+      hasPLCBinding,
+      normalizeInputSource,
+      tcpValues,
+    ]
   );
 
   // ============================================================
@@ -342,6 +417,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
   const resetAll = useCallback(() => {
     setFieldValues({});
+    setComTextBoxValues({});
     setLogs([]);
     setChartHistory({});
     setChartRunning({});
@@ -664,9 +740,18 @@ export default function DynamicCPPage({ cpNumber, user }) {
       }
 
       // ----------------------------------------------------------
-      // Existing single-value widgets
+      // TextBox: TCP/IP + Realtime only.
+      // COM + Realtime is handled by cp-scan.
+      // Sequential is handled by Logic Builder.
       // ----------------------------------------------------------
-      if (
+      if (type === "textbox") {
+        const source = normalizeInputSource(p.inputSource);
+        const inputType = String(p.inputType || "realtime").trim().toLowerCase();
+
+        if (source !== "tcp" || inputType !== "realtime") {
+          return;
+        }
+      } else if (
         type !== "button" &&
         type !== "light" &&
         type !== "gauge"
@@ -730,6 +815,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     clearBindings,
     getTCPDevice,
     normalizeType,
+    normalizeInputSource,
     isValidPLCBinding,
     registerBinding,
   ]);
@@ -1089,14 +1175,74 @@ export default function DynamicCPPage({ cpNumber, user }) {
         return;
       }
 
+      const source = String(event.detail?.source ?? "");
+      const value = String(event.detail?.value ?? "");
+
       console.log(
-        `[DynamicCPPage] Received cp-scan for ${event.detail.source} → ${event.detail.value}`
+        `[DynamicCPPage] Received cp-scan for ${source} → ${value}`
       );
 
-      handleScan(
-        event.detail.source,
-        event.detail.value
-      );
+      // ------------------------------------------------------------
+      // COM + REALTIME TEXTBOX
+      // ------------------------------------------------------------
+      // The RS232 hook dispatches:
+      //   { cpNumber, source, value }
+      //
+      // Match sourceDevice against the COM source name. A few legacy
+      // property names are accepted so existing saved layouts continue
+      // to work. Sequential TextBoxes are intentionally ignored here.
+      const normalizeDeviceToken = (v) =>
+        String(v ?? "")
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "");
+
+      const sourceToken = normalizeDeviceToken(source);
+
+      setComTextBoxValues((previous) => {
+        const next = { ...previous };
+        let changed = false;
+
+        widgets.forEach((widget) => {
+          if (widget?.type !== "textbox") return;
+
+          const p = widget.props || {};
+          const inputSource = normalizeInputSource(p.inputSource);
+          const inputType = String(p.inputType || "realtime").trim().toLowerCase();
+
+          if (inputSource !== "com" || inputType !== "realtime") {
+            return;
+          }
+
+          const configuredSources = [
+            p.sourceDevice,
+            p.comPort,
+            p.portName,
+            p.device,
+            p.source,
+          ]
+            .filter(Boolean)
+            .map(normalizeDeviceToken);
+
+          if (!configuredSources.includes(sourceToken)) {
+            return;
+          }
+
+          if (next[String(widget.id)] !== value) {
+            next[String(widget.id)] = value;
+            changed = true;
+          }
+
+          console.log(
+            `[DynamicCPPage] COM TextBox realtime update: ${widget.id} <- ${source} = ${value}`
+          );
+        });
+
+        return changed ? next : previous;
+      });
+
+      // Keep the existing Logic Builder scan flow unchanged.
+      handleScan(source, value);
     };
 
     window.addEventListener(
@@ -1113,6 +1259,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
   }, [
     cpNumber,
     handleScan,
+    normalizeInputSource,
+    widgets,
   ]);
 
   // ============================================================
