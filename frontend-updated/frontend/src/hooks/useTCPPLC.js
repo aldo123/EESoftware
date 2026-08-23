@@ -153,6 +153,32 @@ export function useTCPPLC({
     useState({});
 
 
+  // State snapshots used by the batch poller. The poll cycle
+  // commits all PLC results with one React state update.
+  const valuesRef =
+    useRef({});
+
+  const connectionStatusRef =
+    useRef({});
+
+  const errorsRef =
+    useRef({});
+
+
+  useEffect(() => {
+    valuesRef.current = values;
+  }, [values]);
+
+  useEffect(() => {
+    connectionStatusRef.current =
+      connectionStatus;
+  }, [connectionStatus]);
+
+  useEffect(() => {
+    errorsRef.current = errors;
+  }, [errors]);
+
+
   // ==========================================================
   // REFS
   // ==========================================================
@@ -679,6 +705,160 @@ export function useTCPPLC({
     );
 
 
+
+  // ==========================================================
+  // BATCH READ PLC
+  // ==========================================================
+
+  const readBatchPLC =
+    useCallback(
+      async ({
+        device,
+        requests,
+      }) => {
+
+        const normalizedDevice =
+          normalizeDevice(device);
+
+        if (!normalizedDevice) {
+          throw new Error(
+            "PLC device is not configured."
+          );
+        }
+
+        if (!normalizedDevice.name) {
+          throw new Error(
+            "PLC device name is missing."
+          );
+        }
+
+        if (
+          !Array.isArray(requests) ||
+          requests.length === 0
+        ) {
+          return [];
+        }
+
+        const normalizedRequests =
+          requests.map(
+            (item, index) => {
+
+              const type =
+                normalizeAddressType(
+                  item.addressType
+                );
+
+              if (!type) {
+                throw new Error(
+                  `Invalid Modbus address type for request ${index}.`
+                );
+              }
+
+              const numericAddress =
+                Number(item.address);
+
+              if (
+                !Number.isInteger(
+                  numericAddress
+                ) ||
+                numericAddress < 0 ||
+                numericAddress > 65535
+              ) {
+                throw new Error(
+                  `Invalid Modbus address for request ${index}.`
+                );
+              }
+
+              return {
+                id:
+                  String(
+                    item.id ??
+                    `${type}:${numericAddress}:${index}`
+                  ),
+
+                addressType:
+                  type,
+
+                address:
+                  numericAddress,
+              };
+
+            }
+          );
+
+        const response =
+          await fetch(
+            `${API}/api/tcp/read-batch`,
+            {
+              method: "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify({
+                  device_name:
+                    normalizedDevice.name,
+
+                  requests:
+                    normalizedRequests.map(
+                      (item) => ({
+                        id:
+                          item.id,
+
+                        address_type:
+                          item.addressType,
+
+                        address:
+                          item.address,
+                      })
+                    ),
+                }),
+            }
+          );
+
+        if (!response.ok) {
+
+          let message =
+            `PLC batch read HTTP ${response.status}`;
+
+          try {
+            const errorData =
+              await response.json();
+
+            if (errorData?.message) {
+              message =
+                errorData.message;
+            }
+          } catch {
+            // Ignore invalid error JSON.
+          }
+
+          throw new Error(message);
+        }
+
+        const data =
+          await response.json();
+
+        if (!data.success) {
+          throw new Error(
+            data.message ||
+            "PLC batch read failed."
+          );
+        }
+
+        return Array.isArray(data.results)
+          ? data.results
+          : [];
+
+      },
+      []
+    );
+
+
+
   // ==========================================================
   // WRITE PLC
   // ==========================================================
@@ -868,11 +1048,9 @@ export function useTCPPLC({
           return;
         }
 
-
         if (busyRef.current) {
           return;
         }
-
 
         if (
           bindingsRef.current.size === 0
@@ -880,31 +1058,16 @@ export function useTCPPLC({
           return;
         }
 
-
         busyRef.current = true;
-
 
         try {
 
           // ----------------------------------------------------
-          // GROUP BY PHYSICAL PLC ADDRESS
-          //
-          // IMPORTANT:
-          //
-          // Jika:
-          //
-          // Button  -> HR1
-          // Light   -> HR1
-          // Trigger -> HR1
-          //
-          // PLC hanya dibaca SEKALI.
-          //
-          // Hasilnya kemudian dibagikan ke semua widget.
+          // GROUP BY UNIQUE PHYSICAL ADDRESS
           // ----------------------------------------------------
 
           const grouped =
             new Map();
-
 
           bindingsRef.current.forEach(
             (binding) => {
@@ -916,58 +1079,63 @@ export function useTCPPLC({
                   .trim()
                   .toLowerCase();
 
-
-              // ------------------------------------------------
-              // BUTTON = WRITE ONLY
-              // ------------------------------------------------
-
-              if (
-                component === "button"
-              ) {
-
+              // Buttons are write-only.
+              if (component === "button") {
                 return;
-
               }
 
+              const normalizedDevice =
+                normalizeDevice(
+                  binding.device
+                );
 
-              // ------------------------------------------------
-              // READ COMPONENTS
-              //
-              // Light
-              // Gauge
-              // Line Chart
-              // ------------------------------------------------
+              if (!normalizedDevice?.name) {
+                return;
+              }
+
+              const addressType =
+                normalizeAddressType(
+                  binding.addressType
+                );
+
+              const numericAddress =
+                Number(binding.address);
 
               if (
-                !grouped.has(
-                  binding.key
-                )
+                !addressType ||
+                !Number.isInteger(
+                  numericAddress
+                ) ||
+                numericAddress < 0 ||
+                numericAddress > 65535
               ) {
+                return;
+              }
 
+              const key =
+                createAddressKey(
+                  normalizedDevice,
+                  addressType,
+                  numericAddress
+                );
+
+              if (!grouped.has(key)) {
                 grouped.set(
-                  binding.key,
+                  key,
                   {
-                    key:
-                      binding.key,
-
+                    key,
                     device:
-                      binding.device,
-
-                    addressType:
-                      binding.addressType,
-
+                      normalizedDevice,
+                    addressType,
                     address:
-                      binding.address,
-
+                      numericAddress,
                     bindings: [],
                   }
                 );
-
               }
 
-
               grouped
-                .get(binding.key)
+                .get(key)
                 .bindings
                 .push(binding);
 
@@ -976,203 +1144,188 @@ export function useTCPPLC({
 
 
           // ----------------------------------------------------
-          // READ EACH UNIQUE PHYSICAL ADDRESS
+          // GROUP PHYSICAL ADDRESSES BY TCP DEVICE
+          //
+          // One HTTP request per device. The backend turns
+          // contiguous addresses into one Modbus transaction.
           // ----------------------------------------------------
 
-          const groups =
-            Array.from(
-              grouped.values()
-            );
+          const deviceBatches =
+            new Map();
+
+          grouped.forEach(
+            (group) => {
+
+              const device =
+                group.device;
+
+              const deviceKey =
+                [
+                  device.name,
+                  device.host,
+                  device.port,
+                  device.unitId,
+                ].join(":");
+
+              if (!deviceBatches.has(deviceKey)) {
+                deviceBatches.set(
+                  deviceKey,
+                  {
+                    device,
+                    groups: [],
+                  }
+                );
+              }
+
+              deviceBatches
+                .get(deviceKey)
+                .groups
+                .push(group);
+
+            }
+          );
+
+
+          const nextValues = {
+            ...(valuesRef.current || {}),
+          };
+
+          const nextStatus = {
+            ...(connectionStatusRef.current || {}),
+          };
+
+          const nextErrors = {
+            ...(errorsRef.current || {}),
+          };
 
 
           await Promise.all(
-            groups.map(
-              async (group) => {
+            Array.from(
+              deviceBatches.values()
+            ).map(
+              async (batch) => {
 
                 try {
 
-                  const value =
-                    await readPLC({
-
+                  const results =
+                    await readBatchPLC({
                       device:
-                        group.device,
+                        batch.device,
 
-                      addressType:
-                        group.addressType,
+                      requests:
+                        batch.groups.map(
+                          (group) => ({
+                            id:
+                              group.key,
 
-                      address:
-                        group.address,
+                            addressType:
+                              group.addressType,
 
-                      count:
-                        1,
-
+                            address:
+                              group.address,
+                          })
+                        ),
                     });
 
 
-                  if (
-                    !mountedRef.current
+                  const resultMap =
+                    new Map(
+                      results.map(
+                        (result) => [
+                          String(result.id),
+                          result,
+                        ]
+                      )
+                    );
+
+
+                  for (
+                    const group
+                    of batch.groups
                   ) {
 
-                    return;
+                    const result =
+                      resultMap.get(
+                        String(group.key)
+                      );
 
-                  }
+                    if (
+                      !result ||
+                      result.success === false
+                    ) {
 
-
-                  // ------------------------------------------------
-                  // CONNECTION OK
-                  // ------------------------------------------------
-
-                  setConnectionStatus(
-                    (previous) => ({
-
-                      ...previous,
-
-                      [group.key]:
-                        true,
-
-                    })
-                  );
-
-
-                  // ------------------------------------------------
-                  // DISTRIBUTE VALUE TO ALL WIDGETS
-                  // USING SAME PHYSICAL ADDRESS
-                  // ------------------------------------------------
-
-                  setValues(
-                    (previous) => {
-
-                      const next = {
-
-                        ...previous,
-
-                        // Physical address value
-                        [group.key]:
-                          value,
-
-                      };
-
-
-                      // ----------------------------------------------
-                      // FAN-OUT
-                      //
-                      // HR1 = 1
-                      //
-                      // Button  HR1
-                      // Light   HR1
-                      // Trigger HR1
-                      //
-                      // semuanya mendapatkan value 1
-                      // ----------------------------------------------
-
-                      for (
-                        const binding
-                        of group.bindings
-                      ) {
-
-                        next[
-                          binding.widgetId
-                        ] = value;
-
-
-                        // --------------------------------------------
-                        // LINE CHART DEBUG
-                        // --------------------------------------------
-
-                        if (
-                          (
-                            binding.widgetType === "linechart" ||
-                            binding.widgetType === "textbox" ||
-                            binding.widgetType === "testtable"
-                          )
-                        ) {
-
-                          console.debug(
-                            `[useTCPPLC] ${binding.widgetType} value: ${binding.widgetId} -> ${binding.device?.name} / ${binding.addressType} / ${binding.address} =`,
-                            value
-                          );
-
-                        }
-
-                      }
-
-
-                      return next;
-
-                    }
-                  );
-
-
-                  // ------------------------------------------------
-                  // CLEAR ERROR
-                  // ------------------------------------------------
-
-                  setErrors(
-                    (previous) => {
-
-                      const next = {
-                        ...previous,
-                      };
-
-
-                      delete next[
+                      nextStatus[
                         group.key
-                      ];
+                      ] = false;
+
+                      nextErrors[
+                        group.key
+                      ] =
+                        result?.message ||
+                        "PLC communication error.";
+
+                      continue;
+                    }
 
 
-                      return next;
+                    const value =
+                      result.value;
+
+
+                    nextStatus[
+                      group.key
+                    ] = true;
+
+                    delete nextErrors[
+                      group.key
+                    ];
+
+
+                    nextValues[
+                      group.key
+                    ] = value;
+
+
+                    for (
+                      const binding
+                      of group.bindings
+                    ) {
+
+                      nextValues[
+                        binding.widgetId
+                      ] = value;
 
                     }
-                  );
 
-                }
+                  }
 
-                catch (error) {
+                } catch (error) {
 
                   if (
                     !mountedRef.current
                   ) {
-
                     return;
-
                   }
 
+                  for (
+                    const group
+                    of batch.groups
+                  ) {
 
-                  // ------------------------------------------------
-                  // CONNECTION ERROR
-                  // ------------------------------------------------
+                    nextStatus[
+                      group.key
+                    ] = false;
 
-                  setConnectionStatus(
-                    (previous) => ({
+                    nextErrors[
+                      group.key
+                    ] =
+                      error?.message ||
+                      "PLC communication error.";
 
-                      ...previous,
-
-                      [group.key]:
-                        false,
-
-                    })
-                  );
-
-
-                  // ------------------------------------------------
-                  // ERROR
-                  // ------------------------------------------------
-
-                  setErrors(
-                    (previous) => ({
-
-                      ...previous,
-
-                      [group.key]:
-                        error?.message ||
-                        "PLC communication error.",
-
-                    })
-                  );
-
+                  }
 
                   console.error(
-                    `[useTCPPLC] Read failed: ${group.device?.name} / ${group.addressType} / ${group.address}`,
+                    `[useTCPPLC] Batch read failed: ${batch.device?.name}`,
                     error
                   );
 
@@ -1182,9 +1335,40 @@ export function useTCPPLC({
             )
           );
 
-        }
 
-        finally {
+          if (
+            !mountedRef.current
+          ) {
+            return;
+          }
+
+
+          // ----------------------------------------------------
+          // ONE REACT STATE COMMIT PER POLL CYCLE
+          // ----------------------------------------------------
+
+          valuesRef.current =
+            nextValues;
+
+          connectionStatusRef.current =
+            nextStatus;
+
+          errorsRef.current =
+            nextErrors;
+
+          setValues(
+            nextValues
+          );
+
+          setConnectionStatus(
+            nextStatus
+          );
+
+          setErrors(
+            nextErrors
+          );
+
+        } finally {
 
           busyRef.current =
             false;
@@ -1194,7 +1378,7 @@ export function useTCPPLC({
       },
       [
         enabled,
-        readPLC,
+        readBatchPLC,
       ]
     );
 
@@ -1574,6 +1758,8 @@ export function useTCPPLC({
     clearBindings,
 
     readPLC,
+
+    readBatchPLC,
 
     writePLC,
 
