@@ -13,10 +13,14 @@ from routes.snlist      import snlist_bp
 from routes.reference import reference_bp
 from routes.page_config import page_config_bp
 from routes.page_config import page_config_bp
-from routes.logic_config import logic_config_bp
-from routes.logic_engine import logic_engine_bp
+from logic_builder.logic_config import logic_config_bp
+from logic_builder.logic_engine import logic_engine_bp
+from logic_builder.logic_templates import logic_templates_bp
+from logic_builder.device_poller import device_trigger_bp
 from rs232 import rs232_bp
 from tcp_ip import tcp_ip_bp
+from modbus_rtu import modbus_rtu_bp
+from vision.routes import vision_bp
 # ── App setup ──────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)
@@ -39,8 +43,12 @@ app.register_blueprint(reference_bp)
 app.register_blueprint(page_config_bp)
 app.register_blueprint(logic_config_bp)
 app.register_blueprint(logic_engine_bp)
+app.register_blueprint(logic_templates_bp)
+app.register_blueprint(device_trigger_bp)
 app.register_blueprint(rs232_bp)
 app.register_blueprint(tcp_ip_bp)
+app.register_blueprint(modbus_rtu_bp)
+app.register_blueprint(vision_bp)
 
 # ══════════════════════════════════════════════════════════════
 # Routes yang tetap di main.py (butuh db MySQL langsung)
@@ -82,6 +90,12 @@ def login_password():
     password = body.get("password", "").strip()
     if not username or not password:
         return jsonify({"detail": "Username and password required"}), 400
+
+    # TEMP DEV BYPASS — lets you log in without MySQL running.
+    # Remove this block before deploying to production.
+    if username == "admin" and password == "admin":
+        return jsonify({"success": True, "user": {"username": "admin", "role": "Engineer", "id_card": None}})
+
     user = db.fetch_one(
         "SELECT username, role, id_card FROM users WHERE username = %s AND password = %s LIMIT 1",
         (username, password)
@@ -134,5 +148,5 @@ def change_password():
 
 # ══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    print("[START] Server running on http://0.0.0.0:8000")
-    app.run(host="0.0.0.0", port=8000, debug=False)
+    print("[START] Server running on http://0.0.0.0:8001")
+    app.run(host="0.0.0.0", port=8001, debug=False, threaded=True)

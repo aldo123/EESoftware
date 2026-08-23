@@ -9,6 +9,7 @@ import {
   RuntimeTextBox,
   RuntimeGauge,
   RuntimeLineChart,
+  RuntimeCameraFeed,
 } from "../widgets";
 
 // ──────────────────────────────────────────────────────────────────
@@ -677,6 +678,12 @@ export default function DynamicCPPage({ cpNumber, user }) {
             return;
           }
 
+          // Field-variable series (no PLC device): sampled straight from
+          // fieldValues in the capture effect below, no binding needed.
+          if (s?.fieldKey && !s?.device) {
+            return;
+          }
+
           if (!s?.device) {
             console.warn(
               `[DynamicCPPage] Line chart series has no device: ${widget.id}/${s.id || index}`
@@ -958,8 +965,10 @@ export default function DynamicCPPage({ cpNumber, user }) {
       let hasValue = false;
 
       series.forEach((s, index) => {
-        const bindingId = `${widget.id}:${s.id || `series_${index + 1}`}`;
-        const numeric = Number(tcpValues[bindingId]);
+        const raw = s?.fieldKey && !s?.device
+          ? fieldValues[s.fieldKey]
+          : tcpValues[`${widget.id}:${s.id || `series_${index + 1}`}`];
+        const numeric = Number(raw);
         if (Number.isFinite(numeric)) {
           point[s.id || `series_${index + 1}`] = numeric;
           hasValue = true;
@@ -1024,7 +1033,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       return next;
     });
-  }, [widgets, tcpValues]);
+  }, [widgets, tcpValues, fieldValues]);
 
   // ============================================================
   // RUNTIME DISPLAY RESOLUTION
@@ -1326,8 +1335,18 @@ export default function DynamicCPPage({ cpNumber, user }) {
         }
 
         /*
-         * If no PLC binding exists,
-         * preserve Page Builder variable behavior.
+         * If the button is wired to a Logic Builder flow, run it
+         * exactly like a scanner trigger (device = triggerDevice).
+         * The flow's own scan_input node stores the field and any
+         * downstream nodes' set_field commands update fieldValues.
+         */
+        if (p.triggerLogic) {
+          handleScan(p.triggerDevice || p.fieldKey || p.variable || "Button", value);
+          return;
+        }
+
+        /*
+         * Otherwise, preserve Page Builder variable behavior.
          */
         const variableName =
           p.variable ||
@@ -1346,6 +1365,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
       [
         addLog,
         getTCPDevice,
+        handleScan,
         hasPLCBinding,
         normalizeType,
         writeTCPValue,
@@ -1571,6 +1591,16 @@ export default function DynamicCPPage({ cpNumber, user }) {
                   key={id}
                   widget={widget}
                   value={runtimeValue}
+                />
+              );
+            }
+
+            if (type === "camerafeed") {
+              return (
+                <RuntimeCameraFeed
+                  key={id}
+                  widget={widget}
+                  cpNumber={cpNumber}
                 />
               );
             }

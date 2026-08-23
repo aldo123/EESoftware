@@ -10,6 +10,7 @@ import { shapeDef, ShapePreview, ShapePropertyPanel, RuntimeShape } from "./shap
 import { textboxDef, TextBoxPreview, TextBoxPropertyPanel, RuntimeTextBox } from "./textbox";
 import { gaugeDef, GaugePreview, GaugePropertyPanel, RuntimeGauge } from "./gauge";
 import { linechartDef, LineChartPreview, LineChartPropertyPanel, RuntimeLineChart } from "./linechart";
+import { cameraFeedDef, CameraFeedPreview, CameraFeedPropertyPanel, RuntimeCameraFeed } from "./camerafeed";
 
 // Palette shown in the Page Builder sidebar (drag source).
 export const COMPONENT_TYPES = [
@@ -19,6 +20,7 @@ export const COMPONENT_TYPES = [
   textboxDef,
   gaugeDef,
   linechartDef,
+  cameraFeedDef,
 ];
 
 // type -> canvas preview component (Page Builder, design-time)
@@ -29,6 +31,7 @@ export const WIDGET_PREVIEWS = {
   textbox: TextBoxPreview,
   gauge: GaugePreview,
   linechart: LineChartPreview,
+  camerafeed: CameraFeedPreview,
 };
 
 // type -> property panel component (Page Builder, right sidebar)
@@ -39,6 +42,7 @@ export const WIDGET_PROPERTY_PANELS = {
   textbox: TextBoxPropertyPanel,
   gauge: GaugePropertyPanel,
   linechart: LineChartPropertyPanel,
+  camerafeed: CameraFeedPropertyPanel,
 };
 
 // type -> runtime component (Dynamic CP Page, live/production)
@@ -49,6 +53,7 @@ export const WIDGET_RUNTIME = {
   textbox: RuntimeTextBox,
   gauge: RuntimeGauge,
   linechart: RuntimeLineChart,
+  camerafeed: RuntimeCameraFeed,
 };
 
 // Also re-export each runtime component by name, since DynamicCPPage.jsx
@@ -61,6 +66,7 @@ export {
   RuntimeTextBox,
   RuntimeGauge,
   RuntimeLineChart,
+  RuntimeCameraFeed,
 };
 
 export * from "./shared";

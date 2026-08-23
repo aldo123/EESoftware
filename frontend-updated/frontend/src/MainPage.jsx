@@ -12,6 +12,7 @@ import LogicBuilder from "./modal/LogicBuilder";
 import { API } from "./service/api";
 import DynamicCPPage from "./pages/DynamicCPPage";
 import { useRS232Scanner } from "./hooks/useRS232Scanner";
+import { useDeviceTriggerScanner } from "./hooks/useDeviceTriggerScanner";
 import { useTCPPLC } from "./hooks/useTCPPLC";
 
 // ── Icons ─────────────────────────────────────────────────────
@@ -547,6 +548,8 @@ export default function MainPage({ user: initialUser, onLogout }) {
   const isCpActive = activeMenu === "Main" && !!cpNumber;
   // RS232 Scanner
   useRS232Scanner(cpNumber, isCpActive);
+  // Modbus TCP/RTU "Device Trigger" nodes (register polling)
+  useDeviceTriggerScanner(cpNumber, isCpActive);
 
   // TCP/IP PLC
   useTCPPLC(cpNumber, isCpActive);
