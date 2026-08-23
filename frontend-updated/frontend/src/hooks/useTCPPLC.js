@@ -279,6 +279,29 @@ export function useTCPPLC({
     }
 
 
+    // --------------------------------------------------------
+    // TEST TABLE
+    // --------------------------------------------------------
+    // Test Table is READ ONLY when it is configured as
+    // TCP/IP + Realtime.
+    //
+    // Each Test Table row is registered independently by
+    // DynamicCPPage using:
+    //
+    //   widgetId   = `${tableId}:${rowId}`
+    //   widgetType = "testtable"
+    //
+    // All Modbus read types are supported.
+    if (component === "testtable") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
+
     return false;
   }
 
@@ -1059,7 +1082,8 @@ export function useTCPPLC({
                         if (
                           (
                             binding.widgetType === "linechart" ||
-                            binding.widgetType === "textbox"
+                            binding.widgetType === "textbox" ||
+                            binding.widgetType === "testtable"
                           )
                         ) {
 

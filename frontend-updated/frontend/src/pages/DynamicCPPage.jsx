@@ -10,6 +10,7 @@ import {
   RuntimeGauge,
   RuntimeLineChart,
   RuntimeCameraFeed,
+  RuntimeTestTable,
 } from "../widgets";
 
 // ──────────────────────────────────────────────────────────────────
@@ -43,6 +44,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // Sequential TextBoxes continue to use fieldValues only when Logic Builder
   // explicitly writes to their variable.
   const [comTextBoxValues, setComTextBoxValues] = useState({});
+  // Realtime RS232 values for Testing Table rows. Sequential values are written by Logic Builder.
+  const [testTableComValues, setTestTableComValues] = useState({});
   const [logs, setLogs] = useState([]);
   const [tcpDevices, setTcpDevices] = useState([]);
   const [tcpDeviceError, setTcpDeviceError] = useState("");
@@ -747,6 +750,43 @@ export default function DynamicCPPage({ cpNumber, user }) {
       }
 
       // ----------------------------------------------------------
+      // TEST TABLE: one binding per realtime TCP/IP row.
+      // RS232 realtime is updated from cp-scan below.
+      // Sequential is intentionally not polled here; Logic Builder owns it.
+      // ----------------------------------------------------------
+      if (type === "testtable") {
+        const rows = Array.isArray(p.rows) ? p.rows : [];
+
+        rows.forEach((row) => {
+          const mode = String(row.mode || "realtime").trim().toLowerCase();
+          const source = String(row.sourceType || "tcp").trim().toLowerCase();
+
+          if (mode !== "realtime" || source !== "tcp") return;
+          if (!row.device || row.address === undefined || row.address === null || String(row.address).trim() === "") return;
+
+          const device = getTCPDevice(row.device);
+          if (!device) {
+            console.warn(`[DynamicCPPage] Test Table TCP device not found: ${row.device}`);
+            return;
+          }
+
+          const addressType = normalizeType(row.addressType);
+          if (!addressType) return;
+
+          const bindingId = `${widget.id}:${row.id}`;
+          registerBinding({
+            widgetId: bindingId,
+            widgetType: "testtable",
+            device,
+            addressType,
+            address: row.address,
+          });
+        });
+
+        return;
+      }
+
+      // ----------------------------------------------------------
       // TextBox: TCP/IP + Realtime only.
       // COM + Realtime is handled by cp-scan.
       // Sequential is handled by Logic Builder.
@@ -1373,6 +1413,32 @@ export default function DynamicCPPage({ cpNumber, user }) {
     );
 
   // ============================================================
+  // TEST TABLE VALUE RESOLUTION
+  // ============================================================
+  const getTestTableValue = useCallback((widget, row) => {
+    const mode = String(row?.mode || "realtime").trim().toLowerCase();
+    const source = String(row?.sourceType || "tcp").trim().toLowerCase();
+    const key = `${widget.id}:${row.id}`;
+
+    if (mode === "realtime" && source === "tcp") {
+      return tcpValues[key];
+    }
+
+    if (mode === "realtime" && source === "com") {
+      return testTableComValues[key];
+    }
+
+    // Sequential: Logic Builder can expose the value using either
+    // testtable:<widget>:<row>, the testing item text, or fieldKey.
+    return (
+      fieldValues[`testtable:${widget.id}:${row.id}`] ??
+      fieldValues[`testtable:${widget.id}:${row.item}`] ??
+      fieldValues[row.item] ??
+      fieldValues[row.fieldKey]
+    );
+  }, [tcpValues, testTableComValues, fieldValues]);
+
+  // ============================================================
   // RENDER STATES
   // ============================================================
 
@@ -1591,6 +1657,16 @@ export default function DynamicCPPage({ cpNumber, user }) {
                   key={id}
                   widget={widget}
                   value={runtimeValue}
+                />
+              );
+            }
+
+            if (type === "testtable") {
+              return (
+                <RuntimeTestTable
+                  key={id}
+                  widget={widget}
+                  getValue={getTestTableValue}
                 />
               );
             }
