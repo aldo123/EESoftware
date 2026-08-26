@@ -1,6 +1,7 @@
 // src/widgets/shared.jsx
 // Shared design system, icon libraries, and small UI helpers used by
-// every widget module (button, light, shape, textbox, gauge, linechart).
+// every widget module (button, light, shape, textbox, gauge, linechart,
+// manualcontrol, calibration, timinglimit).
 // Both the Page Builder (design-time) and Dynamic CP Page (runtime)
 // import from this single source of truth so visuals never drift apart.
 import { useState } from "react";
@@ -366,3 +367,378 @@ export function IconPicker({ value, onChange }) {
 
 export function PropSection({ title, children }) { return (<div className="flex flex-col gap-2 pb-3 border-b border-[var(--border-soft)]"><span className="text-[9px] font-bold text-[var(--accent-green)] uppercase tracking-widest pt-2">{title}</span>{children}</div>); }
 
+
+// ──────────────────────────────────────────────────────────────────
+//  ICON-POPUP WIDGETS (Manual Control / Calibration / Timing & Limit)
+//
+// These three widget types share the exact same shape: a small icon
+// button on the canvas that, at runtime, opens a popup modal listing
+// a configurable set of PLC-bound parameters (numeric value, boolean
+// toggle, or momentary "jog" button). The per-widget files
+// (manualcontrol.jsx / calibration.jsx / timinglimit.jsx) only supply
+// the default title/icon/color — all the actual editor UI and popup
+// behavior lives here so it never drifts between the three.
+// ──────────────────────────────────────────────────────────────────
+
+export const PARAM_KIND_OPTIONS = [
+  { value: "value", label: "Value (Read/Write)" },
+  { value: "boolean", label: "Boolean (Toggle)" },
+  { value: "jog", label: "Jog Button (Momentary)" },
+];
+
+export const PARAM_VALUE_ADDRESS_TYPES = [
+  { value: "holding_register", label: "Holding Register (Read/Write)" },
+  { value: "input_register", label: "Input Register (Read only)" },
+];
+
+export const PARAM_BOOL_ADDRESS_TYPES = [
+  { value: "coil", label: "Coil (Read/Write)" },
+  { value: "discrete_input", label: "Discrete Input (Read only)" },
+];
+
+export const PARAM_JOG_ADDRESS_TYPES = [
+  { value: "coil", label: "Coil (Write)" },
+  { value: "holding_register", label: "Holding Register (Write)" },
+];
+
+let _paramFieldSeq = 1;
+export const createParamField = (kind = "value", index = 0) => ({
+  id: `field_${Date.now()}_${_paramFieldSeq++}`,
+  label: kind === "jog" ? `Jog ${index + 1}` : `Param ${index + 1}`,
+  kind,
+  device: "",
+  addressType: kind === "value" ? "holding_register" : "coil",
+  address: "",
+  min: 0,
+  max: 100,
+  step: 1,
+  unit: "",
+});
+
+// Property-panel editor for the field list — add/remove/configure each
+// parameter row. Shared by Manual Control, Calibration, and Timing & Limit.
+export function ParamFieldsEditor({ fields, onChange, availableDevices = [] }) {
+  const list = Array.isArray(fields) ? fields : [];
+
+  const updateField = (idx, key, val) => {
+    const next = [...list];
+    next[idx] = { ...next[idx], [key]: val };
+    onChange(next);
+  };
+
+  const removeField = (idx) => onChange(list.filter((_, i) => i !== idx));
+  const addField = (kind) => onChange([...list, createParamField(kind, list.length)]);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {list.map((field, idx) => {
+        const addressOptions =
+          field.kind === "jog" ? PARAM_JOG_ADDRESS_TYPES :
+          field.kind === "boolean" ? PARAM_BOOL_ADDRESS_TYPES :
+          PARAM_VALUE_ADDRESS_TYPES;
+
+        return (
+          <div key={field.id} className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] p-2.5 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2 pb-1 border-b border-[var(--border-soft)]">
+              <span className="text-[9px] text-[var(--text-primary)] font-bold truncate">{field.label || `FIELD ${idx + 1}`}</span>
+              <button
+                type="button"
+                onClick={() => removeField(idx)}
+                className="w-6 h-6 rounded border border-[var(--border)] text-[var(--text-dim)] hover:text-[var(--accent-red)] hover:border-[var(--accent-red)]/60 hover:bg-[var(--status-red-bg)] text-[11px] transition-colors"
+                title="Remove field"
+              >
+                ×
+              </button>
+            </div>
+
+            <PropInput label="Label" value={field.label || ""} onChange={v => updateField(idx, "label", v)} />
+            <PropInput label="Kind" options={PARAM_KIND_OPTIONS} value={field.kind || "value"} onChange={v => updateField(idx, "kind", v)} />
+
+            <div>
+              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                Device
+              </label>
+              <select
+                value={field.device || ""}
+                onChange={e => updateField(idx, "device", e.target.value)}
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+              >
+                <option value="">Select device...</option>
+                {availableDevices
+                  .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                  .map(dev => (
+                    <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
+                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <PropInput
+                label="Address Type"
+                options={addressOptions}
+                value={field.addressType || addressOptions[0].value}
+                onChange={v => updateField(idx, "addressType", v)}
+              />
+              <PropInput
+                label="Address"
+                value={field.address ?? ""}
+                onChange={v => updateField(idx, "address", v)}
+                placeholder="0 / 10 / 100"
+              />
+            </div>
+
+            {field.kind === "value" && (
+              <>
+                <div className="grid grid-cols-3 gap-2">
+                  <PropInput label="Min" type="number" value={field.min ?? 0} onChange={v => updateField(idx, "min", Number(v))} />
+                  <PropInput label="Max" type="number" value={field.max ?? 100} onChange={v => updateField(idx, "max", Number(v))} />
+                  <PropInput label="Step" type="number" value={field.step ?? 1} onChange={v => updateField(idx, "step", Number(v))} />
+                </div>
+                <PropInput label="Unit" value={field.unit || ""} onChange={v => updateField(idx, "unit", v)} />
+              </>
+            )}
+          </div>
+        );
+      })}
+
+      {list.length === 0 && (
+        <p className="text-[var(--text-faint)] text-[9px] text-center py-2">
+          Belum ada parameter. Tambahkan salah satu tipe di bawah.
+        </p>
+      )}
+
+      <div className="grid grid-cols-3 gap-1.5">
+        <button
+          type="button"
+          onClick={() => addField("value")}
+          className="h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--accent-green)] text-[9px] font-bold hover:bg-[var(--border-soft)] transition-colors"
+        >
+          + VALUE
+        </button>
+        <button
+          type="button"
+          onClick={() => addField("boolean")}
+          className="h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--accent-green)] text-[9px] font-bold hover:bg-[var(--border-soft)] transition-colors"
+        >
+          + TOGGLE
+        </button>
+        <button
+          type="button"
+          onClick={() => addField("jog")}
+          className="h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--accent-green)] text-[9px] font-bold hover:bg-[var(--border-soft)] transition-colors"
+        >
+          + JOG
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Page Builder canvas preview shared by all icon-popup widgets.
+export function IconTriggerPreview({ widget, glyph }) {
+  const p = widget.props || {};
+  const accent = p.accentColor || "var(--accent-cyan)";
+  return (
+    <div
+      className="w-full h-full flex flex-col items-center justify-center gap-1.5 rounded-xl"
+      style={{
+        background: p.backgroundColor || "var(--panel-canvas)",
+        border: `1px solid ${p.borderColor || "var(--panel-mid)"}`,
+      }}
+    >
+      <span className="text-2xl" style={{ color: accent }}>{p.icon || glyph}</span>
+      <span
+        className="text-[10px] font-bold uppercase tracking-wider text-center px-1"
+        style={{ color: p.textColor || "#FFFFFF" }}
+      >
+        {p.title || "Untitled"}
+      </span>
+    </div>
+  );
+}
+
+// One row inside the popup for a "value" kind field: shows the live PLC
+// value (when not being edited) and commits a new value on blur/Enter.
+function ParamValueRow({ field, current, onCommit }) {
+  const [draft, setDraft] = useState("");
+  const [editing, setEditing] = useState(false);
+  const displayValue = editing ? draft : (current === undefined || current === null ? "" : current);
+
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-[var(--text-secondary)] text-xs">{field.label}</span>
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          value={displayValue}
+          placeholder="--"
+          min={field.min}
+          max={field.max}
+          step={field.step || 1}
+          onFocus={() => { setEditing(true); setDraft(String(current ?? "")); }}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={() => {
+            setEditing(false);
+            if (draft !== "" && !Number.isNaN(Number(draft))) onCommit(Number(draft));
+          }}
+          onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
+          className="w-20 h-8 bg-[var(--bg-surface)] border border-[var(--border)] focus:border-[var(--accent-green)]/60 text-[var(--text-primary)] text-xs rounded-lg px-2 outline-none text-right"
+        />
+        {field.unit && <span className="text-[var(--text-muted)] text-[10px] w-8">{field.unit}</span>}
+      </div>
+    </div>
+  );
+}
+
+/*
+ * Runtime icon button + popup modal, shared by Manual Control, Calibration,
+ * and Timing & Limit.
+ *
+ * `plc` is a small bundle passed down from DynamicCPPage.jsx:
+ *   { tcpValues, writeTCPValue, getTCPDevice, normalizeType }
+ * Each configured field is bound under key `${widget.id}:${field.id}`,
+ * registered by DynamicCPPage's PLC-binding effect exactly like Line
+ * Chart series bindings.
+ */
+export function IconTriggerRuntime({ widget, glyph, plc, onOpenPage }) {
+  const p = widget.props || {};
+  const [open, setOpen] = useState(false);
+  const accent = p.accentColor || "var(--accent-cyan)";
+  const fields = Array.isArray(p.fields) ? p.fields : [];
+  const pageTarget = widget.type === "manualcontrol" ? "manual" : widget.type === "calibration" ? "calibration" : null;
+  const { tcpValues = {}, writeTCPValue, getTCPDevice, normalizeType } = plc || {};
+
+  const bindingId = (field) => `${widget.id}:${field.id}`;
+  const readValue = (field) => tcpValues[bindingId(field)];
+
+  const writeValueTo = async (field, value) => {
+    const device = getTCPDevice ? getTCPDevice(field.device) : null;
+    if (!device || !writeTCPValue) return;
+    const addressType = normalizeType ? normalizeType(field.addressType) : field.addressType;
+    try {
+      await writeTCPValue({
+        widgetId: bindingId(field),
+        device,
+        addressType,
+        address: field.address,
+        value,
+      });
+    } catch (e) {
+      console.error(`[${widget.type}] write failed for ${field.label}:`, e);
+    }
+  };
+
+  return (
+    <div className="absolute" style={{ left: widget.x, top: widget.y, width: p.width, height: p.height }}>
+      <button
+        onClick={() => {
+          if (onOpenPage && pageTarget) {
+            onOpenPage(pageTarget);
+            return;
+          }
+          setOpen(true);
+        }}
+        className="w-full h-full flex flex-col items-center justify-center gap-1.5 rounded-xl transition-transform active:scale-[0.97]"
+        style={{
+          background: p.backgroundColor || "var(--panel-canvas)",
+          border: `1px solid ${p.borderColor || "var(--panel-mid)"}`,
+        }}
+      >
+        <span className="text-2xl" style={{ color: accent }}>{p.icon || glyph}</span>
+        <span
+          className="text-[10px] font-bold uppercase tracking-wider text-center px-1"
+          style={{ color: p.textColor || "#FFFFFF" }}
+        >
+          {p.title || "Untitled"}
+        </span>
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="rounded-2xl border border-[var(--border)] shadow-2xl flex flex-col overflow-hidden"
+            style={{
+              width: Math.max(360, Number(p.popupWidth) || 420),
+              maxHeight: "80vh",
+              background: "var(--bg-surface-2)",
+            }}
+          >
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border-soft)]">
+              <div className="flex items-center gap-2">
+                <span className="text-lg" style={{ color: accent }}>{p.icon || glyph}</span>
+                <span className="text-[var(--text-primary)] font-bold text-sm">{p.title || "Untitled"}</span>
+              </div>
+              <button
+                onClick={() => setOpen(false)}
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+              {fields.length === 0 && (
+                <p className="text-[var(--text-faint)] text-xs text-center py-6">
+                  Belum ada parameter. Tambahkan field di Page Builder.
+                </p>
+              )}
+
+              {fields.map(field => {
+                if (field.kind === "jog") {
+                  return (
+                    <button
+                      key={field.id}
+                      onMouseDown={() => writeValueTo(field, 1)}
+                      onMouseUp={() => writeValueTo(field, 0)}
+                      onMouseLeave={() => writeValueTo(field, 0)}
+                      onTouchStart={() => writeValueTo(field, 1)}
+                      onTouchEnd={() => writeValueTo(field, 0)}
+                      className="h-11 rounded-xl font-bold text-xs uppercase tracking-wider transition-colors select-none"
+                      style={{ background: accent, color: "#052E16" }}
+                    >
+                      {field.label || "Jog"}
+                    </button>
+                  );
+                }
+
+                if (field.kind === "boolean") {
+                  const isOn = Number(readValue(field)) === 1;
+                  return (
+                    <div key={field.id} className="flex items-center justify-between gap-3">
+                      <span className="text-[var(--text-secondary)] text-xs">{field.label}</span>
+                      <button
+                        onClick={() => writeValueTo(field, isOn ? 0 : 1)}
+                        className="h-8 px-4 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors"
+                        style={{
+                          background: isOn ? accent : "var(--border-soft)",
+                          color: isOn ? "#052E16" : "var(--text-secondary)",
+                        }}
+                      >
+                        {isOn ? "ON" : "OFF"}
+                      </button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <ParamValueRow
+                    key={field.id}
+                    field={field}
+                    current={readValue(field)}
+                    onCommit={(val) => writeValueTo(field, val)}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

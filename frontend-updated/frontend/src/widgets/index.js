@@ -12,6 +12,10 @@ import { gaugeDef, GaugePreview, GaugePropertyPanel, RuntimeGauge } from "./gaug
 import { linechartDef, LineChartPreview, LineChartPropertyPanel, RuntimeLineChart } from "./linechart";
 import { cameraFeedDef, CameraFeedPreview, CameraFeedPropertyPanel, RuntimeCameraFeed } from "./camerafeed";
 import { testtableDef, TestTablePreview, TestTablePropertyPanel, RuntimeTestTable } from "./testtable";
+import { manualcontrolDef, ManualControlPreview, ManualControlPropertyPanel, RuntimeManualControl } from "./manualcontrol";
+import { calibrationDef, CalibrationPreview, CalibrationPropertyPanel, RuntimeCalibration } from "./calibration";
+import { timinglimitDef, TimingLimitPreview, TimingLimitPropertyPanel, RuntimeTimingLimit } from "./timinglimit";
+
 
 // Palette shown in the Page Builder sidebar (drag source).
 export const COMPONENT_TYPES = [
@@ -23,6 +27,10 @@ export const COMPONENT_TYPES = [
   linechartDef,
   cameraFeedDef,
   testtableDef,
+  manualcontrolDef,
+  calibrationDef,
+  timinglimitDef,
+ 
 ];
 
 // type -> canvas preview component (Page Builder, design-time)
@@ -35,6 +43,10 @@ export const WIDGET_PREVIEWS = {
   linechart: LineChartPreview,
   camerafeed: CameraFeedPreview,
   testtable: TestTablePreview,
+  manualcontrol: ManualControlPreview,
+  calibration: CalibrationPreview,
+  timinglimit: TimingLimitPreview,
+ 
 };
 
 // type -> property panel component (Page Builder, right sidebar)
@@ -47,6 +59,10 @@ export const WIDGET_PROPERTY_PANELS = {
   linechart: LineChartPropertyPanel,
   camerafeed: CameraFeedPropertyPanel,
   testtable: TestTablePropertyPanel,
+  manualcontrol: ManualControlPropertyPanel,
+  calibration: CalibrationPropertyPanel,
+  timinglimit: TimingLimitPropertyPanel,
+ 
 };
 
 // type -> runtime component (Dynamic CP Page, live/production)
@@ -59,6 +75,10 @@ export const WIDGET_RUNTIME = {
   linechart: RuntimeLineChart,
   camerafeed: RuntimeCameraFeed,
   testtable: RuntimeTestTable,
+  manualcontrol: RuntimeManualControl,
+  calibration: RuntimeCalibration,
+  timinglimit: RuntimeTimingLimit,
+ 
 };
 
 // Also re-export each runtime component by name, since DynamicCPPage.jsx
@@ -73,6 +93,11 @@ export {
   RuntimeLineChart,
   RuntimeCameraFeed,
   RuntimeTestTable,
+  RuntimeManualControl,
+  RuntimeCalibration,
+  RuntimeTimingLimit,
+
 };
 
 export * from "./shared";
+

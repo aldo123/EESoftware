@@ -1,5 +1,5 @@
 // src/pages/DynamicCPPage.jsx
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { API } from "../service/api";
 import { useTCPPLC } from "../hooks/useTCPPLC";
 import {
@@ -11,6 +11,9 @@ import {
   RuntimeLineChart,
   RuntimeCameraFeed,
   RuntimeTestTable,
+  RuntimeManualControl,
+  RuntimeCalibration,
+  RuntimeTimingLimit,
 } from "../widgets";
 
 // ──────────────────────────────────────────────────────────────────
@@ -37,6 +40,8 @@ const resolutionKey = (w, h) => `${w}x${h}`;
 
 export default function DynamicCPPage({ cpNumber, user }) {
   const [widgets, setWidgets] = useState([]);
+  const [pages, setPages] = useState({ dynamic: { widgets: [] }, manual: { widgets: [] }, calibration: { widgets: [] } });
+  const [activePopupPage, setActivePopupPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fieldValues, setFieldValues] = useState({});
@@ -179,6 +184,13 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // LineChart bindings:
   //   <widgetId>:<seriesId>
   //   <widgetId>:__trend_trigger__
+  //
+  // Test Table bindings:
+  //   <widgetId>:<rowId>
+  //
+  // Icon-popup widgets (Manual Control / Calibration / Timing & Limit)
+  // bindings:
+  //   <widgetId>:<fieldId>
   // ============================================================
 
   const {
@@ -252,6 +264,10 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // LineChart has:
   //   - series bindings for plotted values
   //   - optional trigger binding for start/stop recording
+  //
+  // Icon-popup widgets reuse these same rules per-field:
+  //   "jog" fields are write-only (validated as "button")
+  //   "value"/"boolean" fields are read (validated as "light")
   const isValidPLCBinding = useCallback((widgetType, addressType) => {
     const type = normalizeType(addressType);
 
@@ -374,11 +390,11 @@ export default function DynamicCPPage({ cpNumber, user }) {
           const device = getTCPDevice(p.device);
           const resolved = device
             ? getTCPRuntimeValue({
-                widgetId: widget.id,
-                device,
-                addressType: p.addressType,
-                address: p.address,
-              })
+              widgetId: widget.id,
+              device,
+              addressType: p.addressType,
+              address: p.address,
+            })
             : undefined;
 
           return resolved !== undefined ? resolved : (p.text ?? "");
@@ -573,12 +589,16 @@ export default function DynamicCPPage({ cpNumber, user }) {
       .then((data) => {
         if (cancelled) return;
 
-        const loadedWidgets =
-          Array.isArray(data.widgets)
-            ? data.widgets
-            : [];
-
-        setWidgets(loadedWidgets);
+        const legacyDynamic = Array.isArray(data?.widgets) ? data.widgets : [];
+        const savedPages = data?.pages && typeof data.pages === "object" ? data.pages : {};
+        const loadedPages = {
+          dynamic: { widgets: Array.isArray(savedPages.dynamic?.widgets) ? savedPages.dynamic.widgets : legacyDynamic },
+          manual: { widgets: Array.isArray(savedPages.manual?.widgets) ? savedPages.manual.widgets : [] },
+          calibration: { widgets: Array.isArray(savedPages.calibration?.widgets) ? savedPages.calibration.widgets : [] },
+        };
+        setPages(loadedPages);
+        setWidgets(loadedPages.dynamic.widgets);
+        setActivePopupPage(null);
         setLoading(false);
 
         // Page Builder resolution is the SOURCE/DESIGN coordinate system.
@@ -607,6 +627,12 @@ export default function DynamicCPPage({ cpNumber, user }) {
     };
   }, [cpNumber]);
 
+  const runtimeWidgets = useMemo(() => [
+    ...(Array.isArray(pages.dynamic?.widgets) ? pages.dynamic.widgets : []),
+    ...(Array.isArray(pages.manual?.widgets) ? pages.manual.widgets : []),
+    ...(Array.isArray(pages.calibration?.widgets) ? pages.calibration.widgets : []),
+  ], [pages]);
+
   // ============================================================
   // REGISTER PAGE BUILDER PLC BINDINGS
   // ============================================================
@@ -614,7 +640,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
   useEffect(() => {
     clearBindings();
 
-    if (!widgets.length) {
+    if (!runtimeWidgets.length) {
       return;
     }
 
@@ -624,8 +650,11 @@ export default function DynamicCPPage({ cpNumber, user }) {
      * Button / Light / Gauge keep the original widget.id binding.
      * Line Chart uses `${widget.id}:${series.id}` so one chart can
      * read multiple PLC addresses independently.
+     * Test Table uses `${widget.id}:${row.id}` the same way.
+     * Icon-popup widgets (Manual Control / Calibration / Timing & Limit)
+     * use `${widget.id}:${field.id}` the same way.
      */
-    widgets.forEach((widget) => {
+    runtimeWidgets.forEach((widget) => {
       const type = widget?.type;
       const p = widget?.props || {};
 
@@ -641,8 +670,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
         // TREND TRIGGER: value 1 starts recording, value 0 stops recording.
         if (p.triggerEnabled === true && p.triggerDevice &&
-            p.triggerAddress !== undefined && p.triggerAddress !== null &&
-            String(p.triggerAddress).trim() !== "") {
+          p.triggerAddress !== undefined && p.triggerAddress !== null &&
+          String(p.triggerAddress).trim() !== "") {
           const triggerDevice = getTCPDevice(p.triggerDevice);
           const triggerAddressType = normalizeType(p.triggerAddressType);
 
@@ -787,6 +816,51 @@ export default function DynamicCPPage({ cpNumber, user }) {
       }
 
       // ----------------------------------------------------------
+      // ICON-POPUP WIDGETS: Manual Control / Calibration / Timing & Limit
+      // Each configured field is its own PLC binding, keyed the same
+      // way Line Chart series / Test Table rows are: `${widget.id}:${field.id}`.
+      // ----------------------------------------------------------
+      if (type === "manualcontrol" || type === "calibration" || type === "timinglimit") {
+        const fields = Array.isArray(p.fields) ? p.fields : [];
+
+        fields.forEach((field) => {
+          if (!field?.device) return;
+          if (field.address === undefined || field.address === null || String(field.address).trim() === "") return;
+
+          const device = getTCPDevice(field.device);
+          if (!device) {
+            console.warn(`[DynamicCPPage] ${type} field device not found: ${widget.id}/${field.id}`);
+            return;
+          }
+
+          const addressType = normalizeType(field.addressType);
+          if (!addressType) return;
+
+          // "jog" fields are write-only (like a Button); everything else is read (like a Light).
+          const capabilityType = field.kind === "jog" ? "button" : "light";
+
+          if (!isValidPLCBinding(capabilityType, addressType)) {
+            console.warn(`[DynamicCPPage] Invalid ${type} binding: ${addressType}`);
+            return;
+          }
+
+          registerBinding({
+            widgetId: `${widget.id}:${field.id}`,
+            widgetType: capabilityType,
+            device,
+            addressType,
+            address: field.address,
+          });
+
+          console.log(
+            `[DynamicCPPage] ${type} field binding: ${widget.id}:${field.id} -> ${device.name} / ${addressType} / ${field.address}`
+          );
+        });
+
+        return;
+      }
+
+      // ----------------------------------------------------------
       // TextBox: TCP/IP + Realtime only.
       // COM + Realtime is handled by cp-scan.
       // Sequential is handled by Logic Builder.
@@ -857,7 +931,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
       );
     });
   }, [
-    widgets,
+    runtimeWidgets,
     tcpDevices,
     clearBindings,
     getTCPDevice,
@@ -876,9 +950,9 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // ============================================================
 
   useEffect(() => {
-    if (!widgets.length) return;
+    if (!runtimeWidgets.length) return;
 
-    const chartWidgets = widgets.filter(widget => widget?.type === "linechart");
+    const chartWidgets = runtimeWidgets.filter(widget => widget?.type === "linechart");
     if (!chartWidgets.length) return;
 
     const now = Date.now();
@@ -1073,7 +1147,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       return next;
     });
-  }, [widgets, tcpValues, fieldValues]);
+  }, [runtimeWidgets, tcpValues, fieldValues]);
 
   // ============================================================
   // RUNTIME DISPLAY RESOLUTION
@@ -1100,7 +1174,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     if (cpNumber) {
       try {
         localStorage.setItem(`hmi-runtime-resolution:${cpNumber}`, JSON.stringify(next));
-      } catch {}
+      } catch { }
     }
   }, [cpNumber]);
 
@@ -1188,7 +1262,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
               addLog(
                 command.message,
                 command.color ||
-                  "var(--accent-green)"
+                "var(--accent-green)"
               );
               break;
 
@@ -1252,7 +1326,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
         const next = { ...previous };
         let changed = false;
 
-        widgets.forEach((widget) => {
+        runtimeWidgets.forEach((widget) => {
           if (widget?.type !== "textbox") return;
 
           const p = widget.props || {};
@@ -1285,6 +1359,45 @@ export default function DynamicCPPage({ cpNumber, user }) {
           console.log(
             `[DynamicCPPage] COM TextBox realtime update: ${widget.id} <- ${source} = ${value}`
           );
+        });
+
+        return changed ? next : previous;
+      });
+
+      // ------------------------------------------------------------
+      // COM + REALTIME TEST TABLE ROWS
+      // ------------------------------------------------------------
+      setTestTableComValues((previous) => {
+        const next = { ...previous };
+        let changed = false;
+
+        runtimeWidgets.forEach((widget) => {
+          if (widget?.type !== "testtable") return;
+
+          const rows = Array.isArray(widget.props?.rows) ? widget.props.rows : [];
+
+          rows.forEach((row) => {
+            const mode = String(row.mode || "realtime").trim().toLowerCase();
+            const sourceType = String(row.sourceType || "tcp").trim().toLowerCase();
+
+            if (mode !== "realtime" || sourceType !== "com") return;
+
+            const configuredSources = [
+              row.sourceDevice,
+              row.comPort,
+              row.device,
+            ]
+              .filter(Boolean)
+              .map(normalizeDeviceToken);
+
+            if (!configuredSources.includes(sourceToken)) return;
+
+            const key = `${widget.id}:${row.id}`;
+            if (next[key] !== value) {
+              next[key] = value;
+              changed = true;
+            }
+          });
         });
 
         return changed ? next : previous;
@@ -1438,6 +1551,34 @@ export default function DynamicCPPage({ cpNumber, user }) {
     );
   }, [tcpValues, testTableComValues, fieldValues]);
 
+  const openPopupPage = useCallback((page) => {
+    if (page === "manual" || page === "calibration") setActivePopupPage(page);
+  }, []);
+
+  const closePopupPage = useCallback(() => setActivePopupPage(null), []);
+
+  const renderRuntimeWidget = useCallback((widget) => {
+    const { type, id } = widget;
+    const runtimeValue = getRuntimeValue(widget);
+
+    if (type === "button") return <RuntimeButton key={id} widget={widget} value={runtimeValue} onChange={(value) => handleButtonChange(widget, value)} />;
+    if (type === "light") return <RuntimeLight key={id} widget={widget} value={runtimeValue} />;
+    if (type === "shape") return <RuntimeShape key={id} widget={widget} />;
+    if (type === "textbox") return <RuntimeTextBox key={id} widget={widget} value={runtimeValue} />;
+    if (type === "linechart") return <RuntimeLineChart key={id} widget={widget} history={chartHistory[id] || []} running={chartRunning[id] !== false} />;
+    if (type === "gauge") return <RuntimeGauge key={id} widget={widget} value={runtimeValue} />;
+    if (type === "testtable") return <RuntimeTestTable key={id} widget={widget} getValue={getTestTableValue} />;
+    if (type === "camerafeed") return <RuntimeCameraFeed key={id} widget={widget} cpNumber={cpNumber} />;
+
+    if (type === "manualcontrol" || type === "calibration" || type === "timinglimit") {
+      const plcBundle = { tcpValues, writeTCPValue, getTCPDevice, normalizeType };
+      if (type === "manualcontrol") return <RuntimeManualControl key={id} widget={widget} plc={plcBundle} onOpenPage={openPopupPage} />;
+      if (type === "calibration") return <RuntimeCalibration key={id} widget={widget} plc={plcBundle} onOpenPage={openPopupPage} />;
+      return <RuntimeTimingLimit key={id} widget={widget} plc={plcBundle} />;
+    }
+    return null;
+  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage]);
+
   // ============================================================
   // RENDER STATES
   // ============================================================
@@ -1546,145 +1687,40 @@ export default function DynamicCPPage({ cpNumber, user }) {
             transformOrigin: "top left",
           }}
         >
-          {widgets.map((widget) => {
-            const {
-              type,
-              id,
-              props: p = {},
-            } = widget;
-
-            const variableName =
-              p.variable ||
-              p.fieldKey;
-
-            /*
-             * IMPORTANT:
-             *
-             * Runtime value is resolved from:
-             *
-             * PLC binding → tcpValues[widget.id]
-             *
-             * otherwise:
-             *
-             * Logic variable → fieldValues[variable]
-             */
-            const runtimeValue =
-              getRuntimeValue(widget);
-
-            // ----------------------------------------------------
-            // BUTTON
-            // ----------------------------------------------------
-
-            if (type === "button") {
-              return (
-                <RuntimeButton
-                  key={id}
-                  widget={widget}
-                  value={runtimeValue}
-                  onChange={(value) =>
-                    handleButtonChange(
-                      widget,
-                      value
-                    )
-                  }
-                />
-              );
-            }
-
-            // ----------------------------------------------------
-            // LIGHT
-            // ----------------------------------------------------
-
-            if (type === "light") {
-              return (
-                <RuntimeLight
-                  key={id}
-                  widget={widget}
-                  value={runtimeValue}
-                />
-              );
-            }
-
-            // ----------------------------------------------------
-            // SHAPE
-            // ----------------------------------------------------
-
-            if (type === "shape") {
-              return (
-                <RuntimeShape
-                  key={id}
-                  widget={widget}
-                />
-              );
-            }
-
-            // ----------------------------------------------------
-            // TEXT BOX
-            // ----------------------------------------------------
-
-            if (type === "textbox") {
-              return (
-                <RuntimeTextBox
-                  key={id}
-                  widget={widget}
-                  value={runtimeValue}
-                />
-              );
-            }
-
-            // ----------------------------------------------------
-            // LINE CHART
-            // ----------------------------------------------------
-
-            if (type === "linechart") {
-              return (
-                <RuntimeLineChart
-                  key={id}
-                  widget={widget}
-                  history={chartHistory[id] || []}
-                  running={chartRunning[id] !== false}
-                />
-              );
-            }
-
-            // ----------------------------------------------------
-            // GAUGE
-            // ----------------------------------------------------
-
-            if (type === "gauge") {
-              return (
-                <RuntimeGauge
-                  key={id}
-                  widget={widget}
-                  value={runtimeValue}
-                />
-              );
-            }
-
-            if (type === "testtable") {
-              return (
-                <RuntimeTestTable
-                  key={id}
-                  widget={widget}
-                  getValue={getTestTableValue}
-                />
-              );
-            }
-
-            if (type === "camerafeed") {
-              return (
-                <RuntimeCameraFeed
-                  key={id}
-                  widget={widget}
-                  cpNumber={cpNumber}
-                />
-              );
-            }
-
-            return null;
-          })}
+          {widgets.map(renderRuntimeWidget)}
         </div>
       </div>
+
+
+      {activePopupPage && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) closePopupPage(); }}>
+          <div className="relative w-[96vw] h-[92vh] max-w-[1800px] overflow-hidden rounded-2xl border border-[var(--border)] shadow-2xl bg-[var(--bg-canvas)]" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="absolute z-20 top-0 left-0 right-0 h-12 flex items-center justify-between px-4 border-b border-[var(--border-soft)] bg-[var(--bg-surface-2)]/95 backdrop-blur-sm">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{activePopupPage === "manual" ? "🕹" : "🎯"}</span>
+                <span className="text-[var(--text-primary)] font-bold text-sm">{activePopupPage === "manual" ? "Manual Control" : "Calibration"}</span>
+                <span className="text-[9px] font-mono text-[var(--text-muted)] px-2 py-1 rounded bg-[var(--border-soft)]">Popup Page</span>
+              </div>
+              <button type="button" onClick={closePopupPage} className="h-8 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)] text-[10px] font-bold">← Back</button>
+            </div>
+            <div className="absolute inset-0 pt-12 overflow-hidden flex items-center justify-center">
+              {(pages[activePopupPage]?.widgets || []).length === 0 ? (
+                <div className="text-center px-6">
+                  <div className="text-5xl opacity-20 mb-3">{activePopupPage === "manual" ? "🕹" : "🎯"}</div>
+                  <div className="text-[var(--text-primary)] font-bold text-sm">{activePopupPage === "manual" ? "Manual Control Page" : "Calibration Page"}</div>
+                  <div className="text-[var(--text-muted)] text-xs mt-1">This page is empty. Open Page Builder to design it.</div>
+                </div>
+              ) : (
+                <div className="relative overflow-hidden w-[94vw] h-[84vh] max-w-[1600px] max-h-[850px]" style={{ background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 10 }}>
+                  <div className="absolute left-0 top-0 origin-top-left" style={{ width: designCanvas.width, height: designCanvas.height, transform: `scale(${Math.min(1, (window.innerWidth * 0.94) / designCanvas.width, (window.innerHeight * 0.84) / designCanvas.height)})` }}>
+                    {(pages[activePopupPage]?.widgets || []).map(renderRuntimeWidget)}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Optional communication diagnostic */}
       {tcpDeviceError && (

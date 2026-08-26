@@ -90,6 +90,12 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction,
 }
 
 export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }) {
+  const [pageType, setPageType] = useState("dynamic");
+  const [pages, setPages] = useState({
+    dynamic: { widgets: [] },
+    manual: { widgets: [] },
+    calibration: { widgets: [] },
+  });
   const [widgets, setWidgets] = useState([]);
   const [selected, setSelected] = useState(null);
   const [dragInfo, setDragInfo] = useState(null);
@@ -112,6 +118,30 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
   const normalizeLayerOrder = useCallback((list) => {
     return list.map((w, index) => ({ ...w, zIndex: index + 1 }));
   }, []);
+
+  const normalizePage = useCallback((list) => {
+    const source = Array.isArray(list) ? list : [];
+    const hasLayer = source.some(w => Number.isFinite(Number(w?.zIndex)));
+    const ordered = hasLayer
+      ? [...source].sort((a, b) => Number(a?.zIndex ?? 0) - Number(b?.zIndex ?? 0))
+      : source;
+    return normalizeLayerOrder(ordered);
+  }, [normalizeLayerOrder]);
+
+  const switchPage = useCallback((nextPage) => {
+    if (!nextPage || nextPage === pageType) return;
+
+    setPages(prev => ({
+      ...prev,
+      [pageType]: { widgets: normalizeLayerOrder(widgets) },
+    }));
+
+    setWidgets(normalizePage(pages[nextPage]?.widgets || []));
+    setSelected(null);
+    setDragInfo(null);
+    setResizing(null);
+    setPageType(nextPage);
+  }, [pageType, pages, widgets, normalizeLayerOrder, normalizePage]);
 
   const handleLayerAction = useCallback((action) => {
     if (!selected) return;
@@ -153,16 +183,20 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
       .then(d => {
         // Design canvas is fixed to Full HD.
         setCanvasPreset(CANVAS_PRESETS[0]);
-        const loadedWidgets = Array.isArray(d.widgets) ? d.widgets : [];
-        const hasSavedLayer = loadedWidgets.some(w => Number.isFinite(Number(w?.zIndex)));
-        const orderedWidgets = hasSavedLayer
-          ? [...loadedWidgets].sort((a, b) => Number(a?.zIndex ?? 0) - Number(b?.zIndex ?? 0))
-          : loadedWidgets;
-        setWidgets(orderedWidgets.map((w, index) => ({ ...w, zIndex: index + 1 })));
+        const savedPages = d?.pages && typeof d.pages === "object" ? d.pages : {};
+        const legacyDynamic = Array.isArray(d?.widgets) ? d.widgets : [];
+        const normalizedPages = {
+          dynamic: { widgets: normalizePage(savedPages.dynamic?.widgets ?? legacyDynamic) },
+          manual: { widgets: normalizePage(savedPages.manual?.widgets ?? []) },
+          calibration: { widgets: normalizePage(savedPages.calibration?.widgets ?? []) },
+        };
+        setPages(normalizedPages);
+        setPageType("dynamic");
+        setWidgets(normalizedPages.dynamic.widgets);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [cpNumber]);
+  }, [cpNumber, normalizePage]);
 
   // The selected resolution is the DESIGN HMI canvas.
   // The Builder always fits this canvas completely inside the editor.
@@ -290,11 +324,22 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     setSaving(true); setSaveMsg("");
     try {
       const canvas = { width: CANVAS_W, height: CANVAS_H };
+      const finalPages = {
+        ...pages,
+        [pageType]: { widgets: normalizeLayerOrder(widgets) },
+      };
+      const cleanPages = {
+        dynamic: { widgets: normalizePage(finalPages.dynamic?.widgets || []) },
+        manual: { widgets: normalizePage(finalPages.manual?.widgets || []) },
+        calibration: { widgets: normalizePage(finalPages.calibration?.widgets || []) },
+      };
       const r = await fetch(`${API}/api/page-config/${cpNumber}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          widgets: normalizeLayerOrder(widgets),
+          // Backward compatibility: Dynamic Page remains in the legacy widgets key.
+          widgets: cleanPages.dynamic.widgets,
+          pages: cleanPages,
           canvas,
           // Design resolution: Dynamic Page uses this as the source coordinate system.
           canvasWidth: CANVAS_W,
@@ -308,7 +353,7 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     } catch { setSaveMsg("✗ Network error"); }
     setSaving(false);
     setTimeout(() => setSaveMsg(""), 3000);
-  }, [cpNumber, widgets, CANVAS_W, CANVAS_H, normalizeLayerOrder]);
+  }, [cpNumber, pages, pageType, widgets, CANVAS_W, CANVAS_H, normalizeLayerOrder, normalizePage]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -323,7 +368,11 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [selected, handleLayerAction]);
 
-  const clearCanvas = useCallback(() => { setWidgets([]); setSelected(null); }, []);
+  const clearCanvas = useCallback(() => {
+    setWidgets([]);
+    setSelected(null);
+    setPages(prev => ({ ...prev, [pageType]: { widgets: [] } }));
+  }, [pageType]);
   const selectedWidget = useMemo(() => widgets.find(w => w.id === selected) || null, [widgets, selected]);
   const filteredPalette = useMemo(() => COMPONENT_TYPES.filter(c => c.label.toLowerCase().includes(paletteSearch.toLowerCase()) || c.desc.toLowerCase().includes(paletteSearch.toLowerCase())), [paletteSearch]);
 
@@ -339,6 +388,22 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
             <div className="w-px h-5 bg-[var(--border)]" />
             <span className="text-[var(--text-primary)] font-bold text-sm">Page Builder</span>
             <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30">CP{String(cpNumber).padStart(2, "0")}</span>
+            <div className="flex items-center gap-1 ml-2 p-1 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-canvas)]">
+              {[
+                ["dynamic", "Dynamic Page", "🖥"],
+                ["manual", "Manual Page", "🕹"],
+                ["calibration", "Calibration Page", "🎯"],
+              ].map(([key, label, icon]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => switchPage(key)}
+                  className={`h-6 px-2.5 rounded-md text-[9px] font-bold flex items-center gap-1.5 transition-colors ${pageType === key ? "bg-[var(--accent-green)] text-[var(--status-green-bg)]" : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)]"}`}
+                >
+                  <span>{icon}</span>{label}
+                </button>
+              ))}
+            </div>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
@@ -427,7 +492,7 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
           </div>
         </div>
         <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--panel-canvas)" }}>
-          <span className="text-[var(--border)] text-[9px] font-mono">{widgets.length} widget{widgets.length !== 1 ? "s" : ""} · Design {CANVAS_W}×{CANVAS_H}px · Fit {Math.round(scale * 100)}% · Grid {GRID}px</span>
+          <span className="text-[var(--border)] text-[9px] font-mono">{widgets.length} widget{widgets.length !== 1 ? "s" : ""} · {pageType === "dynamic" ? "Dynamic Page" : pageType === "manual" ? "Manual Page" : "Calibration Page"} · Design {CANVAS_W}×{CANVAS_H}px · Fit {Math.round(scale * 100)}% · Grid {GRID}px</span>
           {selectedWidget && <span className="text-[var(--text-muted)] text-[9px] font-mono">x:{selectedWidget.x} y:{selectedWidget.y} · {selectedWidget.props.width}×{selectedWidget.props.height}</span>}
           <span className="text-[var(--border)] text-[9px] font-mono">Del = delete · drag to move · ↘ to resize</span>
         </div>
