@@ -2,33 +2,23 @@
   "cp": "01",
   "nodes": [
     {
-      "id": "n1782709425693_12",
-      "type": "scan_input",
-      "x": 239.66665649414062,
-      "y": 69.66665649414062,
       "config": {
-        "device": "Product",
-        "fieldKey": "Product_SN"
-      }
-    },
-    {
-      "id": "n1782709428278_13",
-      "type": "update_field",
-      "x": 266.6666564941406,
-      "y": 196.66665649414062,
-      "config": {
-        "target_field": "po",
-        "value_source": "Product_SN",
-        "source": "field_key"
-      }
+        "camera_id": "1",
+        "duration": "3",
+        "max_count": "999",
+        "method": "color_ratio",
+        "method_params": {},
+        "roi_h": 232,
+        "roi_w": 584,
+        "roi_x": 52,
+        "roi_y": 131,
+        "target_field": ""
+      },
+      "id": "n1787564987298_6",
+      "type": "count_over_time",
+      "x": 260.5078125,
+      "y": 194.2578125
     }
   ],
-  "connections": [
-    {
-      "id": "n1782709444097_15",
-      "fromId": "n1782709425693_12",
-      "fromPort": "next",
-      "toId": "n1782709428278_13"
-    }
-  ]
+  "connections": []
 }

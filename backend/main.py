@@ -1,4 +1,5 @@
-﻿import os
+﻿from routes.testtable import testtable_bp
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
@@ -11,7 +12,6 @@ from routes.setting     import setting_bp,     init_settings
 from routes.maintenance import maintenance_bp, init_maintenance_db
 from routes.snlist      import snlist_bp
 from routes.reference import reference_bp
-from routes.page_config import page_config_bp
 from routes.page_config import page_config_bp
 from logic_builder.logic_config import logic_config_bp
 from logic_builder.logic_engine import logic_engine_bp
@@ -49,6 +49,7 @@ app.register_blueprint(rs232_bp)
 app.register_blueprint(tcp_ip_bp)
 app.register_blueprint(modbus_rtu_bp)
 app.register_blueprint(vision_bp)
+
 
 # ══════════════════════════════════════════════════════════════
 # Routes yang tetap di main.py (butuh db MySQL langsung)
@@ -147,6 +148,8 @@ def change_password():
 
 
 # ══════════════════════════════════════════════════════════════
+app.register_blueprint(testtable_bp)
+
 if __name__ == "__main__":
     print("[START] Server running on http://0.0.0.0:8001")
     app.run(host="0.0.0.0", port=8001, debug=False, threaded=True)

@@ -2,533 +2,376 @@
   "cp": "02",
   "widgets": [
     {
-      "id": "w1",
+      "id": "w1787720205580_3",
       "props": {
-        "height": 150,
-        "title": "",
-        "width": 1260
+        "borderColor": "var(--accent-cyan)",
+        "borderWidth": 1,
+        "fill": "var(--panel-mid)",
+        "height": 140,
+        "radius": 8,
+        "rotation": 0,
+        "shapeType": "rectangle",
+        "visual": {
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "glow": true,
+          "glowIntensity": 18,
+          "secondaryTextColor": "var(--panel-line)",
+          "textColor": "#FFFFFF",
+          "theme": "wik_cyan"
+        },
+        "width": 690
       },
-      "type": "card",
-      "x": 0,
-      "y": 650
+      "type": "shape",
+      "x": 70,
+      "y": 290,
+      "zIndex": 1
     },
     {
-      "id": "w2",
+      "id": "w1787720310341_7",
       "props": {
-        "height": 130,
-        "title": "Message",
-        "width": 1235
-      },
-      "type": "messagebox",
-      "x": 10,
-      "y": 660
-    },
-    {
-      "id": "w3",
-      "props": {
-        "height": 130,
-        "title": "",
-        "width": 1260
-      },
-      "type": "card",
-      "x": 0,
-      "y": 0
-    },
-    {
-      "id": "w4",
-      "props": {
-        "height": 130,
-        "title": "",
-        "width": 1260
-      },
-      "type": "card",
-      "x": 0,
-      "y": 135
-    },
-    {
-      "id": "w5",
-      "props": {
-        "height": 95,
-        "title": "",
-        "width": 1260
-      },
-      "type": "card",
-      "x": 0,
-      "y": 270
-    },
-    {
-      "id": "w7",
-      "props": {
-        "height": 125,
-        "title": "",
-        "width": 1260
-      },
-      "type": "card",
-      "x": 0,
-      "y": 370
-    },
-    {
-      "id": "w9",
-      "props": {
-        "height": 90,
-        "title": "",
-        "width": 1260
-      },
-      "type": "card",
-      "x": 0,
-      "y": 500
-    },
-    {
-      "id": "w10",
-      "props": {
-        "defaultText": "Please Scan Product SN",
-        "height": 50,
-        "width": 1260
-      },
-      "type": "instruction",
-      "x": 0,
-      "y": 595
-    },
-    {
-      "id": "w12",
-      "props": {
-        "fieldKey": "PN",
-        "height": 40,
-        "label": "",
-        "placeholder": "Part Number",
-        "readOnly": false,
-        "showLabel": false,
-        "source": "readonly",
-        "width": 145
+        "address": "",
+        "addressType": "holding_register",
+        "backgroundColor": "transparent",
+        "borderColor": "transparent",
+        "borderWidth": 0,
+        "cornerSize": 10,
+        "device": "",
+        "fontSize": 18,
+        "fontWeight": "600",
+        "frameBackground": "rgba(3, 18, 30, 0.88)",
+        "frameBackgroundOpacity": 0.88,
+        "frameColor": "#00E5FF",
+        "frameGlow": false,
+        "frameOpacity": 1,
+        "framePreset": "cyan",
+        "frameStyle": "capsule",
+        "frameWidth": 1.5,
+        "glowIntensity": 18,
+        "height": 110,
+        "icon": "",
+        "iconColor": "#FFFFFF",
+        "iconGap": 8,
+        "iconOffsetX": 0,
+        "iconOffsetY": 0,
+        "iconPosition": "left",
+        "iconSize": 20,
+        "iconVerticalAlign": "center",
+        "innerGlow": false,
+        "inputSource": "com",
+        "inputType": "realtime",
+        "padding": 8,
+        "radius": 6,
+        "rotation": 0,
+        "scanEffect": false,
+        "scanSpeed": 2,
+        "showFrameAccent": false,
+        "showFrameDots": false,
+        "sourceDevice": "Part",
+        "text": "TEXT",
+        "textAlign": "center",
+        "textColor": "#FFFFFF",
+        "textOffsetX": 0,
+        "textOffsetY": 0,
+        "variable": "Var_w1787720124764_1",
+        "verticalAlign": "center",
+        "visual": {
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "glow": true,
+          "glowIntensity": 18,
+          "secondaryTextColor": "var(--panel-line)",
+          "textColor": "#FFFFFF",
+          "theme": "wik_cyan"
+        },
+        "width": 465
       },
       "type": "textbox",
-      "x": 10,
-      "y": 540
+      "x": 280,
+      "y": 305,
+      "zIndex": 2
     },
     {
-      "id": "w13",
+      "id": "w1787720318394_8",
       "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 13,
-        "height": 25,
-        "text": "Main PCBA SN :",
-        "width": 105
+        "borderColor": "var(--accent-cyan)",
+        "borderWidth": 1,
+        "fill": "var(--panel-mid)",
+        "height": 140,
+        "radius": 8,
+        "rotation": 0,
+        "shapeType": "rectangle",
+        "visual": {
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "glow": true,
+          "glowIntensity": 18,
+          "secondaryTextColor": "var(--panel-line)",
+          "textColor": "#FFFFFF",
+          "theme": "wik_cyan"
+        },
+        "width": 690
       },
-      "type": "label",
-      "x": 15,
-      "y": 510
+      "type": "shape",
+      "x": 70,
+      "y": 130,
+      "zIndex": 3
     },
     {
-      "id": "w14",
+      "id": "w1787720124764_1",
       "props": {
-        "fieldKey": "Vendor",
-        "height": 40,
-        "label": "",
-        "placeholder": "Vendor",
-        "readOnly": false,
-        "showLabel": false,
-        "source": "readonly",
-        "width": 145
-      },
-      "type": "textbox",
-      "x": 165,
-      "y": 540
-    },
-    {
-      "id": "w15",
-      "props": {
-        "fieldKey": "Voltage",
-        "height": 40,
-        "label": "",
-        "placeholder": "Voltage",
-        "readOnly": false,
-        "showLabel": false,
-        "source": "readonly",
-        "width": 145
-      },
-      "type": "textbox",
-      "x": 320,
-      "y": 540
-    },
-    {
-      "id": "w16",
-      "props": {
-        "fieldKey": "HW Ver",
-        "height": 40,
-        "label": "",
-        "placeholder": "HW Ver",
-        "readOnly": false,
-        "showLabel": false,
-        "source": "readonly",
-        "width": 145
-      },
-      "type": "textbox",
-      "x": 475,
-      "y": 540
-    },
-    {
-      "id": "w17",
-      "props": {
-        "fieldKey": "FW Ver",
-        "height": 40,
-        "label": "",
-        "placeholder": "FW Ver",
-        "readOnly": false,
-        "showLabel": false,
-        "source": "readonly",
-        "width": 145
-      },
-      "type": "textbox",
-      "x": 630,
-      "y": 540
-    },
-    {
-      "id": "w18",
-      "props": {
-        "fieldKey": "ESP FW",
-        "height": 40,
-        "label": "",
-        "placeholder": "ESP FW",
-        "readOnly": false,
-        "showLabel": false,
-        "source": "readonly",
-        "width": 145
-      },
-      "type": "textbox",
-      "x": 785,
-      "y": 540
-    },
-    {
-      "id": "w19",
-      "props": {
-        "fieldKey": "Date",
-        "height": 40,
-        "label": "",
-        "placeholder": "Date",
-        "readOnly": false,
-        "showLabel": false,
-        "source": "readonly",
-        "width": 145
+        "address": "",
+        "addressType": "holding_register",
+        "backgroundColor": "transparent",
+        "borderColor": "transparent",
+        "borderWidth": 0,
+        "cornerSize": 10,
+        "device": "",
+        "fontSize": 18,
+        "fontWeight": "600",
+        "frameBackground": "rgba(3, 18, 30, 0.88)",
+        "frameBackgroundOpacity": 0.88,
+        "frameColor": "#00E5FF",
+        "frameGlow": false,
+        "frameOpacity": 1,
+        "framePreset": "cyan",
+        "frameStyle": "capsule",
+        "frameWidth": 1.5,
+        "glowIntensity": 18,
+        "height": 110,
+        "icon": "",
+        "iconColor": "#FFFFFF",
+        "iconGap": 8,
+        "iconOffsetX": 0,
+        "iconOffsetY": 0,
+        "iconPosition": "left",
+        "iconSize": 20,
+        "iconVerticalAlign": "center",
+        "innerGlow": false,
+        "inputSource": "com",
+        "inputType": "realtime",
+        "padding": 8,
+        "radius": 6,
+        "rotation": 0,
+        "scanEffect": false,
+        "scanSpeed": 2,
+        "showFrameAccent": false,
+        "showFrameDots": false,
+        "sourceDevice": "Part",
+        "text": "TEXT",
+        "textAlign": "center",
+        "textColor": "#FFFFFF",
+        "textOffsetX": 0,
+        "textOffsetY": 0,
+        "variable": "Var_w1787720124764_1",
+        "verticalAlign": "center",
+        "visual": {
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "glow": true,
+          "glowIntensity": 18,
+          "secondaryTextColor": "var(--panel-line)",
+          "textColor": "#FFFFFF",
+          "theme": "wik_cyan"
+        },
+        "width": 465
       },
       "type": "textbox",
-      "x": 940,
-      "y": 540
+      "x": 280,
+      "y": 145,
+      "zIndex": 4
     },
     {
-      "id": "w20",
+      "id": "w1787724518187_1",
+      "type": "manualcontrol",
+      "x": 1400,
+      "y": 255,
       "props": {
-        "fieldKey": "Serial Number",
-        "height": 40,
-        "label": "",
-        "placeholder": "Serial Number",
-        "readOnly": false,
-        "showLabel": false,
-        "source": "readonly",
-        "width": 145
-      },
-      "type": "textbox",
-      "x": 1095,
-      "y": 540
-    },
-    {
-      "id": "w21",
-      "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 16,
-        "height": 28,
-        "text": "Material SN",
-        "width": 180
-      },
-      "type": "label",
-      "x": 15,
-      "y": 280
-    },
-    {
-      "id": "w22",
-      "props": {
-        "fieldKey": "Part",
-        "height": 40,
-        "label": "",
-        "placeholder": "Scan Material Batch/ Serial Number",
-        "readOnly": false,
-        "showLabel": true,
-        "source": "readonly",
-        "width": 1240
-      },
-      "type": "textbox",
-      "x": 10,
-      "y": 310
-    },
-    {
-      "id": "w23",
-      "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 13,
-        "height": 30,
-        "text": "Production Order :",
-        "width": 120
-      },
-      "type": "label",
-      "x": 15,
-      "y": 155
-    },
-    {
-      "id": "w24",
-      "props": {
-        "fieldKey": "PO",
-        "height": 35,
-        "label": "",
-        "placeholder": "",
-        "readOnly": false,
-        "showLabel": true,
-        "source": "readonly",
-        "width": 1125
-      },
-      "type": "textbox",
-      "x": 125,
-      "y": 150
-    },
-    {
-      "id": "w25",
-      "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 13,
-        "height": 24,
-        "text": "Product :",
-        "width": 70
-      },
-      "type": "label",
-      "x": 15,
-      "y": 210
-    },
-    {
-      "id": "w26",
-      "props": {
-        "fieldKey": "SKU",
-        "height": 35,
-        "label": "",
-        "placeholder": "",
-        "readOnly": false,
-        "showLabel": true,
-        "source": "readonly",
-        "width": 155
-      },
-      "type": "textbox",
-      "x": 75,
-      "y": 205
-    },
-    {
-      "id": "w27",
-      "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 13,
-        "height": 25,
-        "text": "Description :",
-        "width": 75
-      },
-      "type": "label",
-      "x": 240,
-      "y": 210
-    },
-    {
-      "id": "w28",
-      "props": {
-        "fieldKey": "Description",
-        "height": 35,
-        "label": "",
-        "placeholder": "",
-        "readOnly": false,
-        "showLabel": true,
-        "source": "readonly",
-        "width": 360
-      },
-      "type": "textbox",
-      "x": 315,
-      "y": 205
-    },
-    {
-      "id": "w29",
-      "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 13,
-        "height": 25,
-        "text": "Order Qty :",
-        "width": 90
-      },
-      "type": "label",
-      "x": 685,
-      "y": 210
-    },
-    {
-      "id": "w30",
-      "props": {
-        "fieldKey": "Qty_Order",
-        "height": 35,
-        "label": "",
-        "placeholder": "",
-        "readOnly": false,
-        "showLabel": true,
-        "source": "readonly",
-        "width": 100
-      },
-      "type": "textbox",
-      "x": 755,
-      "y": 205
-    },
-    {
-      "id": "w31",
-      "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 13,
-        "height": 25,
-        "text": "Complete Qty :",
-        "width": 95
-      },
-      "type": "label",
-      "x": 865,
-      "y": 210
-    },
-    {
-      "id": "w33",
-      "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 13,
-        "height": 25,
-        "text": "Balance Qty :",
-        "width": 95
-      },
-      "type": "label",
-      "x": 1070,
-      "y": 210
-    },
-    {
-      "id": "w34",
-      "props": {
-        "fieldKey": "Qty_done",
-        "height": 35,
-        "label": "",
-        "placeholder": "",
-        "readOnly": false,
-        "showLabel": true,
-        "source": "readonly",
-        "width": 100
-      },
-      "type": "textbox",
-      "x": 960,
-      "y": 205
-    },
-    {
-      "id": "w35",
-      "props": {
-        "fieldKey": "Qty_Ongoing",
-        "height": 35,
-        "label": "",
-        "placeholder": "",
-        "readOnly": false,
-        "showLabel": true,
-        "source": "readonly",
-        "width": 100
-      },
-      "type": "textbox",
-      "x": 1150,
-      "y": 205
-    },
-    {
-      "id": "w36",
-      "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 16,
-        "height": 25,
-        "text": "Serial Number",
-        "width": 185
-      },
-      "type": "label",
-      "x": 20,
-      "y": 25
-    },
-    {
-      "id": "w42",
-      "props": {
-        "fieldKey": "Shift_qty",
-        "height": 35,
-        "label": "",
-        "placeholder": "",
-        "readOnly": false,
-        "showLabel": true,
-        "source": "readonly",
-        "width": 205
-      },
-      "type": "textbox",
-      "x": 1045,
-      "y": 55
-    },
-    {
-      "id": "w43",
-      "props": {
-        "bold": false,
-        "color": "#ffffff",
-        "fontSize": 13,
-        "height": 25,
-        "text": "Shift Complete Qty :",
-        "width": 140
-      },
-      "type": "label",
-      "x": 920,
-      "y": 60
-    },
-    {
-      "id": "w44",
-      "props": {
-        "fieldKey": "Chassis",
-        "height": 35,
-        "label": "",
-        "placeholder": "",
-        "readOnly": false,
-        "showLabel": true,
-        "source": "readonly",
-        "width": 880
-      },
-      "type": "textbox",
-      "x": 20,
-      "y": 55
-    },
-    {
-      "id": "w11",
-      "props": {
-        "columns": [
+        "title": "Manual Control",
+        "icon": "🕹",
+        "accentColor": "var(--accent-cyan)",
+        "backgroundColor": "var(--panel-canvas)",
+        "borderColor": "var(--panel-mid)",
+        "textColor": "#FFFFFF",
+        "popupWidth": 380,
+        "fields": [
           {
-            "fieldKey": "PN",
-            "name": "PN"
+            "id": "field_1787724476872_1",
+            "label": "Jog Forward",
+            "kind": "jog",
+            "device": "",
+            "addressType": "coil",
+            "address": "",
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "unit": ""
           },
           {
-            "fieldKey": "",
-            "name": "Description"
-          },
-          {
-            "fieldKey": "Part_SN",
-            "name": "PCBA SN"
-          },
-          {
-            "fieldKey": "mac_address",
-            "name": "Mac Address"
+            "id": "field_1787724476872_2",
+            "label": "Jog Reverse",
+            "kind": "jog",
+            "device": "",
+            "addressType": "coil",
+            "address": "",
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "unit": ""
           }
         ],
+        "width": 140,
         "height": 110,
-        "title": "",
-        "width": 1245
+        "visual": {
+          "theme": "wik_cyan",
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "textColor": "#FFFFFF",
+          "secondaryTextColor": "var(--panel-line)",
+          "borderWidth": 1,
+          "borderRadius": 12,
+          "glow": true,
+          "glowIntensity": 18
+        }
       },
-      "type": "table",
-      "x": 5,
-      "y": 380
+      "zIndex": 5
+    },
+    {
+      "id": "w1787724520904_2",
+      "type": "calibration",
+      "x": 1445,
+      "y": 410,
+      "props": {
+        "title": "Calibration",
+        "icon": "🎯",
+        "accentColor": "var(--accent-orange)",
+        "backgroundColor": "var(--panel-canvas)",
+        "borderColor": "var(--panel-mid)",
+        "textColor": "#FFFFFF",
+        "popupWidth": 380,
+        "fields": [
+          {
+            "id": "field_1787724476872_3",
+            "label": "Offset X",
+            "kind": "value",
+            "device": "",
+            "addressType": "holding_register",
+            "address": "",
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "unit": "mm"
+          },
+          {
+            "id": "field_1787724476872_4",
+            "label": "Offset Y",
+            "kind": "value",
+            "device": "",
+            "addressType": "holding_register",
+            "address": "",
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "unit": "mm"
+          }
+        ],
+        "width": 140,
+        "height": 110,
+        "visual": {
+          "theme": "wik_cyan",
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "textColor": "#FFFFFF",
+          "secondaryTextColor": "var(--panel-line)",
+          "borderWidth": 1,
+          "borderRadius": 12,
+          "glow": true,
+          "glowIntensity": 18
+        }
+      },
+      "zIndex": 6
+    },
+    {
+      "id": "w1787724523162_3",
+      "type": "timinglimit",
+      "x": 1395,
+      "y": 600,
+      "props": {
+        "title": "Timing & Limit",
+        "icon": "⏱",
+        "accentColor": "var(--accent-green)",
+        "backgroundColor": "var(--panel-canvas)",
+        "borderColor": "var(--panel-mid)",
+        "textColor": "#FFFFFF",
+        "popupWidth": 380,
+        "fields": [
+          {
+            "id": "field_1787724476873_5",
+            "label": "Cycle Time",
+            "kind": "value",
+            "device": "",
+            "addressType": "holding_register",
+            "address": "",
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "unit": "ms"
+          },
+          {
+            "id": "field_1787724476873_6",
+            "label": "Max Limit",
+            "kind": "value",
+            "device": "",
+            "addressType": "holding_register",
+            "address": "",
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "unit": ""
+          },
+          {
+            "id": "field_1787724476873_7",
+            "label": "Min Limit",
+            "kind": "value",
+            "device": "",
+            "addressType": "holding_register",
+            "address": "",
+            "min": 0,
+            "max": 100,
+            "step": 1,
+            "unit": ""
+          }
+        ],
+        "width": 140,
+        "height": 110,
+        "visual": {
+          "theme": "wik_cyan",
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "textColor": "#FFFFFF",
+          "secondaryTextColor": "var(--panel-line)",
+          "borderWidth": 1,
+          "borderRadius": 12,
+          "glow": true,
+          "glowIntensity": 18
+        }
+      },
+      "zIndex": 7
     }
   ]
 }

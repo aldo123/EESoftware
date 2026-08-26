@@ -376,8 +376,22 @@ class ModbusTCPClient:
 
                 return rx_pdu[1:]
 
-            except Exception:
-                self.disconnect()
+            except Exception as exc:
+                # Keep the socket alive for PLC-level Modbus exceptions.
+                # Reconnect only when the underlying transport is broken.
+                transport_error = isinstance(
+                    exc,
+                    (
+                        ConnectionError,
+                        BrokenPipeError,
+                        TimeoutError,
+                        OSError,
+                    ),
+                )
+
+                if transport_error:
+                    self.disconnect()
+
                 raise
 
 
@@ -642,6 +656,87 @@ def _read_registers(client, function_code, address, count):
 
 
 # ============================================================
+# BATCH READ HELPERS
+# ============================================================
+
+def _max_count_for_area(area):
+    return 2000 if area in ("coil", "discrete_input") else 125
+
+
+def _read_batch_ranges(client, area, requests_list):
+    """Read requested addresses using contiguous Modbus ranges."""
+    if not requests_list:
+        return []
+
+    function_code = AREA_MAP[area]
+
+    by_address = {}
+    for item in requests_list:
+        address = int(item["address"])
+        by_address.setdefault(address, []).append(item)
+
+    addresses = sorted(by_address)
+    max_count = _max_count_for_area(area)
+
+    ranges = []
+    start = addresses[0]
+    previous = addresses[0]
+
+    for address in addresses[1:]:
+        contiguous = address == previous + 1
+        within_limit = (address - start + 1) <= max_count
+
+        if contiguous and within_limit:
+            previous = address
+            continue
+
+        ranges.append((start, previous))
+        start = address
+        previous = address
+
+    ranges.append((start, previous))
+
+    result_by_address = {}
+
+    for start_address, end_address in ranges:
+        count = end_address - start_address + 1
+
+        if function_code in (1, 2):
+            values = _read_bits(
+                client,
+                function_code,
+                start_address,
+                count,
+            )
+        else:
+            values = _read_registers(
+                client,
+                function_code,
+                start_address,
+                count,
+            )
+
+        for offset, value in enumerate(values):
+            result_by_address[start_address + offset] = value
+
+    results = []
+
+    for address, items in by_address.items():
+        value = result_by_address.get(address)
+
+        for item in items:
+            results.append({
+                "id": item["id"],
+                "address": address,
+                "value": value,
+                "success": address in result_by_address,
+            })
+
+    return results
+
+
+
+# ============================================================
 # FLASK BLUEPRINT
 # ============================================================
 
@@ -814,6 +909,102 @@ def disconnect():
     return jsonify({
         "success": True,
     })
+
+
+
+@tcp_ip_bp.post("/api/tcp/read-batch")
+def read_batch():
+    """
+    High-performance batch Modbus read.
+
+    The backend groups addresses by area and combines contiguous
+    addresses into one Modbus transaction.
+    """
+    body = request.get_json() or {}
+
+    try:
+        device_name = body.get("device_name")
+        if not device_name:
+            raise ValueError("device_name is required")
+
+        raw_requests = body.get("requests")
+        if not isinstance(raw_requests, list) or not raw_requests:
+            raise ValueError("requests must be a non-empty list")
+
+        client = _get_client(device_name)
+        grouped = {}
+
+        for index, item in enumerate(raw_requests):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"requests[{index}] must be an object"
+                )
+
+            request_id = str(item.get("id", index))
+
+            area = _normalize_area(
+                item.get("address_type")
+            )
+
+            address = _validate_address(
+                item.get("address")
+            )
+
+            grouped.setdefault(area, []).append({
+                "id": request_id,
+                "address": address,
+            })
+
+        all_results = []
+
+        for area, area_requests in grouped.items():
+            all_results.extend(
+                _read_batch_ranges(
+                    client,
+                    area,
+                    area_requests,
+                )
+            )
+
+        by_id = {
+            str(item["id"]): item
+            for item in all_results
+        }
+
+        ordered_results = []
+
+        for index, item in enumerate(raw_requests):
+            request_id = str(item.get("id", index))
+
+            result = by_id.get(request_id)
+
+            if result is None:
+                result = {
+                    "id": request_id,
+                    "success": False,
+                    "value": None,
+                    "address": item.get("address"),
+                    "message": "No value returned",
+                }
+
+            ordered_results.append(result)
+
+        return jsonify({
+            "success": True,
+            "device_name": device_name,
+            "results": ordered_results,
+        })
+
+    except Exception as e:
+        print(
+            f"[MODBUS BATCH READ ERROR] "
+            f"{body.get('device_name')}: {e}"
+        )
+
+        return jsonify({
+            "success": False,
+            "message": str(e),
+        }), 400
 
 
 @tcp_ip_bp.post("/api/tcp/read")
