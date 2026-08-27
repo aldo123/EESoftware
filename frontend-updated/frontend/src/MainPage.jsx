@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ModalBackdrop, ModalPanel, dropdownVariants, EASE_OUT } from "./components/motion";
@@ -10,6 +9,7 @@ import ReferencePage from "./modal/ReferenceModal";
 import PageBuilder from "./modal/PageBuilder";
 import LogicBuilder from "./modal/LogicBuilder";
 import InternalVariable from "./modal/InternalVariable";
+import Specification from "./modal/Specification";
 import { API } from "./service/api";
 import DynamicCPPage from "./pages/DynamicCPPage";
 import { useRS232Scanner } from "./hooks/useRS232Scanner";
@@ -374,6 +374,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
   const [showBuilder, setShowBuilder] = useState(false);
   const [showLogic, setShowLogic] = useState(false);
   const [showInternalVariable, setShowInternalVariable] = useState(false);
+  const [showSpecification, setShowSpecification] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const settingBtnRef = useRef(null);
@@ -761,6 +762,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
     { icon: <IconLogic />, label: "Logic Builder", action: () => setShowLogic(true) },
     { icon: <span>🎨</span>, label: "Page Builder", action: () => setShowBuilder(true) },
     { icon: <span>▦</span>, label: "Internal Variables", action: () => setShowInternalVariable(true) },
+    { icon: <span>▤</span>, label: "Specification", action: () => setShowSpecification(true) },
 
 
   ];
@@ -977,6 +979,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
         {showBuilder && (<PageBuilder key="builder" cpNumber={cpNumber || "2"} availableDevices={commDevices} onClose={() => setShowBuilder(false)} />)}
         {showLogic && (<LogicBuilder key="logic" cpNumber={cpNumber || "2"} onClose={() => setShowLogic(false)} />)}
         {showInternalVariable && (<InternalVariable key="internal-variable" onClose={() => setShowInternalVariable(false)} />)}
+        {showSpecification && (<Specification key="specification" onClose={() => setShowSpecification(false)} />)}
       </AnimatePresence>
     </div>
   );
