@@ -35,7 +35,7 @@ function WidgetPreview({ widget }) {
 }
 
 // ── PROPERTY PANEL (common chrome + dispatches to the widget's own panel) ──
-function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction, canvasWidth, canvasHeight, availableDevices = [] }) {
+function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction, canvasWidth, canvasHeight, availableDevices = [], availablePages = [] }) {
   if (!widget) return (<div className="flex flex-col items-center justify-center h-full text-center px-4"><span className="text-3xl opacity-20 mb-2">🖱</span><p className="text-[var(--text-muted)] text-[10px]">Click a widget on the canvas to edit its properties</p></div>);
   const { type, props: p, x, y } = widget;
 
@@ -82,7 +82,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction,
     {(() => {
       const Panel = WIDGET_PROPERTY_PANELS[type];
       if (!Panel) return null;
-      return <Panel p={p} set={set} availableDevices={availableDevices} />;
+      return <Panel p={p} set={set} availableDevices={availableDevices} availablePages={availablePages} />;
     })()}
 
 
@@ -90,12 +90,18 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction,
 }
 
 export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }) {
+  // Dynamic Page is the permanent MAIN page.
+  // Custom pages are stored alongside it and may be deleted.
   const [pageType, setPageType] = useState("dynamic");
   const [pages, setPages] = useState({
-    dynamic: { widgets: [] },
-    manual: { widgets: [] },
-    calibration: { widgets: [] },
+    dynamic: {
+      name: "Dynamic Page",
+      icon: "🖥",
+      widgets: [],
+    },
   });
+  const [showCreatePage, setShowCreatePage] = useState(false);
+  const [newPageName, setNewPageName] = useState("");
   const [widgets, setWidgets] = useState([]);
   const [selected, setSelected] = useState([]);
   const [clipboard, setClipboard] = useState([]);
@@ -153,10 +159,13 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
 
     setPages(prev => ({
       ...prev,
-      [pageType]: { widgets: normalizeLayerOrder(widgets) },
+      [pageType]: {
+        ...(prev[pageType] || {}),
+        widgets: normalizeLayerOrder(widgets),
+      },
     }));
 
-    setWidgets(normalizePage(pages[nextPage]?.widgets || []));
+    setWidgets(nextPage ? normalizePage(pages[nextPage]?.widgets || []) : []);
     setSelected([]);
     setDragInfo(null);
     setResizing(null);
@@ -218,14 +227,39 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
         setCanvasPreset(CANVAS_PRESETS[0]);
         const savedPages = d?.pages && typeof d.pages === "object" ? d.pages : {};
         const legacyDynamic = Array.isArray(d?.widgets) ? d.widgets : [];
-        const normalizedPages = {
-          dynamic: { widgets: normalizePage(savedPages.dynamic?.widgets ?? legacyDynamic) },
-          manual: { widgets: normalizePage(savedPages.manual?.widgets ?? []) },
-          calibration: { widgets: normalizePage(savedPages.calibration?.widgets ?? []) },
+        const normalizedPages = {};
+
+        // Dynamic Page is always the protected MAIN page.
+        // If it exists in saved data, preserve its widgets.
+        const savedDynamic = savedPages.dynamic;
+        normalizedPages.dynamic = {
+          name: "Dynamic Page",
+          icon: "🖥",
+          widgets: normalizePage(
+            savedDynamic?.widgets ??
+            legacyDynamic ??
+            []
+          ),
         };
+
+        // Load all custom pages after Dynamic Page.
+        Object.entries(savedPages).forEach(([key, value]) => {
+          if (key === "dynamic") return;
+          if (!value || typeof value !== "object") return;
+
+          normalizedPages[key] = {
+            name: value.name || key,
+            icon: value.icon || "📄",
+            widgets: normalizePage(value.widgets || []),
+          };
+        });
+
         setPages(normalizedPages);
         setPageType("dynamic");
         setWidgets(normalizedPages.dynamic.widgets);
+        setSelected([]);
+        setDragInfo(null);
+        setResizing(null);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -477,20 +511,41 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     try {
       const canvas = { width: CANVAS_W, height: CANVAS_H };
       const finalPages = {
-        ...pages,
-        [pageType]: { widgets: normalizeLayerOrder(widgets) },
+        dynamic: {
+          name: "Dynamic Page",
+          icon: "🖥",
+          widgets:
+            pageType === "dynamic"
+              ? normalizeLayerOrder(widgets)
+              : normalizePage(pages.dynamic?.widgets || []),
+        },
+        ...Object.fromEntries(
+          Object.entries(pages).filter(([key]) => key !== "dynamic")
+        ),
       };
-      const cleanPages = {
-        dynamic: { widgets: normalizePage(finalPages.dynamic?.widgets || []) },
-        manual: { widgets: normalizePage(finalPages.manual?.widgets || []) },
-        calibration: { widgets: normalizePage(finalPages.calibration?.widgets || []) },
-      };
+
+      if (pageType && pageType !== "dynamic") {
+        finalPages[pageType] = {
+          ...(pages[pageType] || { name: "Page", icon: "📄" }),
+          widgets: normalizeLayerOrder(widgets),
+        };
+      }
+      const cleanPages = Object.fromEntries(
+        Object.entries(finalPages).map(([key, value]) => [
+          key,
+          {
+            name: value?.name || key,
+            icon: value?.icon || "📄",
+            widgets: normalizePage(value?.widgets || []),
+          },
+        ])
+      );
       const r = await fetch(`${API}/api/page-config/${cpNumber}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // Backward compatibility: Dynamic Page remains in the legacy widgets key.
-          widgets: cleanPages.dynamic.widgets,
+          // Keep legacy widgets populated with the active page for older readers.
+          widgets: cleanPages.dynamic?.widgets || [],
           pages: cleanPages,
           canvas,
           // Design resolution: Dynamic Page uses this as the source coordinate system.
@@ -706,10 +761,69 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
   }, [selected, widgets, clipboard, normalizeLayerOrder, CANVAS_W, CANVAS_H]);
 
 
+  const createPage = useCallback(() => {
+    const name = newPageName.trim();
+    if (!name) return;
+
+    const baseId = `page_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+    let id = baseId;
+    let counter = 1;
+
+    while (pages[id] || id === "dynamic") {
+      id = `${baseId}_${counter++}`;
+    }
+
+    const newPage = {
+      name,
+      icon: "📄",
+      widgets: [],
+    };
+
+    setPages(prev => ({ ...prev, [id]: newPage }));
+    setPageType(id);
+    setWidgets([]);
+    setSelected([]);
+    setDragInfo(null);
+    setResizing(null);
+    setShowCreatePage(false);
+    setNewPageName("");
+  }, [newPageName, pages]);
+
+  const deleteCurrentPage = useCallback(() => {
+    if (!pageType || pageType === "dynamic") return;
+
+    const pageName = pages[pageType]?.name || pageType;
+    const confirmed = window.confirm(`Delete page "${pageName}"?`);
+    if (!confirmed) return;
+
+    const remaining = Object.keys(pages).filter(key => key !== pageType);
+    const nextPage = remaining[0] || null;
+
+    setPages(prev => {
+      const next = { ...prev };
+      delete next[pageType];
+      return next;
+    });
+
+    setPageType(nextPage);
+    setWidgets(nextPage ? normalizePage(pages[nextPage]?.widgets || []) : []);
+    setSelected([]);
+    setDragInfo(null);
+    setResizing(null);
+  }, [pageType, pages, normalizePage]);
+
   const clearCanvas = useCallback(() => {
     setWidgets([]);
     setSelected([]);
-    setPages(prev => ({ ...prev, [pageType]: { widgets: [] } }));
+    if (pageType) {
+      setPages(prev => ({
+        ...prev,
+        [pageType]: {
+          ...(prev[pageType] || { name: "Page", icon: "📄" }),
+          widgets: [],
+        },
+      }));
+    }
   }, [pageType]);
   const selectedWidget = useMemo(() => {
     if (selected.length !== 1) return null;
@@ -722,7 +836,7 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
 
   return (
     <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm font-sans">
-      <ModalPanel className="flex flex-col rounded-2xl overflow-hidden border border-[var(--border)] shadow-2xl" style={{ width: "min(98vw, 1800px)", height: "min(96vh, 900px)", background: "var(--panel-canvas)" }}>
+      <ModalPanel className="relative flex flex-col rounded-2xl overflow-hidden border border-[var(--border)] shadow-2xl" style={{ width: "min(98vw, 1800px)", height: "min(96vh, 900px)", background: "var(--panel-canvas)" }}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
           <div className="flex items-center gap-3">
             <span className="text-[var(--accent-green)] font-black text-lg tracking-tighter">WIK</span>
@@ -730,20 +844,28 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
             <span className="text-[var(--text-primary)] font-bold text-sm">Page Builder</span>
             <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30">CP{String(cpNumber).padStart(2, "0")}</span>
             <div className="flex items-center gap-1 ml-2 p-1 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-canvas)]">
-              {[
-                ["dynamic", "Dynamic Page", "🖥"],
-                ["manual", "Manual Page", "🕹"],
-                ["calibration", "Calibration Page", "🎯"],
-              ].map(([key, label, icon]) => (
+              {Object.entries(pages).map(([key, page]) => (
                 <button
                   key={key}
                   type="button"
                   onClick={() => switchPage(key)}
-                  className={`h-6 px-2.5 rounded-md text-[9px] font-bold flex items-center gap-1.5 transition-colors ${pageType === key ? "bg-[var(--accent-green)] text-[var(--status-green-bg)]" : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)]"}`}
+                  title={page.name}
+                  className={`h-6 px-2.5 rounded-md text-[9px] font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap ${pageType === key ? "bg-[var(--accent-green)] text-[var(--status-green-bg)]" : "text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)]"}`}
                 >
-                  <span>{icon}</span>{label}
+                  <span>{page.icon || "📄"}</span>{page.name || key}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => {
+                  setNewPageName("");
+                  setShowCreatePage(true);
+                }}
+                title="Create New Page"
+                className="h-6 px-2.5 rounded-md text-[10px] font-black flex items-center gap-1.5 text-[var(--accent-green)] hover:bg-[var(--accent-green)]/10 border border-dashed border-[var(--accent-green)]/40 transition-colors whitespace-nowrap"
+              >
+                <span>＋</span> Create Page
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -752,8 +874,11 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
               <span className="px-2 h-7 inline-flex items-center rounded border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 text-[var(--accent-green)] text-[10px] font-bold font-mono">FULL HD · 1980 × 1080</span>
             </div>
             {saveMsg && <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saveMsg.startsWith("✓") ? "text-[var(--accent-green)] bg-[var(--accent-green)]/10" : "text-[var(--accent-red)] bg-[var(--accent-red)]/10"}`}>{saveMsg}</span>}
+            {pageType && pageType !== "dynamic" && (
+              <button onClick={deleteCurrentPage} className="h-7 px-3 rounded-lg border border-[var(--accent-red)]/30 text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 text-[10px] font-bold transition-colors">Delete Page</button>
+            )}
             <button onClick={clearCanvas} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] text-[10px] font-bold transition-colors">Clear</button>
-            <button onClick={save} disabled={saving} className="h-7 px-4 rounded-lg bg-[var(--accent-green)] hover:bg-[var(--accent-green-dark)] text-[var(--status-green-bg)] font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-[var(--status-green-bg)] border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Layout"}</button>
+            <button onClick={save} disabled={saving || !pageType} className="h-7 px-4 rounded-lg bg-[var(--accent-green)] hover:bg-[var(--accent-green-dark)] text-[var(--status-green-bg)] font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-[var(--status-green-bg)] border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Layout"}</button>
             <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)] transition-colors"><IconX /></button>
           </div>
         </div>
@@ -802,7 +927,7 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
               <div style={{ width: displayWidth, height: displayHeight, position: "relative", flex: "0 0 auto", overflow: "hidden" }}>
                 <div ref={canvasRef} onMouseDown={startMarquee} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={e => { if (e.target === canvasRef.current && !marquee) clearSelection(); }} className="relative origin-top-left overflow-hidden" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
                   {marquee && <div className="absolute pointer-events-none" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height, border: "1px dashed var(--accent-green)", background: "var(--accent-green)", opacity: 0.12, zIndex: 999999 }} /> }
-                  {widgets.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-4xl opacity-10 mb-2">🖱</span><p className="text-[var(--border-soft)] text-sm font-mono">Drag components here</p></div>)}
+                  {widgets.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-4xl opacity-10 mb-2">{pageType ? "🖱" : "📄"}</span><p className="text-[var(--border-soft)] text-sm font-mono">{pageType ? "Drag components here" : "Create a Page to start designing"}</p></div>)}
                   {widgets.map(widget => {
                     const isSel = selected.includes(widget.id);
                     return (<div key={widget.id} id={`widget-${widget.id}`} onMouseDown={e => startDrag(e, widget.id)} onClick={e => { e.stopPropagation(); }} className="absolute select-none" style={{ left: widget.x, top: widget.y, width: widget.props.width, height: widget.props.height, cursor: dragInfo?.id === widget.id ? "grabbing" : "grab", outline: isSel ? "2px solid var(--accent-green)" : "1px solid transparent", outlineOffset: 2, borderRadius: 6, zIndex: Number.isFinite(Number(widget.zIndex)) ? Number(widget.zIndex) : 1 }}><div className="w-full h-full overflow-hidden" style={{ borderRadius: 6 }}><WidgetPreview widget={widget} onUpdate={handleWidgetUpdate} /></div>{isSel && <div className="absolute -top-5 left-0 flex items-center gap-1 pointer-events-none"><span className="text-[var(--accent-green)] text-[9px] font-bold bg-[var(--panel-canvas)] px-1.5 py-0.5 rounded font-mono capitalize">{widget.type}</span></div>}{isSel && <div onMouseDown={e => startResize(e, widget.id)} className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize" style={{ background: "var(--accent-green)", borderRadius: "2px 0 4px 0", zIndex: 20 }} />}</div>);
@@ -848,11 +973,74 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
               canvasWidth={CANVAS_W}
               canvasHeight={CANVAS_H}
                availableDevices={availableDevices}
+              availablePages={Object.entries(pages).map(([id, page]) => ({ id, name: page?.name || id }))}
             />
           </div>
         </div>
+        {showCreatePage && (
+          <div
+            className="absolute inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm"
+            onMouseDown={e => {
+              if (e.target === e.currentTarget) setShowCreatePage(false);
+            }}
+          >
+            <div
+              className="w-[360px] rounded-xl border border-[var(--border)] shadow-2xl p-5"
+              style={{ background: "var(--bg-surface-2)" }}
+              onMouseDown={e => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <div className="text-[var(--text-primary)] font-bold text-sm">Create New Page</div>
+                  <div className="text-[var(--text-muted)] text-[10px] mt-1">Create a blank page for your HMI layout.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePage(false)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)]"
+                >
+                  <IconX />
+                </button>
+              </div>
+
+              <label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1.5">
+                Page Name
+              </label>
+              <input
+                autoFocus
+                value={newPageName}
+                onChange={e => setNewPageName(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") createPage();
+                  if (e.key === "Escape") setShowCreatePage(false);
+                }}
+                placeholder="e.g. Inspection Page"
+                className="w-full h-9 px-3 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-primary)] text-xs outline-none focus:border-[var(--accent-green)]"
+              />
+
+              <div className="flex justify-end gap-2 mt-5">
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePage(false)}
+                  className="h-8 px-4 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] text-[10px] font-bold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={createPage}
+                  disabled={!newPageName.trim()}
+                  className="h-8 px-4 rounded-lg bg-[var(--accent-green)] text-[var(--status-green-bg)] text-[10px] font-bold disabled:opacity-40"
+                >
+                  Create Page
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--panel-canvas)" }}>
-          <span className="text-[var(--border)] text-[9px] font-mono">{widgets.length} widget{widgets.length !== 1 ? "s" : ""} · {pageType === "dynamic" ? "Dynamic Page" : pageType === "manual" ? "Manual Page" : "Calibration Page"} · Design {CANVAS_W}×{CANVAS_H}px · Fit {Math.round(scale * 100)}% · Grid {GRID}px</span>
+          <span className="text-[var(--border)] text-[9px] font-mono">{widgets.length} widget{widgets.length !== 1 ? "s" : ""} · {pages[pageType]?.name || "No Page"} · Design {CANVAS_W}×{CANVAS_H}px · Fit {Math.round(scale * 100)}% · Grid {GRID}px</span>
           {selectedWidget && <span className="text-[var(--text-muted)] text-[9px] font-mono">x:{selectedWidget.x} y:{selectedWidget.y} · {selectedWidget.props.width}×{selectedWidget.props.height}</span>}
           {!selectedWidget && selected.length > 0 && <span className="text-[var(--text-muted)] text-[9px] font-mono">{selected.length} widgets selected</span>}
           <span className="text-[var(--border)] text-[9px] font-mono">Shift+Click = multi-select · Ctrl+C/V = copy/paste · Del = delete · Arrows = move</span>

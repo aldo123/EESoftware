@@ -12,9 +12,7 @@ import { gaugeDef, GaugePreview, GaugePropertyPanel, RuntimeGauge } from "./gaug
 import { linechartDef, LineChartPreview, LineChartPropertyPanel, RuntimeLineChart } from "./linechart";
 import { cameraFeedDef, CameraFeedPreview, CameraFeedPropertyPanel, RuntimeCameraFeed } from "./camerafeed";
 import { testtableDef, TestTablePreview, TestTablePropertyPanel, RuntimeTestTable } from "./testtable";
-import { manualcontrolDef, ManualControlPreview, ManualControlPropertyPanel, RuntimeManualControl } from "./manualcontrol";
-import { calibrationDef, CalibrationPreview, CalibrationPropertyPanel, RuntimeCalibration } from "./calibration";
-import { timinglimitDef, TimingLimitPreview, TimingLimitPropertyPanel, RuntimeTimingLimit } from "./timinglimit";
+
 
 
 // Palette shown in the Page Builder sidebar (drag source).
@@ -27,9 +25,7 @@ export const COMPONENT_TYPES = [
   linechartDef,
   cameraFeedDef,
   testtableDef,
-  manualcontrolDef,
-  calibrationDef,
-  timinglimitDef,
+
  
 ];
 
@@ -43,9 +39,7 @@ export const WIDGET_PREVIEWS = {
   linechart: LineChartPreview,
   camerafeed: CameraFeedPreview,
   testtable: TestTablePreview,
-  manualcontrol: ManualControlPreview,
-  calibration: CalibrationPreview,
-  timinglimit: TimingLimitPreview,
+
  
 };
 
@@ -59,9 +53,7 @@ export const WIDGET_PROPERTY_PANELS = {
   linechart: LineChartPropertyPanel,
   camerafeed: CameraFeedPropertyPanel,
   testtable: TestTablePropertyPanel,
-  manualcontrol: ManualControlPropertyPanel,
-  calibration: CalibrationPropertyPanel,
-  timinglimit: TimingLimitPropertyPanel,
+
  
 };
 
@@ -75,9 +67,7 @@ export const WIDGET_RUNTIME = {
   linechart: RuntimeLineChart,
   camerafeed: RuntimeCameraFeed,
   testtable: RuntimeTestTable,
-  manualcontrol: RuntimeManualControl,
-  calibration: RuntimeCalibration,
-  timinglimit: RuntimeTimingLimit,
+
  
 };
 
@@ -93,9 +83,7 @@ export {
   RuntimeLineChart,
   RuntimeCameraFeed,
   RuntimeTestTable,
-  RuntimeManualControl,
-  RuntimeCalibration,
-  RuntimeTimingLimit,
+
 
 };
 

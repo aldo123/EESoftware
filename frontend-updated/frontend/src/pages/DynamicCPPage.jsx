@@ -12,9 +12,6 @@ import {
   RuntimeLineChart,
   RuntimeCameraFeed,
   RuntimeTestTable,
-  RuntimeManualControl,
-  RuntimeCalibration,
-  RuntimeTimingLimit,
 } from "../widgets";
 
 // ──────────────────────────────────────────────────────────────────
@@ -41,7 +38,8 @@ const resolutionKey = (w, h) => `${w}x${h}`;
 
 export default function DynamicCPPage({ cpNumber, user }) {
   const [widgets, setWidgets] = useState([]);
-  const [pages, setPages] = useState({ dynamic: { widgets: [] }, manual: { widgets: [] }, calibration: { widgets: [] } });
+  const [pages, setPages] = useState({});
+  const [activePageId, setActivePageId] = useState(null);
   const [activePopupPage, setActivePopupPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -197,9 +195,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // Test Table bindings:
   //   <widgetId>:<rowId>
   //
-  // Icon-popup widgets (Manual Control / Calibration / Timing & Limit)
-  // bindings:
-  //   <widgetId>:<fieldId>
+  // All runtime widgets are now normal Page Builder widgets/pages.
   // ============================================================
 
   const {
@@ -680,6 +676,21 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
           if (!resultVariable) return fallback;
 
+          // Calculate directly for display instead of waiting for the
+          // calculated result to be copied into fieldValues.
+          // This is important when the Result Variable is an Internal Variable.
+          const calculatedResult = calculateTextBox(widget);
+
+          if (calculatedResult !== undefined && calculatedResult !== null) {
+            return calculatedResult;
+          }
+
+          // Keep compatibility with existing stored result variables.
+          const internalResult = getInternalValue(resultVariable);
+          if (internalResult !== undefined && internalResult !== null) {
+            return internalResult;
+          }
+
           return fieldValues[resultVariable] ?? fallback;
         }
 
@@ -758,6 +769,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
       return fieldValues[variableName];
     },
     [
+      calculateTextBox,
       comTextBoxValues,
       fieldValues,
       getInternalValue,
@@ -929,12 +941,33 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
         const legacyDynamic = Array.isArray(data?.widgets) ? data.widgets : [];
         const savedPages = data?.pages && typeof data.pages === "object" ? data.pages : {};
-        const loadedPages = {
-          dynamic: { widgets: Array.isArray(savedPages.dynamic?.widgets) ? savedPages.dynamic.widgets : legacyDynamic },
-          manual: { widgets: Array.isArray(savedPages.manual?.widgets) ? savedPages.manual.widgets : [] },
-          calibration: { widgets: Array.isArray(savedPages.calibration?.widgets) ? savedPages.calibration.widgets : [] },
+        const loadedPages = {};
+
+        // Dynamic Page is the permanent MAIN/default page.
+        // Preserve saved Dynamic widgets; fall back to legacy top-level widgets.
+        loadedPages.dynamic = {
+          name: "Dynamic Page",
+          icon: "🖥",
+          widgets: Array.isArray(savedPages.dynamic?.widgets)
+            ? savedPages.dynamic.widgets
+            : legacyDynamic,
         };
+
+        // All other pages are normal pages created from Page Builder.
+        Object.entries(savedPages).forEach(([id, page]) => {
+          if (id === "dynamic") return;
+          if (!page || typeof page !== "object") return;
+
+          loadedPages[id] = {
+            name: page.name || id,
+            icon: page.icon || "📄",
+            widgets: Array.isArray(page.widgets) ? page.widgets : [],
+          };
+        });
+
+        // Always start on Dynamic Page.
         setPages(loadedPages);
+        setActivePageId("dynamic");
         setWidgets(loadedPages.dynamic.widgets);
         setActivePopupPage(null);
         setLoading(false);
@@ -965,11 +998,10 @@ export default function DynamicCPPage({ cpNumber, user }) {
     };
   }, [cpNumber]);
 
-  const runtimeWidgets = useMemo(() => [
-    ...(Array.isArray(pages.dynamic?.widgets) ? pages.dynamic.widgets : []),
-    ...(Array.isArray(pages.manual?.widgets) ? pages.manual.widgets : []),
-    ...(Array.isArray(pages.calibration?.widgets) ? pages.calibration.widgets : []),
-  ], [pages]);
+  const runtimeWidgets = useMemo(
+    () => Object.values(pages).flatMap(page => Array.isArray(page?.widgets) ? page.widgets : []),
+    [pages]
+  );
 
   useEffect(() => {
     if (!runtimeWidgets.length) return;
@@ -1955,6 +1987,23 @@ export default function DynamicCPPage({ cpNumber, user }) {
   ]);
 
   // ============================================================
+  // PAGE NAVIGATION
+  // ============================================================
+
+  const navigateToPage = useCallback((targetPageId) => {
+    const id = String(targetPageId || "").trim();
+    if (!id || !pages[id]) {
+      addLog(`Target page not found: ${id || "(empty)"}`, "var(--accent-red)");
+      return;
+    }
+
+    setActivePageId(id);
+    setWidgets(Array.isArray(pages[id].widgets) ? pages[id].widgets : []);
+    setActivePopupPage(null);
+    console.log(`[DynamicCPPage] Navigate to page: ${id} (${pages[id].name || id})`);
+  }, [addLog, pages]);
+
+  // ============================================================
   // BUTTON PLC WRITE
   // ============================================================
 
@@ -2244,7 +2293,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     const { type, id } = widget;
     const runtimeValue = getRuntimeValue(widget);
 
-    if (type === "button") return <RuntimeButton key={id} widget={widget} value={runtimeValue} onChange={(value) => handleButtonChange(widget, value)} />;
+    if (type === "button") return <RuntimeButton key={id} widget={widget} value={runtimeValue} onChange={(value) => handleButtonChange(widget, value)} onNavigate={navigateToPage} />;
     if (type === "light") return <RuntimeLight key={id} widget={widget} value={runtimeValue} />;
     if (type === "shape") return <RuntimeShape key={id} widget={widget} />;
     if (type === "textbox") return (
@@ -2260,14 +2309,10 @@ export default function DynamicCPPage({ cpNumber, user }) {
     if (type === "testtable") return <RuntimeTestTable key={id} widget={widget} getValue={getTestTableValue} />;
     if (type === "camerafeed") return <RuntimeCameraFeed key={id} widget={widget} cpNumber={cpNumber} />;
 
-    if (type === "manualcontrol" || type === "calibration" || type === "timinglimit") {
-      const plcBundle = { tcpValues, writeTCPValue, getTCPDevice, normalizeType };
-      if (type === "manualcontrol") return <RuntimeManualControl key={id} widget={widget} plc={plcBundle} onOpenPage={openPopupPage} />;
-      if (type === "calibration") return <RuntimeCalibration key={id} widget={widget} plc={plcBundle} onOpenPage={openPopupPage} />;
-      return <RuntimeTimingLimit key={id} widget={widget} plc={plcBundle} />;
-    }
+    // Manual / Calibration / Timing Limit are no longer special widgets.
+    // They are now normal custom pages created through Page Builder.
     return null;
-  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage]);
+  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage, navigateToPage]);
 
   // ============================================================
   // RENDER STATES
@@ -2311,16 +2356,13 @@ export default function DynamicCPPage({ cpNumber, user }) {
     );
   }
 
-  if (widgets.length === 0) {
+  if (!activePageId || widgets.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
-        <span className="text-4xl opacity-20">
-          🔧
-        </span>
+        <span className="text-4xl opacity-20">{activePageId ? "🔧" : "📄"}</span>
 
         <p className="text-[var(--text-primary)] font-semibold">
-          No layout configured for CP
-          {cpNumber}
+          {activePageId ? `Page "${pages[activePageId]?.name || activePageId}" is empty` : `No page configured for CP${cpNumber}`}
         </p>
 
         <p className="text-[var(--text-muted)] text-xs">

@@ -1,11 +1,11 @@
 // src/widgets/button.jsx
-//
+
 // Everything about the "button" widget lives in this one file:
 //   - ButtonDef            palette entry (label/icon/desc/defaultProps) for the Page Builder sidebar
 //   - ButtonPreview        how it looks on the Page Builder canvas (design-time)
 //   - ButtonPropertyPanel  the property panel shown when this widget is selected
 //   - RuntimeButton        how it looks/behaves on the live Dynamic CP Page
-//
+
 import { BUTTON_ADDRESS_TYPES, PropInput, PropSection, getVisual, DEFAULT_VISUAL } from "./shared";
 
 // ────────────────────────────────────────────────────────────────
@@ -13,31 +13,34 @@ import { BUTTON_ADDRESS_TYPES, PropInput, PropSection, getVisual, DEFAULT_VISUAL
 // ────────────────────────────────────────────────────────────────
 
 export const buttonDef = {
-    type: "button",
-    label: "Button",
-    icon: "◉",
-    desc: "Toggle button that writes a variable",
-    defaultProps: {
-      addressType: "coil",
-      device: "",
-      address: "",
-      labelOn: "BUTTON ON",
-      labelOff: "BUTTON OFF",
-      variable: "Button1", // 🔴 UBAH KE variable
-      variant: "neon",
-      fontSize: 18,
-      width: 180,
-      height: 60,
-      visual: { ...DEFAULT_VISUAL },
-      // Simulation System
-      simulation: {
-        enabled: true,
-        mode: "manual"
-      },
-      // State preview di builder
-      builderState: 0
-    }
-  };
+  type: "button",
+  label: "Button",
+  icon: "◉",
+  desc: "Toggle button that writes a variable or navigates to a page",
+  defaultProps: {
+    addressType: "coil",
+    device: "",
+    address: "",
+    labelOn: "BUTTON ON",
+    labelOff: "BUTTON OFF",
+    variable: "Button1",
+    // Button behavior: write | navigate
+    action: "write",
+    targetPage: "",
+    variant: "neon",
+    fontSize: 18,
+    width: 180,
+    height: 60,
+    visual: { ...DEFAULT_VISUAL },
+    // Simulation System
+    simulation: {
+      enabled: true,
+      mode: "manual"
+    },
+    // State preview di builder
+    builderState: 0
+  }
+};
 
 // ────────────────────────────────────────────────────────────────
 //  PAGE BUILDER — CANVAS PREVIEW
@@ -107,188 +110,221 @@ export function ButtonPreview({ widget }) {
 //  PAGE BUILDER — PROPERTY PANEL
 // ────────────────────────────────────────────────────────────────
 
-export function ButtonPropertyPanel({ p, set, availableDevices = [] }) {
+export function ButtonPropertyPanel({ p, set, availableDevices = [], availablePages = [] }) {
   const isOn = p.builderState === 1;
 
   return (
-  <>
+    <>
+      <PropSection title="Button Action">
+        <PropInput
+          label="Action"
+          options={[
+            { value: "write", label: "Write" },
+            { value: "navigate", label: "Go to Page" },
+          ]}
+          value={p.action || "write"}
+          onChange={v => set("action", v)}
+        />
 
-    <PropSection title="Device / Address">
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
-            Device
-          </label>
-          <select
-            value={p.device || ""}
-            onChange={e => set("device", e.target.value)}
-            className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+        {p.action === "navigate" && (
+          <PropInput
+            label="Target Page"
+            options={[
+              { value: "", label: "Select page..." },
+              ...availablePages.map(page => ({
+                value: page.id,
+                label: page.name || page.id,
+              })),
+            ]}
+            value={p.targetPage || ""}
+            onChange={v => set("targetPage", v)}
+          />
+        )}
+      </PropSection>
+
+      {p.action !== "navigate" && (
+        <PropSection title="Device / Address">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                Device
+              </label>
+              <select
+                value={p.device || ""}
+                onChange={e => set("device", e.target.value)}
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+              >
+                <option value="">Select device...</option>
+                {availableDevices
+                  .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                  .map((dev) => (
+                    <option
+                      key={`${dev.type || "TCP"}-${dev.name}`}
+                      value={dev.name}
+                    >
+                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                    </option>
+                  ))}
+              </select>
+            </div>
+            <PropInput
+              label="Address"
+              value={p.address || ""}
+              onChange={v => set("address", v)}
+              placeholder="D100 / M100"
+            />
+          </div>
+        </PropSection>
+      )}
+
+      {p.action !== "navigate" && (
+        <PropSection title="Address Type">
+          <PropInput
+            label="Address Type"
+            options={BUTTON_ADDRESS_TYPES}
+            value={p.addressType || "coil"}
+            onChange={v => set("addressType", v)}
+          />
+        </PropSection>
+      )}
+
+      {p.action !== "navigate" && (
+        <PropSection title="Data Binding">
+          <PropInput
+            label="Variable"
+            value={p.variable || ""}
+            onChange={v => set("variable", v)}
+          />
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
+            Button is WRITE only. Use Coil or Holding Register.
+            Discrete Input and Input Register are intentionally not available because they are read-only.
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <PropInput
+              label="Value ON"
+              type="number"
+              value={p.valueOn ?? 1}
+              onChange={v => set("valueOn", Number(v))}
+            />
+            <PropInput
+              label="Value OFF"
+              type="number"
+              value={p.valueOff ?? 0}
+              onChange={v => set("valueOff", Number(v))}
+            />
+          </div>
+        </PropSection>
+      )}
+
+      <PropSection title="Simulation State">
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => set("builderState", 1)}
+            className="h-8 rounded-lg border text-[9px] font-bold transition-all"
+            style={{
+              background: isOn ? "var(--accent-cyan)" : "var(--bg-canvas)",
+              borderColor: isOn ? "var(--accent-cyan)" : "var(--border)",
+              color: isOn ? "var(--panel-canvas)" : "var(--text-dim)",
+              boxShadow: isOn ? "0 0 12px rgba(0,191,255,0.25)" : "none"
+            }}
           >
-            <option value="">Select device...</option>
-            {availableDevices
-              .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
-              .map((dev) => (
-                <option
-                  key={`${dev.type || "TCP"}-${dev.name}`}
-                  value={dev.name}
-                >
-                  {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
-                </option>
-              ))}
-          </select>
+            ● ON
+          </button>
+          <button
+            type="button"
+            onClick={() => set("builderState", 0)}
+            className="h-8 rounded-lg border text-[9px] font-bold transition-all"
+            style={{
+              background: !isOn ? "var(--border-soft)" : "var(--bg-canvas)",
+              borderColor: !isOn ? "var(--text-dim)" : "var(--border)",
+              color: !isOn ? "#FFFFFF" : "var(--text-dim)"
+            }}
+          >
+            ○ OFF
+          </button>
         </div>
-        <PropInput
-          label="Address"
-          value={p.address || ""}
-          onChange={v => set("address", v)}
-          placeholder="D100 / M100"
-        />
-      </div>
-    </PropSection>
-            <PropSection title="Address Type">
-      <PropInput
-          label="Address Type"
-          options={BUTTON_ADDRESS_TYPES}
-          value={p.addressType || "coil"}
-          onChange={v => set("addressType", v)}
-        />
-    </PropSection>
+        <div className="text-[8px] text-[var(--text-dim)] mt-1">
+          Builder preview only. Runtime value comes from the bound variable/device.
+        </div>
+      </PropSection>
 
-<PropSection title="Data Binding">
-      <PropInput
-        label="Variable"
-        value={p.variable || ""}
-        onChange={v => set("variable", v)}
-      />
-      <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
-        Button is WRITE only. Use Coil or Holding Register.
-        Discrete Input and Input Register are intentionally not available because they are read-only.
-      </div>
-      <div className="grid grid-cols-2 gap-2">
+      <PropSection title="Button">
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Label ON"
+            value={p.labelOn || "BUTTON ON"}
+            onChange={v => set("labelOn", v)}
+          />
+          <PropInput
+            label="Label OFF"
+            value={p.labelOff || "BUTTON OFF"}
+            onChange={v => set("labelOff", v)}
+          />
+        </div>
+
         <PropInput
-          label="Value ON"
+          label="Variant"
+          options={[
+            { value: "neon", label: "Neon" },
+            { value: "solid", label: "Solid" }
+          ]}
+          value={p.variant || "neon"}
+          onChange={v => set("variant", v)}
+        />
+
+        <PropInput
+          label="Font Size"
           type="number"
-          value={p.valueOn ?? 1}
-          onChange={v => set("valueOn", Number(v))}
+          min={8}
+          max={48}
+          value={p.fontSize ?? 18}
+          onChange={v => set("fontSize", Number(v))}
+        />
+      </PropSection>
+
+      <PropSection title="ON State Appearance">
+        <PropInput
+          label="Background"
+          type="color"
+          value={p.onBackground || "var(--accent-cyan)"}
+          onChange={v => set("onBackground", v)}
         />
         <PropInput
-          label="Value OFF"
-          type="number"
-          value={p.valueOff ?? 0}
-          onChange={v => set("valueOff", Number(v))}
-        />
-      </div>
-    </PropSection>
-
-    <PropSection title="Simulation State">
-      <div className="grid grid-cols-2 gap-2">
-        <button
-          type="button"
-          onClick={() => set("builderState", 1)}
-          className="h-8 rounded-lg border text-[9px] font-bold transition-all"
-          style={{
-            background: isOn ? "var(--accent-cyan)" : "var(--bg-canvas)",
-            borderColor: isOn ? "var(--accent-cyan)" : "var(--border)",
-            color: isOn ? "var(--panel-canvas)" : "var(--text-dim)",
-            boxShadow: isOn ? "0 0 12px rgba(0,191,255,0.25)" : "none"
-          }}
-        >
-          ● ON
-        </button>
-        <button
-          type="button"
-          onClick={() => set("builderState", 0)}
-          className="h-8 rounded-lg border text-[9px] font-bold transition-all"
-          style={{
-            background: !isOn ? "var(--border-soft)" : "var(--bg-canvas)",
-            borderColor: !isOn ? "var(--text-dim)" : "var(--border)",
-            color: !isOn ? "#FFFFFF" : "var(--text-dim)"
-          }}
-        >
-          ○ OFF
-        </button>
-      </div>
-      <div className="text-[8px] text-[var(--text-dim)] mt-1">
-        Builder preview only. Runtime value comes from the bound variable/device.
-      </div>
-    </PropSection>
-
-    <PropSection title="Button">
-      <div className="grid grid-cols-2 gap-2">
-        <PropInput
-          label="Label ON"
-          value={p.labelOn || "BUTTON ON"}
-          onChange={v => set("labelOn", v)}
+          label="Border"
+          type="color"
+          value={p.onBorder || "var(--accent-cyan)"}
+          onChange={v => set("onBorder", v)}
         />
         <PropInput
-          label="Label OFF"
-          value={p.labelOff || "BUTTON OFF"}
-          onChange={v => set("labelOff", v)}
+          label="Text"
+          type="color"
+          value={p.onTextColor || "#FFFFFF"}
+          onChange={v => set("onTextColor", v)}
         />
-      </div>
+      </PropSection>
 
-      <PropInput
-        label="Variant"
-        options={[
-          { value: "neon", label: "Neon" },
-          { value: "solid", label: "Solid" }
-        ]}
-        value={p.variant || "neon"}
-        onChange={v => set("variant", v)}
-      />
-
-      <PropInput
-        label="Font Size"
-        type="number"
-        min={8}
-        max={48}
-        value={p.fontSize ?? 18}
-        onChange={v => set("fontSize", Number(v))}
-      />
-    </PropSection>
-
-    <PropSection title="ON State Appearance">
-      <PropInput
-        label="Background"
-        type="color"
-        value={p.onBackground || "var(--accent-cyan)"}
-        onChange={v => set("onBackground", v)}
-      />
-      <PropInput
-        label="Border"
-        type="color"
-        value={p.onBorder || "var(--accent-cyan)"}
-        onChange={v => set("onBorder", v)}
-      />
-      <PropInput
-        label="Text"
-        type="color"
-        value={p.onTextColor || "#FFFFFF"}
-        onChange={v => set("onTextColor", v)}
-      />
-    </PropSection>
-
-    <PropSection title="OFF State Appearance">
-      <PropInput
-        label="Background"
-        type="color"
-        value={p.offBackground || "var(--bg-canvas)"}
-        onChange={v => set("offBackground", v)}
-      />
-      <PropInput
-        label="Border"
-        type="color"
-        value={p.offBorder || "var(--panel-mid)"}
-        onChange={v => set("offBorder", v)}
-      />
-      <PropInput
-        label="Text"
-        type="color"
-        value={p.offTextColor || "var(--panel-line)"}
-        onChange={v => set("offTextColor", v)}
-      />
-    </PropSection>
-  </>
+      <PropSection title="OFF State Appearance">
+        <PropInput
+          label="Background"
+          type="color"
+          value={p.offBackground || "var(--bg-canvas)"}
+          onChange={v => set("offBackground", v)}
+        />
+        <PropInput
+          label="Border"
+          type="color"
+          value={p.offBorder || "var(--panel-mid)"}
+          onChange={v => set("offBorder", v)}
+        />
+        <PropInput
+          label="Text"
+          type="color"
+          value={p.offTextColor || "var(--panel-line)"}
+          onChange={v => set("offTextColor", v)}
+        />
+      </PropSection>
+    </>
   );
 }
 
@@ -296,14 +332,23 @@ export function ButtonPropertyPanel({ p, set, availableDevices = [] }) {
 //  DYNAMIC CP PAGE — RUNTIME
 // ────────────────────────────────────────────────────────────────
 
-export function RuntimeButton({ widget, value, onChange }) {
+export function RuntimeButton({ widget, value, onChange, onNavigate }) {
   const p = widget.props || {};
   const v = getVisual(p);
   const variant = p.variant || "neon";
   const isOn = Number(value) === 1;
 
-  const handleToggle = () => {
-    onChange?.(isOn ? 0 : 1);
+  const handleToggle = async () => {
+    const nextValue = isOn ? 0 : 1;
+    const action = p.action || "write";
+    const targetPage = String(p.targetPage || "").trim();
+
+    if (action === "navigate") {
+      if (targetPage) onNavigate?.(targetPage);
+      return;
+    }
+
+    onChange?.(nextValue);
   };
 
   const onBg = p.onBackground || v.accentColor || "var(--accent-cyan)";
