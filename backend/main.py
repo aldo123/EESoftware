@@ -21,6 +21,7 @@ from rs232 import rs232_bp
 from tcp_ip import tcp_ip_bp
 from modbus_rtu import modbus_rtu_bp
 from vision.routes import vision_bp
+from routes.internal_variable import internal_variable_bp, init_internal_variables_db
 # ── App setup ──────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)
@@ -33,6 +34,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 init_interlock()
 init_settings()
 init_maintenance_db()
+init_internal_variables_db()
 
 # ── Register blueprints ────────────────────────────────────────
 app.register_blueprint(interlock_bp)
@@ -49,6 +51,7 @@ app.register_blueprint(rs232_bp)
 app.register_blueprint(tcp_ip_bp)
 app.register_blueprint(modbus_rtu_bp)
 app.register_blueprint(vision_bp)
+app.register_blueprint(internal_variable_bp)
 
 
 # ══════════════════════════════════════════════════════════════
