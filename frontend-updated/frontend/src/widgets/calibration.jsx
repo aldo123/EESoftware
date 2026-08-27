@@ -10,7 +10,6 @@ import {
   createParamField,
   IconTriggerPreview,
   IconTriggerRuntime,
-  ParamFieldsEditor,
   PropInput,
   PropSection,
   DEFAULT_VISUAL,
@@ -30,7 +29,7 @@ export const calibrationDef = {
     icon: "🎯",
     accentColor: "var(--accent-orange)",
     backgroundColor: "var(--panel-canvas)",
-    borderColor: "var(--panel-mid)",
+    borderColor: "transparent",
     textColor: "#FFFFFF",
     popupWidth: 380,
     fields: [
@@ -55,7 +54,7 @@ export function CalibrationPreview({ widget }) {
 //  PAGE BUILDER — PROPERTY PANEL
 // ────────────────────────────────────────────────────────────────
 
-export function CalibrationPropertyPanel({ p, set, availableDevices = [] }) {
+export function CalibrationPropertyPanel({ p, set }) {
   return (
     <>
       <PropSection title="Popup">
@@ -74,17 +73,9 @@ export function CalibrationPropertyPanel({ p, set, availableDevices = [] }) {
       <PropSection title="Appearance">
         <PropInput label="Accent" type="color" value={p.accentColor || "var(--accent-orange)"} onChange={v => set("accentColor", v)} />
         <PropInput label="Background" type="color" value={p.backgroundColor || "var(--panel-canvas)"} onChange={v => set("backgroundColor", v)} />
-        <PropInput label="Border" type="color" value={p.borderColor || "var(--panel-mid)"} onChange={v => set("borderColor", v)} />
         <PropInput label="Text" type="color" value={p.textColor || "#FFFFFF"} onChange={v => set("textColor", v)} />
       </PropSection>
 
-      <PropSection title="Parameter Kalibrasi">
-        <ParamFieldsEditor
-          fields={p.fields}
-          onChange={v => set("fields", v)}
-          availableDevices={availableDevices}
-        />
-      </PropSection>
     </>
   );
 }
