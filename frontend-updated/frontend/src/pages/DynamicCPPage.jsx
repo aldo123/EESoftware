@@ -217,6 +217,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
     if (value === "tcp" || value === "tcpip") return "tcp";
     if (value === "com" || value === "rs232" || value === "serial") return "com";
+    if (value === "internal" || value === "variable" || value === "internalvariable" || value === "internalvar") return "internal";
     return value;
   }, []);
 
@@ -349,6 +350,11 @@ export default function DynamicCPPage({ cpNumber, user }) {
         const source = normalizeInputSource(p.inputSource);
         const inputType = String(p.inputType || "realtime").trim().toLowerCase();
 
+        // Internal variables are stored in fieldValues and are not PLC bindings.
+        if (source === "internal") {
+          return false;
+        }
+
         // COM + Realtime is fed by cp-scan, not Modbus/TCP.
         // Sequential is controlled by Logic Builder.
         if (source !== "tcp" || inputType !== "realtime") {
@@ -365,6 +371,276 @@ export default function DynamicCPPage({ cpNumber, user }) {
     [getTCPDevice, isValidPLCBinding, normalizeInputSource, normalizeType]
   );
 
+
+  // ============================================================
+  // TEXTBOX CALCULATION
+  // ============================================================
+  const resolveCalculationSource = useCallback(
+    (widget, source) => {
+      const s = source || {};
+      const sourceType = String(s.sourceType || "internal").trim().toLowerCase();
+
+      if (sourceType === "internal") {
+        const name = String(s.variable || "").trim();
+        if (!name) return undefined;
+
+        const value = fieldValues[name];
+        const number = Number(value);
+        return value === undefined || value === null || value === ""
+          ? undefined
+          : Number.isFinite(number)
+            ? number
+            : undefined;
+      }
+
+      if (sourceType === "tcp") {
+        const device = getTCPDevice(s.device);
+        const addressType = normalizeType(s.addressType);
+        const address = s.address;
+
+        if (
+          !device ||
+          !addressType ||
+          address === undefined ||
+          address === null ||
+          String(address).trim() === ""
+        ) {
+          return undefined;
+        }
+
+        const bindingId =
+          `${widget.id}:calc:${s.id || s.alias || "source"}`;
+
+        const value = tcpValues[bindingId];
+        const number = Number(value);
+
+        return Number.isFinite(number) ? number : undefined;
+      }
+
+      return undefined;
+    },
+    [fieldValues, getTCPDevice, normalizeType, tcpValues]
+  );
+
+  const evaluateCalculation = useCallback((formula, variables) => {
+    const expression = String(formula || "").trim();
+    if (!expression) return undefined;
+
+    const tokens = [];
+    let i = 0;
+
+    while (i < expression.length) {
+      const ch = expression[i];
+
+      if (/\s/.test(ch)) {
+        i += 1;
+        continue;
+      }
+
+      if (/[0-9.]/.test(ch)) {
+        let j = i + 1;
+        while (j < expression.length && /[0-9.eE]/.test(expression[j])) {
+          j += 1;
+        }
+
+        const value = Number(expression.slice(i, j));
+        if (!Number.isFinite(value)) return undefined;
+
+        tokens.push({ type: "number", value });
+        i = j;
+        continue;
+      }
+
+      if (/[A-Za-z_]/.test(ch)) {
+        let j = i + 1;
+        while (j < expression.length && /[A-Za-z0-9_.]/.test(expression[j])) {
+          j += 1;
+        }
+
+        const name = expression.slice(i, j);
+
+        if (!Object.prototype.hasOwnProperty.call(variables, name)) {
+          return undefined;
+        }
+
+        const value = Number(variables[name]);
+        if (!Number.isFinite(value)) return undefined;
+
+        tokens.push({ type: "number", value });
+        i = j;
+        continue;
+      }
+
+      if ("+-*/%()".includes(ch)) {
+        tokens.push({ type: "operator", value: ch });
+        i += 1;
+        continue;
+      }
+
+      return undefined;
+    }
+
+    const output = [];
+    const operators = [];
+    const precedence = {
+      "+": 1,
+      "-": 1,
+      "*": 2,
+      "/": 2,
+      "%": 2,
+    };
+
+    const isOperator = (value) =>
+      ["+", "-", "*", "/", "%"].includes(value);
+
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index];
+
+      if (token.type === "number") {
+        output.push(token);
+        continue;
+      }
+
+      let op = token.value;
+
+      // Unary +/-.
+      if (
+        (op === "+" || op === "-") &&
+        (index === 0 ||
+          tokens[index - 1]?.value === "(" ||
+          isOperator(tokens[index - 1]?.value))
+      ) {
+        output.push({ type: "number", value: 0 });
+      }
+
+      if (op === "(") {
+        operators.push(op);
+        continue;
+      }
+
+      if (op === ")") {
+        let matched = false;
+
+        while (operators.length) {
+          const top = operators.pop();
+
+          if (top === "(") {
+            matched = true;
+            break;
+          }
+
+          output.push({ type: "operator", value: top });
+        }
+
+        if (!matched) return undefined;
+        continue;
+      }
+
+      while (
+        operators.length &&
+        operators[operators.length - 1] !== "(" &&
+        precedence[operators[operators.length - 1]] >= precedence[op]
+      ) {
+        output.push({
+          type: "operator",
+          value: operators.pop(),
+        });
+      }
+
+      operators.push(op);
+    }
+
+    while (operators.length) {
+      const top = operators.pop();
+
+      if (top === "(") return undefined;
+
+      output.push({ type: "operator", value: top });
+    }
+
+    const stack = [];
+
+    for (const token of output) {
+      if (token.type === "number") {
+        stack.push(token.value);
+        continue;
+      }
+
+      if (stack.length < 2) return undefined;
+
+      const b = stack.pop();
+      const a = stack.pop();
+
+      let result;
+
+      switch (token.value) {
+        case "+":
+          result = a + b;
+          break;
+        case "-":
+          result = a - b;
+          break;
+        case "*":
+          result = a * b;
+          break;
+        case "/":
+          if (b === 0) return undefined;
+          result = a / b;
+          break;
+        case "%":
+          if (b === 0) return undefined;
+          result = a % b;
+          break;
+        default:
+          return undefined;
+      }
+
+      if (!Number.isFinite(result)) return undefined;
+
+      stack.push(result);
+    }
+
+    return stack.length === 1 && Number.isFinite(stack[0])
+      ? stack[0]
+      : undefined;
+  }, []);
+
+  const calculateTextBox = useCallback(
+    (widget) => {
+      const p = widget?.props || {};
+      const sources = Array.isArray(p.calculationInputs)
+        ? p.calculationInputs
+        : [];
+
+      const variables = {};
+
+      for (const source of sources) {
+        const alias = String(source?.alias || "").trim();
+        if (!alias) continue;
+
+        const value = resolveCalculationSource(widget, source);
+
+        if (value === undefined) {
+          return undefined;
+        }
+
+        variables[alias] = value;
+      }
+
+      const result = evaluateCalculation(
+        p.calculationFormula,
+        variables
+      );
+
+      if (result === undefined) {
+        return undefined;
+      }
+
+      return Number(result.toFixed(3));
+    },
+    [evaluateCalculation, resolveCalculationSource]
+  );
+
   const getRuntimeValue = useCallback(
     (widget) => {
       const p = widget?.props || {};
@@ -373,16 +649,40 @@ export default function DynamicCPPage({ cpNumber, user }) {
       // TEXTBOX COMMUNICATION SOURCES
       // ----------------------------------------------------------
       if (widget?.type === "textbox") {
+        const mode = String(p.textMode || "read").trim().toLowerCase();
         const source = normalizeInputSource(p.inputSource);
         const inputType = String(p.inputType || "realtime").trim().toLowerCase();
+        const fallback = p.defaultText ?? p.text ?? "TEXT";
+
+        if (mode === "static") return fallback;
+
+        if (mode === "calculation") {
+          const resultVariable = String(
+            p.calculationResultVariable || ""
+          ).trim();
+
+          if (!resultVariable) return fallback;
+
+          return fieldValues[resultVariable] ?? fallback;
+        }
 
         // COM + Realtime: value comes directly from cp-scan.
         if (source === "com" && inputType === "realtime") {
           const value = comTextBoxValues[String(widget.id)];
-          return value !== undefined ? value : (p.text ?? "");
+          return value !== undefined ? value : fallback;
         }
 
         // TCP/IP + Realtime: value comes from useTCPPLC.
+        // Internal Variable: the variable name is the source of truth.
+        if (source === "internal") {
+          const variableName = String(p.variable || p.fieldKey || "").trim();
+          if (!variableName) return fallback;
+          const internalValue = fieldValues[variableName];
+          return internalValue !== undefined && internalValue !== null
+            ? internalValue
+            : fallback;
+        }
+
         if (source === "tcp" && inputType === "realtime" && hasPLCBinding(widget)) {
           const direct = tcpValues[String(widget.id)];
           if (direct !== undefined) return direct;
@@ -397,7 +697,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
             })
             : undefined;
 
-          return resolved !== undefined ? resolved : (p.text ?? "");
+          return resolved !== undefined ? resolved : fallback;
         }
       }
 
@@ -633,6 +933,52 @@ export default function DynamicCPPage({ cpNumber, user }) {
     ...(Array.isArray(pages.calibration?.widgets) ? pages.calibration.widgets : []),
   ], [pages]);
 
+  useEffect(() => {
+    if (!runtimeWidgets.length) return;
+
+    const calculationWidgets = runtimeWidgets.filter(
+      (widget) =>
+        widget?.type === "textbox" &&
+        String(widget?.props?.textMode || "").trim().toLowerCase() ===
+        "calculation"
+    );
+
+    if (!calculationWidgets.length) return;
+
+    const updates = {};
+
+    calculationWidgets.forEach((widget) => {
+      const variable = String(
+        widget?.props?.calculationResultVariable || ""
+      ).trim();
+
+      if (!variable) return;
+
+      const result = calculateTextBox(widget);
+
+      if (result !== undefined) {
+        updates[variable] = result;
+      }
+    });
+
+    const keys = Object.keys(updates);
+    if (!keys.length) return;
+
+    setFieldValues((previous) => {
+      let changed = false;
+      const next = { ...previous };
+
+      keys.forEach((key) => {
+        if (next[key] !== updates[key]) {
+          next[key] = updates[key];
+          changed = true;
+        }
+      });
+
+      return changed ? next : previous;
+    });
+  }, [runtimeWidgets, calculateTextBox]);
+
   // ============================================================
   // REGISTER PAGE BUILDER PLC BINDINGS
   // ============================================================
@@ -861,16 +1207,86 @@ export default function DynamicCPPage({ cpNumber, user }) {
       }
 
       // ----------------------------------------------------------
-      // TextBox: TCP/IP + Realtime only.
-      // COM + Realtime is handled by cp-scan.
-      // Sequential is handled by Logic Builder.
+      // TextBox data sources:
+      // - Internal Variable: no PLC binding; runtime fieldValues is used.
+      // - TCP/IP + Realtime: use Modbus/TCP polling.
+      // - COM + Realtime: handled by cp-scan.
+      // Sequential remains handled by Logic Builder.
       // ----------------------------------------------------------
       if (type === "textbox") {
+        const textMode = String(p.textMode || "read").trim().toLowerCase();
         const source = normalizeInputSource(p.inputSource);
         const inputType = String(p.inputType || "realtime").trim().toLowerCase();
 
+        // Static Text has no PLC binding.
+        if (textMode === "static") return;
+
+        // Calculation TextBox:
+        // Internal sources are read from fieldValues.
+        // TCP sources are registered individually below.
+        if (textMode === "calculation") {
+          const inputs = Array.isArray(p.calculationInputs)
+            ? p.calculationInputs
+            : [];
+
+          inputs.forEach((item, index) => {
+            const itemSource = String(
+              item?.sourceType || "internal"
+            ).trim().toLowerCase();
+
+            if (itemSource !== "tcp") return;
+            if (!item?.device) return;
+
+            if (
+              item?.address === undefined ||
+              item?.address === null ||
+              String(item.address).trim() === ""
+            ) {
+              return;
+            }
+
+            const device = getTCPDevice(item.device);
+            if (!device) return;
+
+            const addressType = normalizeType(item.addressType);
+            if (!addressType) return;
+
+            if (!isValidPLCBinding("textbox", addressType)) return;
+
+            const bindingId =
+              `${widget.id}:calc:${item.id || item.alias || `source_${index + 1}`}`;
+
+            registerBinding({
+              widgetId: bindingId,
+              widgetType: "textbox",
+              device,
+              addressType,
+              address: item.address,
+            });
+          });
+
+          return;
+        }
+
+        // Internal Variable mode is stored in fieldValues, not PLC polling.
+        if (source === "internal") {
+          return;
+        }
+
+        // Read / Display and Input + Write use the existing TCP realtime path.
         if (source !== "tcp" || inputType !== "realtime") {
           return;
+        }
+
+        if (textMode === "write") {
+          const writeType = normalizeType(p.addressType);
+
+          if (writeType !== "coil" && writeType !== "holding_register") {
+            console.warn(
+              `[DynamicCPPage] TextBox write binding must use Coil or Holding Register: ${widget.id}`
+            );
+            return;
+          }
         }
       } else if (
         type !== "button" &&
@@ -1526,6 +1942,157 @@ export default function DynamicCPPage({ cpNumber, user }) {
     );
 
   // ============================================================
+  // TEXTBOX TCP/IP WRITE
+  // ============================================================
+  const handleTextBoxWrite = useCallback(
+    async (widget, rawValue) => {
+      const p = widget?.props || {};
+      const mode = String(p.textMode || "read").trim().toLowerCase();
+
+      if (mode !== "write") return;
+
+      const source = normalizeInputSource(p.inputSource);
+      const variableName = String(p.variable || "").trim();
+      const dataType = String(p.dataType || "number").trim().toLowerCase();
+
+      // ----------------------------------------------------------
+      // INTERNAL VARIABLE WRITE
+      // ----------------------------------------------------------
+      // The variable name is the key in DynamicCPPage.fieldValues.
+      // No PLC/device is involved.
+      if (source === "internal") {
+        if (!variableName) {
+          addLog("TextBox internal variable name is empty", "var(--accent-red)");
+          return;
+        }
+
+        let value = rawValue;
+
+        if (dataType === "boolean") {
+          const normalized = String(rawValue ?? "").trim().toLowerCase();
+          if (["1", "true", "on"].includes(normalized)) value = 1;
+          else if (["0", "false", "off"].includes(normalized)) value = 0;
+          else {
+            addLog("Internal boolean value must be 0/1 or ON/OFF", "var(--accent-red)");
+            return;
+          }
+        } else if (dataType === "integer") {
+          value = Number.parseInt(String(rawValue).trim(), 10);
+          if (!Number.isFinite(value)) {
+            addLog("Internal variable value must be an integer", "var(--accent-red)");
+            return;
+          }
+        } else if (dataType === "number") {
+          value = Number(String(rawValue).trim());
+          if (!Number.isFinite(value)) {
+            addLog("Internal variable value must be numeric", "var(--accent-red)");
+            return;
+          }
+        } else {
+          value = String(rawValue ?? "");
+        }
+
+        setFieldValues((previous) => ({
+          ...previous,
+          [variableName]: value,
+        }));
+
+        console.log(
+          `[DynamicCPPage] TextBox internal variable write: ${widget.id} -> ${variableName} =`,
+          value
+        );
+
+        addLog(
+          `TextBox variable ${variableName} = ${String(value)}`,
+          "var(--accent-green)"
+        );
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // TCP/IP WRITE
+      // ----------------------------------------------------------
+      if (source !== "tcp") {
+        addLog("TextBox write requires Internal Variable or TCP/IP source", "var(--accent-red)");
+        return;
+      }
+
+      const device = getTCPDevice(p.device);
+      const addressType = normalizeType(p.addressType);
+
+      if (!device || !addressType || p.address === undefined || p.address === null || String(p.address).trim() === "") {
+        addLog("TextBox TCP/IP write configuration is incomplete", "var(--accent-red)");
+        return;
+      }
+
+      if (addressType !== "coil" && addressType !== "holding_register") {
+        addLog("TextBox TCP/IP write supports Coil or Holding Register only", "var(--accent-red)");
+        return;
+      }
+
+      let value;
+
+      if (dataType === "boolean") {
+        const normalized = String(rawValue ?? "").trim().toLowerCase();
+        if (["1", "true", "on"].includes(normalized)) value = 1;
+        else if (["0", "false", "off"].includes(normalized)) value = 0;
+        else {
+          addLog("TextBox boolean value must be 0/1 or ON/OFF", "var(--accent-red)");
+          return;
+        }
+      } else if (dataType === "integer") {
+        value = Number.parseInt(String(rawValue).trim(), 10);
+        if (!Number.isFinite(value)) {
+          addLog("TextBox value must be an integer", "var(--accent-red)");
+          return;
+        }
+      } else {
+        value = Number(String(rawValue).trim());
+        if (!Number.isFinite(value)) {
+          addLog("TextBox TCP/IP value must be numeric", "var(--accent-red)");
+          return;
+        }
+      }
+
+      if (addressType === "coil") {
+        value = value ? 1 : 0;
+      } else if (!Number.isInteger(value) || value < 0 || value > 65535) {
+        addLog("Holding Register value must be an integer from 0 to 65535", "var(--accent-red)");
+        return;
+      }
+
+      try {
+        const result = await writeTCPValue({
+          widgetId: widget.id,
+          device,
+          addressType,
+          address: p.address,
+          value,
+        });
+
+        if (result && result.success === false) {
+          throw new Error(result.message || "PLC write failed");
+        }
+
+        console.log(
+          `[DynamicCPPage] TextBox PLC write: ${widget.id} -> ${device.name} / ${addressType} / ${p.address} = ${value}`
+        );
+      } catch (err) {
+        console.error(`[DynamicCPPage] TextBox PLC write failed for ${widget.id}:`, err);
+        addLog(`TextBox PLC write failed: ${err.message}`, "var(--accent-red)");
+      }
+    },
+    [
+      addLog,
+      getTCPDevice,
+      normalizeInputSource,
+      normalizeType,
+      setFieldValues,
+      writeTCPValue,
+    ]
+  );
+
+  // ============================================================
   // TEST TABLE VALUE RESOLUTION
   // ============================================================
   const getTestTableValue = useCallback((widget, row) => {
@@ -1564,7 +2131,14 @@ export default function DynamicCPPage({ cpNumber, user }) {
     if (type === "button") return <RuntimeButton key={id} widget={widget} value={runtimeValue} onChange={(value) => handleButtonChange(widget, value)} />;
     if (type === "light") return <RuntimeLight key={id} widget={widget} value={runtimeValue} />;
     if (type === "shape") return <RuntimeShape key={id} widget={widget} />;
-    if (type === "textbox") return <RuntimeTextBox key={id} widget={widget} value={runtimeValue} />;
+    if (type === "textbox") return (
+      <RuntimeTextBox
+        key={id}
+        widget={widget}
+        value={runtimeValue}
+        onWrite={(value) => handleTextBoxWrite(widget, value)}
+      />
+    );
     if (type === "linechart") return <RuntimeLineChart key={id} widget={widget} history={chartHistory[id] || []} running={chartRunning[id] !== false} />;
     if (type === "gauge") return <RuntimeGauge key={id} widget={widget} value={runtimeValue} />;
     if (type === "testtable") return <RuntimeTestTable key={id} widget={widget} getValue={getTestTableValue} />;
@@ -1577,7 +2151,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
       return <RuntimeTimingLimit key={id} widget={widget} plc={plcBundle} />;
     }
     return null;
-  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage]);
+  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage]);
 
   // ============================================================
   // RENDER STATES

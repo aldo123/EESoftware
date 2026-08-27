@@ -1079,11 +1079,6 @@ export function useTCPPLC({
                   .trim()
                   .toLowerCase();
 
-              // Buttons are write-only.
-              if (component === "button") {
-                return;
-              }
-
               const normalizedDevice =
                 normalizeDevice(
                   binding.device

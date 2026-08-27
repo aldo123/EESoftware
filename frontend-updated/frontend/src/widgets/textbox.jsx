@@ -10,6 +10,8 @@
 // Keep the existing exports and runtime contract so PageBuilder.jsx,
 // DynamicCPPage.jsx and widgets/index.js do not need to change.
 
+import React from "react";
+
 import {
   PropInput,
   PropSection,
@@ -270,10 +272,24 @@ export const textboxDef = {
 
   defaultProps: {
     text: "TEXT",
+    defaultText: "TEXT",
     variable: "",
 
-    // DATA INPUT
-    // Exactly two communication sources: TCP/IP or COM/RS232.
+    // TEXT MODE
+    // static = fixed text, read = display from the selected source,
+    // write = user input written to the selected source (Internal Variable or TCP/IP).
+    textMode: "read",
+    writeTrigger: "enter",
+    dataType: "number",
+
+    // CALCULATION
+    // Each item can come from an Internal Variable or TCP/IP address.
+    calculationFormula: "",
+    calculationResultVariable: "",
+    calculationInputs: [],
+
+    // DATA SOURCE
+    // Internal Variable, TCP/IP, or COM/RS232.
     inputSource: "tcp",
     inputType: "realtime",
     device: "",
@@ -843,7 +859,7 @@ export function TextBoxPreview({ widget }) {
     <div className="relative w-full h-full overflow-visible">
       <TextBoxSurface
         p={p}
-        textValue={p.text ?? "TEXT"}
+        textValue={p.defaultText ?? p.text ?? "TEXT"}
         preview
       />
     </div>
@@ -857,160 +873,321 @@ export function TextBoxPreview({ widget }) {
 export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
   return (
     <>
-      <PropSection title="Data Input">
+      <PropSection title="Text Mode">
         <PropInput
-          label="Input Source"
+          label="Mode"
           options={[
-            { value: "tcp", label: "TCP / IP" },
-            { value: "com", label: "COM / RS232" },
+            { value: "static", label: "Static Text" },
+            { value: "read", label: "Read / Display" },
+            { value: "write", label: "Input + Write" },
+            { value: "calculation", label: "Calculation" },
           ]}
-          value={p.inputSource || "tcp"}
-          onChange={(v) => set("inputSource", v)}
+          value={p.textMode || "read"}
+          onChange={(v) => set("textMode", v)}
         />
 
         <PropInput
-          label="Input Type"
-          options={[
-            { value: "realtime", label: "Realtime" },
-            { value: "sequential", label: "Sequential" },
-          ]}
-          value={p.inputType || "realtime"}
-          onChange={(v) => set("inputType", v)}
+          label="Default Text"
+          value={p.defaultText ?? p.text ?? "TEXT"}
+          onChange={(v) => set("defaultText", v)}
+          placeholder="Shown when no runtime value is available"
         />
 
-        {(p.inputSource === "tcp" ||
-          String(p.inputSource || "").toLowerCase() === "tcpip" ||
-          String(p.inputSource || "").toLowerCase() === "tcp/ip") && (
-          <>
-            <div>
-              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
-                TCP / IP Device
-              </label>
-              <select
-                value={p.device || ""}
-                onChange={(e) => set("device", e.target.value)}
-                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
-              >
-                <option value="">Select device...</option>
-                {availableDevices
-                  .filter((dev) => String(dev?.type || "").toUpperCase() === "TCP")
-                  .map((dev) => (
-                    <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
-                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <PropInput
-                label="Address"
-                value={p.address || ""}
-                onChange={(v) => set("address", v)}
-                placeholder="D100 / M100 / 100"
-              />
-              <PropInput
-                label="Address Type"
-                options={[
-                  { value: "coil", label: "Coil (FC01)" },
-                  { value: "discrete_input", label: "Discrete Input (FC02)" },
-                  { value: "holding_register", label: "Holding Register (FC03)" },
-                  { value: "input_register", label: "Input Register (FC04)" },
-                ]}
-                value={p.addressType || "holding_register"}
-                onChange={(v) => set("addressType", v)}
-              />
-            </div>
-          </>
+        {p.textMode === "write" && (
+          <PropInput
+            label="Write Data Type"
+            options={[
+              { value: "number", label: "Number" },
+              { value: "integer", label: "Integer" },
+              { value: "boolean", label: "Boolean / 0-1" },
+              { value: "text", label: "Text / String" },
+            ]}
+            value={p.dataType || "number"}
+            onChange={(v) => set("dataType", v)}
+          />
         )}
 
-        {(p.inputSource === "com" ||
-          String(p.inputSource || "").toLowerCase() === "rs232") && (
-          <>
-            <div>
-              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
-                COM / RS232 Source
-              </label>
-              <select
-                value={p.sourceDevice || ""}
-                onChange={(e) => set("sourceDevice", e.target.value)}
-                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
-              >
-                <option value="">Select device...</option>
-                {availableDevices
-                  .filter((dev) => {
-                    const type = String(dev?.type || "").toUpperCase();
-                    return type === "COM" || type === "RS232";
-                  })
-                  .map((dev) => (
-                    <option key={`${dev.type || "COM"}-${dev.name}`} value={dev.name}>
-                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          </>
-        )}
-
-        {p.inputType === "sequential" && (
+        {p.textMode === "write" && (
           <>
             <PropInput
-              label="Logic Variable"
-              value={p.variable || ""}
-              onChange={(v) => set("variable", v)}
-              placeholder="Result / ScanData / PartSN"
+              label="Write Trigger"
+              options={[
+                { value: "enter", label: "Enter Key" },
+                { value: "blur", label: "When Focus Leaves" },
+              ]}
+              value={p.writeTrigger || "enter"}
+              onChange={(v) => set("writeTrigger", v)}
             />
-            <div className="text-[8px] text-[var(--text-dim)] leading-relaxed">
-              Sequential mode is disabled for direct communication input.
-              The Text Box only updates when Logic Builder enables the sequence
-              and writes this Logic Variable. Realtime displays communication input immediately.
+
+            <div className="text-[8px] text-[var(--text-dim)] mt-1">
+              Write mode writes to the selected source. TCP/IP writes to Coil/Holding Register; Internal Variable writes by variable name.
             </div>
           </>
         )}
       </PropSection>
 
-      <PropSection title="Text Position">
-        <PropInput
-          label="Horizontal"
-          options={[
-            { value: "left", label: "Left" },
-            { value: "center", label: "Center" },
-            { value: "right", label: "Right" },
-          ]}
-          value={p.textAlign || "center"}
-          onChange={(v) => set("textAlign", v)}
-        />
-
-        <PropInput
-          label="Vertical"
-          options={[
-            { value: "top", label: "Top" },
-            { value: "center", label: "Center" },
-            { value: "bottom", label: "Bottom" },
-          ]}
-          value={p.verticalAlign || "center"}
-          onChange={(v) => set("verticalAlign", v)}
-        />
-
-        <div className="grid grid-cols-2 gap-2">
+      {(p.textMode === "read" || p.textMode === "write") && (
+        <PropSection title="Data Source">
           <PropInput
-            label="Offset X"
-            type="number"
-            min={-500}
-            max={500}
-            value={p.textOffsetX ?? 0}
-            onChange={(v) => set("textOffsetX", Number(v))}
+            label="Source"
+            options={[
+              { value: "internal", label: "Internal Variable" },
+              { value: "tcp", label: "TCP / IP" },
+              { value: "com", label: "COM / RS232" },
+            ]}
+            value={p.inputSource || "tcp"}
+            onChange={(v) => set("inputSource", v)}
           />
+
+          <div className="text-[8px] text-[var(--text-dim)] mt-1">
+            {String(p.inputSource || "tcp").toLowerCase() === "internal"
+              ? "Internal variable: read/write by variable name inside the HMI runtime."
+              : String(p.inputSource || "tcp").toLowerCase() === "tcp"
+                ? "TCP/IP: read from PLC and, in Write mode, write to Coil or Holding Register."
+                : "COM/RS232: read/display source."}
+          </div>
+
+          {String(p.inputSource || "tcp").toLowerCase() === "internal" && (
+            <>
+              <PropInput
+                label="Variable Name"
+                value={p.variable || ""}
+                onChange={(v) => set("variable", v)}
+                placeholder="Example: ProductCount / Setpoint"
+              />
+
+              <div className="text-[8px] text-[var(--text-dim)] mt-1">
+                Read and Write use this exact internal variable name. The value is shared with the runtime field variable system.
+              </div>
+            </>
+          )}
+
+          {String(p.inputSource || "tcp").toLowerCase() !== "internal" && (
+            <PropInput
+              label="Input Type"
+              options={[
+                { value: "realtime", label: "Realtime" },
+                { value: "sequential", label: "Sequential" },
+              ]}
+              value={p.inputType || "realtime"}
+              onChange={(v) => set("inputType", v)}
+            />
+          )}
+
+          {(String(p.inputSource || "tcp").toLowerCase() === "tcp" ||
+            String(p.inputSource || "").toLowerCase() === "tcpip" ||
+            String(p.inputSource || "").toLowerCase() === "tcp/ip") && (
+            <>
+              <div>
+                <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                  TCP / IP Device
+                </label>
+                <select
+                  value={p.device || ""}
+                  onChange={(e) => set("device", e.target.value)}
+                  className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+                >
+                  <option value="">Select device...</option>
+                  {availableDevices
+                    .filter((dev) => String(dev?.type || "").toUpperCase() === "TCP")
+                    .map((dev) => (
+                      <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
+                        {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <PropInput
+                  label="Address"
+                  value={p.address || ""}
+                  onChange={(v) => set("address", v)}
+                  placeholder="HR9 / Coil 9"
+                />
+                <PropInput
+                  label="Address Type"
+                  options={[
+                    { value: "coil", label: "Coil" },
+                    { value: "holding_register", label: "Holding Register" },
+                    { value: "discrete_input", label: "Discrete Input" },
+                    { value: "input_register", label: "Input Register" },
+                  ]}
+                  value={p.addressType || "holding_register"}
+                  onChange={(v) => set("addressType", v)}
+                />
+              </div>
+            </>
+          )}
+
+          {String(p.inputSource || "").toLowerCase() === "com" && (
+            <PropInput
+              label="Source Device"
+              value={p.sourceDevice || ""}
+              onChange={(v) => set("sourceDevice", v)}
+              placeholder="Scanner / COM source"
+            />
+          )}
+
+          {p.textMode === "write" && String(p.inputSource || "tcp").toLowerCase() === "com" && (
+            <div className="text-[8px] text-[var(--accent-amber)] mt-1">
+              COM / RS232 write is not supported by Text Box. Use Internal Variable or TCP / IP.
+            </div>
+          )}
+        </PropSection>
+      )}
+
+      {p.textMode === "calculation" && (
+        <PropSection title="Calculation">
           <PropInput
-            label="Offset Y"
-            type="number"
-            min={-500}
-            max={500}
-            value={p.textOffsetY ?? 0}
-            onChange={(v) => set("textOffsetY", Number(v))}
+            label="Formula"
+            value={p.calculationFormula || ""}
+            onChange={(v) => set("calculationFormula", v)}
+            placeholder="Example: (Temperature + Offset) / Pressure"
           />
-        </div>
-      </PropSection>
+
+          <PropInput
+            label="Result Variable"
+            value={p.calculationResultVariable || ""}
+            onChange={(v) => set("calculationResultVariable", v)}
+            placeholder="Example: FinalResult"
+          />
+
+          <div className="text-[8px] text-[var(--text-dim)] mt-1 mb-2">
+            Use the Alias names below in the formula. Supported operators:
+            +, -, *, /, %, and parentheses.
+          </div>
+
+          {(Array.isArray(p.calculationInputs) ? p.calculationInputs : []).map((item, index) => {
+            const itemValue = item || {};
+            const updateItem = (patch) => {
+              const next = Array.isArray(p.calculationInputs)
+                ? [...p.calculationInputs]
+                : [];
+              next[index] = { ...itemValue, ...patch };
+              set("calculationInputs", next);
+            };
+
+            const removeItem = () => {
+              const next = Array.isArray(p.calculationInputs)
+                ? p.calculationInputs.filter((_, i) => i !== index)
+                : [];
+              set("calculationInputs", next);
+            };
+
+            return (
+              <div
+                key={itemValue.id || `calc-input-${index}`}
+                className="mb-2 p-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)]"
+              >
+                <div className="grid grid-cols-2 gap-2">
+                  <PropInput
+                    label="Alias"
+                    value={itemValue.alias || ""}
+                    onChange={(v) => updateItem({ alias: v })}
+                    placeholder="Temperature"
+                  />
+
+                  <PropInput
+                    label="Source"
+                    options={[
+                      { value: "internal", label: "Internal Variable" },
+                      { value: "tcp", label: "TCP / IP" },
+                    ]}
+                    value={itemValue.sourceType || "internal"}
+                    onChange={(v) => updateItem({ sourceType: v })}
+                  />
+                </div>
+
+                {(itemValue.sourceType || "internal") === "internal" ? (
+                  <PropInput
+                    label="Variable Name"
+                    value={itemValue.variable || ""}
+                    onChange={(v) => updateItem({ variable: v })}
+                    placeholder="ProductCount"
+                  />
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                        TCP / IP Device
+                      </label>
+                      <select
+                        value={itemValue.device || ""}
+                        onChange={(e) => updateItem({ device: e.target.value })}
+                        className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+                      >
+                        <option value="">Select device...</option>
+                        {availableDevices
+                          .filter((dev) => String(dev?.type || "").toUpperCase() === "TCP")
+                          .map((dev) => (
+                            <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
+                              {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      <PropInput
+                        label="Address"
+                        value={itemValue.address ?? ""}
+                        onChange={(v) => updateItem({ address: v })}
+                        placeholder="9"
+                      />
+                      <PropInput
+                        label="Address Type"
+                        options={[
+                          { value: "coil", label: "Coil" },
+                          { value: "discrete_input", label: "Discrete Input" },
+                          { value: "holding_register", label: "Holding Register" },
+                          { value: "input_register", label: "Input Register" },
+                        ]}
+                        value={itemValue.addressType || "holding_register"}
+                        onChange={(v) => updateItem({ addressType: v })}
+                      />
+                    </div>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={removeItem}
+                  className="mt-2 px-2 py-1 text-[9px] rounded border border-[var(--accent-red)] text-[var(--accent-red)]"
+                >
+                  Remove Source
+                </button>
+              </div>
+            );
+          })}
+
+          <button
+            type="button"
+            onClick={() => {
+              const next = Array.isArray(p.calculationInputs)
+                ? [...p.calculationInputs]
+                : [];
+              next.push({
+                id: `calc_${Date.now()}_${next.length}`,
+                alias: `Source${next.length + 1}`,
+                sourceType: "internal",
+                variable: "",
+                device: "",
+                addressType: "holding_register",
+                address: "",
+              });
+              set("calculationInputs", next);
+            }}
+            className="w-full h-8 rounded border border-[var(--accent-green)] text-[var(--accent-green)] text-[9px] font-semibold"
+          >
+            + Add Calculation Source
+          </button>
+
+          <div className="mt-2 text-[8px] text-[var(--text-dim)]">
+            Example: Temperature + Offset, (Speed * Ratio) / 60
+          </div>
+        </PropSection>
+      )}
 
       <PropSection title="Icon">
         <PropInput
@@ -1355,13 +1532,28 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
 // DYNAMIC CP PAGE — RUNTIME
 // ────────────────────────────────────────────────────────────────
 
-export function RuntimeTextBox({ widget, value }) {
+export function RuntimeTextBox({ widget, value, onWrite }) {
   const p = widget.props || {};
+  const mode = p.textMode || "read";
+  const fallback = p.defaultText ?? p.text ?? "TEXT";
+  const externalValue =
+    value === undefined || value === null ? fallback : String(value);
 
-  const displayText =
-    value === undefined || value === null
-      ? (p.text ?? "TEXT")
-      : String(value);
+  const [draft, setDraft] = React.useState(externalValue);
+  const [focused, setFocused] = React.useState(false);
+
+  // Static/read always follow the external value.
+  // Write mode follows PLC read-back whenever the user is not editing.
+  React.useEffect(() => {
+    if (!focused || mode !== "write") {
+      setDraft(externalValue);
+    }
+  }, [externalValue, focused, mode]);
+
+  const commit = React.useCallback(async () => {
+    if (mode !== "write" || !onWrite) return;
+    await onWrite(draft);
+  }, [draft, mode, onWrite]);
 
   const runtimeProps = {
     ...p,
@@ -1370,6 +1562,70 @@ export function RuntimeTextBox({ widget, value }) {
       `${widget.x || 0}-${widget.y || 0}-${p.frameStyle || "standard"}`,
   };
 
+  if (mode === "static") {
+    return (
+      <div
+        className="absolute"
+        style={{
+          left: widget.x,
+          top: widget.y,
+          width: p.width,
+          height: p.height,
+          overflow: "visible",
+        }}
+      >
+        <TextBoxSurface
+          p={runtimeProps}
+          textValue={fallback}
+          preview={false}
+        />
+      </div>
+    );
+  }
+
+  if (mode === "calculation") {
+    return (
+      <div
+        className="absolute"
+        style={{
+          left: widget.x,
+          top: widget.y,
+          width: p.width,
+          height: p.height,
+          overflow: "visible",
+        }}
+      >
+        <TextBoxSurface
+          p={runtimeProps}
+          textValue={externalValue}
+          preview={false}
+        />
+      </div>
+    );
+  }
+
+  if (mode === "read") {
+    return (
+      <div
+        className="absolute"
+        style={{
+          left: widget.x,
+          top: widget.y,
+          width: p.width,
+          height: p.height,
+          overflow: "visible",
+        }}
+      >
+        <TextBoxSurface
+          p={runtimeProps}
+          textValue={externalValue}
+          preview={false}
+        />
+      </div>
+    );
+  }
+
+  // WRITE mode: the actual input is layered over the same TextBox surface.
   return (
     <div
       className="absolute"
@@ -1381,11 +1637,44 @@ export function RuntimeTextBox({ widget, value }) {
         overflow: "visible",
       }}
     >
-      <TextBoxSurface
-        p={runtimeProps}
-        textValue={displayText}
-        preview={false}
-      />
+      <div style={{ position: "relative", width: "100%", height: "100%" }}>
+        <TextBoxSurface
+          p={runtimeProps}
+          textValue=""
+          preview={false}
+        />
+
+        <input
+          value={draft}
+          onFocus={() => setFocused(true)}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (p.writeTrigger !== "blur" && e.key === "Enter") {
+              e.preventDefault();
+              commit();
+              e.currentTarget.blur();
+            }
+          }}
+          onBlur={() => {
+            setFocused(false);
+            if (p.writeTrigger === "blur") commit();
+          }}
+          className="absolute inset-0 w-full h-full bg-transparent border-0 outline-none"
+          style={{
+            color: p.textColor || "#FFFFFF",
+            fontSize: `${Number(p.fontSize ?? 18)}px`,
+            fontWeight: p.fontWeight || "600",
+            textAlign: p.textAlign || "center",
+            padding: `${Number(p.padding ?? 8)}px`,
+            boxSizing: "border-box",
+          }}
+          type={
+            p.dataType === "number" || p.dataType === "integer"
+              ? "number"
+              : "text"
+          }
+        />
+      </div>
     </div>
   );
 }

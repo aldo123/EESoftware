@@ -97,8 +97,11 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     calibration: { widgets: [] },
   });
   const [widgets, setWidgets] = useState([]);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState([]);
+  const [clipboard, setClipboard] = useState([]);
   const [dragInfo, setDragInfo] = useState(null);
+  const [marquee, setMarquee] = useState(null);
+  const marqueeRef = useRef(null);
   const [paletteSearch, setPaletteSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -128,6 +131,23 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     return normalizeLayerOrder(ordered);
   }, [normalizeLayerOrder]);
 
+  const toggleSelection = useCallback((id, additive = false) => {
+    setSelected(prev => {
+      if (!additive) return [id];
+      return prev.includes(id)
+        ? prev.filter(x => x !== id)
+        : [...prev, id];
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => {
+    setSelected([]);
+  }, []);
+
+  const selectAll = useCallback(() => {
+    setSelected(widgets.map(w => w.id));
+  }, [widgets]);
+
   const switchPage = useCallback((nextPage) => {
     if (!nextPage || nextPage === pageType) return;
 
@@ -137,33 +157,46 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     }));
 
     setWidgets(normalizePage(pages[nextPage]?.widgets || []));
-    setSelected(null);
+    setSelected([]);
     setDragInfo(null);
     setResizing(null);
     setPageType(nextPage);
   }, [pageType, pages, widgets, normalizeLayerOrder, normalizePage]);
 
   const handleLayerAction = useCallback((action) => {
-    if (!selected) return;
-    setWidgets(prev => {
-      const index = prev.findIndex(w => w.id === selected);
-      if (index < 0) return prev;
+    if (selected.length === 0) return;
 
-      const next = [...prev];
-      const [item] = next.splice(index, 1);
+    setWidgets(prev => {
+      const selectedSet = new Set(selected);
 
       if (action === "front") {
-        next.push(item);
-      } else if (action === "back") {
-        next.unshift(item);
-      } else if (action === "forward") {
-        const target = Math.min(index + 1, next.length);
-        next.splice(target, 0, item);
+        const selectedItems = prev.filter(w => selectedSet.has(w.id));
+        const others = prev.filter(w => !selectedSet.has(w.id));
+        return normalizeLayerOrder([...others, ...selectedItems]);
+      }
+
+      if (action === "back") {
+        const selectedItems = prev.filter(w => selectedSet.has(w.id));
+        const others = prev.filter(w => !selectedSet.has(w.id));
+        return normalizeLayerOrder([...selectedItems, ...others]);
+      }
+
+      const next = [...prev];
+
+      if (action === "forward") {
+        // Process from the end so a selected group moves forward as a unit.
+        for (let i = next.length - 2; i >= 0; i--) {
+          if (selectedSet.has(next[i].id) && !selectedSet.has(next[i + 1].id)) {
+            [next[i], next[i + 1]] = [next[i + 1], next[i]];
+          }
+        }
       } else if (action === "backward") {
-        const target = Math.max(index - 1, 0);
-        next.splice(target, 0, item);
-      } else {
-        next.splice(index, 0, item);
+        // Process from the start so a selected group moves backward as a unit.
+        for (let i = 1; i < next.length; i++) {
+          if (selectedSet.has(next[i].id) && !selectedSet.has(next[i - 1].id)) {
+            [next[i], next[i - 1]] = [next[i - 1], next[i]];
+          }
+        }
       }
 
       return normalizeLayerOrder(next);
@@ -253,44 +286,163 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     const id = uid();
     const needsVariable = Object.prototype.hasOwnProperty.call(def.defaultProps, "variable");
     setWidgets(ws => [...ws, { id, type: def.type, x, y, props: { ...def.defaultProps, ...(needsVariable ? { variable: `Var_${id}` } : {}), width: Math.min(def.defaultProps.width, CANVAS_W - x), height: Math.min(def.defaultProps.height, CANVAS_H - y) } }]);
-    setSelected(id);
+    setSelected([id]);
   }, [scale, CANVAS_W, CANVAS_H]);
+
+  // Mouse marquee selection: hold left mouse on empty canvas and drag.
+  const startMarquee = useCallback((e) => {
+    if (e.button !== 0) return;
+    if (e.target !== canvasRef.current) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / scale;
+    const y = (e.clientY - rect.top) / scale;
+
+    marqueeRef.current = {
+      startX: x,
+      startY: y,
+      currentX: x,
+      currentY: y,
+      additive: e.shiftKey,
+      baseSelected: e.shiftKey ? [...selected] : [],
+    };
+    setMarquee({ x, y, width: 0, height: 0 });
+  }, [scale, selected]);
+
+  useEffect(() => {
+    if (!marquee) return;
+
+    const onMove = (e) => {
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const rect = canvas.getBoundingClientRect();
+      const x = Math.max(0, Math.min(CANVAS_W, (e.clientX - rect.left) / scale));
+      const y = Math.max(0, Math.min(CANVAS_H, (e.clientY - rect.top) / scale));
+      const m = marqueeRef.current;
+      if (!m) return;
+      m.currentX = x;
+      m.currentY = y;
+
+      const left = Math.min(m.startX, x);
+      const top = Math.min(m.startY, y);
+      const right = Math.max(m.startX, x);
+      const bottom = Math.max(m.startY, y);
+      setMarquee({ x: left, y: top, width: right - left, height: bottom - top });
+
+      // Select widgets whose rectangles intersect the marquee.
+      const hitIds = widgets.filter(w => {
+        const wx = Number(w.x || 0);
+        const wy = Number(w.y || 0);
+        const ww = Number(w.props?.width || 0);
+        const wh = Number(w.props?.height || 0);
+        return wx < right && wx + ww > left && wy < bottom && wy + wh > top;
+      }).map(w => w.id);
+
+      const next = m.additive
+        ? Array.from(new Set([...m.baseSelected, ...hitIds]))
+        : hitIds;
+      setSelected(next);
+    };
+
+    const onUp = () => {
+      const m = marqueeRef.current;
+      if (m) {
+        const moved = Math.abs(m.currentX - m.startX) > 2 || Math.abs(m.currentY - m.startY) > 2;
+        if (!moved && !m.additive) setSelected([]);
+      }
+      marqueeRef.current = null;
+      setMarquee(null);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [marquee, widgets, scale, CANVAS_W, CANVAS_H]);
 
   const startDrag = useCallback((e, id) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+
     const w = document.getElementById(`widget-${id}`);
     if (!w) return;
+
+    // Shift-click is a selection operation. Do not start a drag for that click.
+    if (e.shiftKey) {
+      toggleSelection(id, true);
+      return;
+    }
+
+    // Clicking an unselected widget starts a new single selection. Clicking a
+    // selected widget preserves the current group so the whole group moves.
+    const activeIds = selected.includes(id)
+      ? [...selected]
+      : [id];
+
+    if (!selected.includes(id)) {
+      setSelected([id]);
+    }
+
     const rect = w.getBoundingClientRect();
     const offsetX = (e.clientX - rect.left) / scale;
     const offsetY = (e.clientY - rect.top) / scale;
-    setDragInfo({ id, offsetX, offsetY });
-    setSelected(id);
-  }, [scale]);
+
+    setDragInfo({
+      id,
+      selectedIds: activeIds,
+      offsetX,
+      offsetY,
+    });
+  }, [scale, selected, toggleSelection]);
 
   useEffect(() => {
     if (!dragInfo) return;
+
     const onMove = (e) => {
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
+
       const mouseX = (e.clientX - canvasRect.left) / scale;
       const mouseY = (e.clientY - canvasRect.top) / scale;
-      let newX = snap(mouseX - dragInfo.offsetX);
-      let newY = snap(mouseY - dragInfo.offsetY);
+      const anchorX = snap(mouseX - dragInfo.offsetX);
+      const anchorY = snap(mouseY - dragInfo.offsetY);
+
       setWidgets(ws => {
-        const widget = ws.find(w => w.id === dragInfo.id);
-        if (!widget) return ws;
-        const maxX = CANVAS_W - widget.props.width;
-        const maxY = CANVAS_H - widget.props.height;
-        newX = Math.max(0, Math.min(newX, maxX));
-        newY = Math.max(0, Math.min(newY, maxY));
-        return ws.map(w => w.id === dragInfo.id ? { ...w, x: newX, y: newY } : w);
+        const dragged = ws.find(w => w.id === dragInfo.id);
+        if (!dragged) return ws;
+
+        const dx = anchorX - dragged.x;
+        const dy = anchorY - dragged.y;
+        const selectedIds = dragInfo.selectedIds || [dragInfo.id];
+
+        return ws.map(w => {
+          if (!selectedIds.includes(w.id)) return w;
+
+          const maxX = CANVAS_W - w.props.width;
+          const maxY = CANVAS_H - w.props.height;
+
+          return {
+            ...w,
+            x: Math.max(0, Math.min(maxX, snap(w.x + dx))),
+            y: Math.max(0, Math.min(maxY, snap(w.y + dy))),
+          };
+        });
       });
     };
+
     const onUp = () => setDragInfo(null);
+
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
   }, [dragInfo, scale, CANVAS_W, CANVAS_H]);
 
   const startResize = useCallback((e, id) => {
@@ -357,23 +509,212 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (!selected) return;
       const target = e.target;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable)) return;
-      if (e.ctrlKey || e.metaKey) return;
-      if (e.key === "]") { e.preventDefault(); handleLayerAction(e.shiftKey ? "front" : "forward"); }
-      if (e.key === "[") { e.preventDefault(); handleLayerAction(e.shiftKey ? "back" : "backward"); }
+
+      // Never hijack typing inside the property panel or palette search.
+      if (
+        target &&
+        (
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable
+        )
+      ) return;
+
+      const ctrl = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+
+      // Ctrl+A — select all widgets.
+      if (ctrl && key === "a") {
+        e.preventDefault();
+        setSelected(widgets.map(w => w.id));
+        return;
+      }
+
+      // Ctrl+C — copy selected widgets.
+      if (ctrl && key === "c") {
+        if (selected.length === 0) return;
+        e.preventDefault();
+        setClipboard(
+          widgets
+            .filter(w => selected.includes(w.id))
+            .map(w => structuredClone(w))
+        );
+        return;
+      }
+
+      // Ctrl+X — cut selected widgets.
+      if (ctrl && key === "x") {
+        if (selected.length === 0) return;
+        e.preventDefault();
+
+        const copied = widgets
+          .filter(w => selected.includes(w.id))
+          .map(w => structuredClone(w));
+        setClipboard(copied);
+
+        setWidgets(prev =>
+          normalizeLayerOrder(prev.filter(w => !selected.includes(w.id)))
+        );
+        setSelected([]);
+        return;
+      }
+
+      // Ctrl+V — paste a fresh copy with fresh widget IDs.
+      if (ctrl && key === "v") {
+        if (clipboard.length === 0) return;
+        e.preventDefault();
+
+        const pasted = clipboard.map(w => {
+          const newId = uid();
+          const width = Number(w.props?.width || 40);
+          const height = Number(w.props?.height || 24);
+          const x = Math.max(0, Math.min(CANVAS_W - width, Number(w.x || 0) + 20));
+          const y = Math.max(0, Math.min(CANVAS_H - height, Number(w.y || 0) + 20));
+
+          const props = {
+            ...structuredClone(w.props || {}),
+          };
+
+          // Variables must not accidentally collide with the source widget.
+          if (props.variable) props.variable = `${props.variable}_copy_${newId.slice(-4)}`;
+
+          return {
+            ...structuredClone(w),
+            id: newId,
+            x,
+            y,
+            props,
+          };
+        });
+
+        setWidgets(prev => normalizeLayerOrder([...prev, ...pasted]));
+        setSelected(pasted.map(w => w.id));
+        return;
+      }
+
+      // Ctrl+D — duplicate selected widgets in-place with an offset.
+      if (ctrl && key === "d") {
+        if (selected.length === 0) return;
+        e.preventDefault();
+
+        const clones = widgets
+          .filter(w => selected.includes(w.id))
+          .map(w => {
+            const newId = uid();
+            const width = Number(w.props?.width || 40);
+            const height = Number(w.props?.height || 24);
+            const props = { ...structuredClone(w.props || {}) };
+            if (props.variable) props.variable = `${props.variable}_copy_${newId.slice(-4)}`;
+
+            return {
+              ...structuredClone(w),
+              id: newId,
+              x: Math.max(0, Math.min(CANVAS_W - width, Number(w.x || 0) + 20)),
+              y: Math.max(0, Math.min(CANVAS_H - height, Number(w.y || 0) + 20)),
+              props,
+            };
+          });
+
+        setWidgets(prev => normalizeLayerOrder([...prev, ...clones]));
+        setSelected(clones.map(w => w.id));
+        return;
+      }
+
+      // Delete / Backspace — delete the whole selection.
+      if ((e.key === "Delete" || e.key === "Backspace") && selected.length > 0) {
+        e.preventDefault();
+        setWidgets(prev =>
+          normalizeLayerOrder(prev.filter(w => !selected.includes(w.id)))
+        );
+        setSelected([]);
+        return;
+      }
+
+      if (selected.length === 0) return;
+
+      // [ / ] — layer operations. Shift sends to absolute front/back.
+      if (e.key === "]" || e.key === "[") {
+        e.preventDefault();
+
+        setWidgets(prev => {
+          const selectedSet = new Set(selected);
+          const selectedWidgets = prev.filter(w => selectedSet.has(w.id));
+          const unselectedWidgets = prev.filter(w => !selectedSet.has(w.id));
+
+          if (e.key === "]") {
+            if (e.shiftKey) return normalizeLayerOrder([...unselectedWidgets, ...selectedWidgets]);
+
+            const next = [...prev];
+            selected.forEach(id => {
+              const index = next.findIndex(w => w.id === id);
+              if (index >= 0 && index < next.length - 1) {
+                [next[index], next[index + 1]] = [next[index + 1], next[index]];
+              }
+            });
+            return normalizeLayerOrder(next);
+          }
+
+          if (e.shiftKey) return normalizeLayerOrder([...selectedWidgets, ...unselectedWidgets]);
+
+          const next = [...prev];
+          [...selected].reverse().forEach(id => {
+            const index = next.findIndex(w => w.id === id);
+            if (index > 0) {
+              [next[index], next[index - 1]] = [next[index - 1], next[index]];
+            }
+          });
+          return normalizeLayerOrder(next);
+        });
+        return;
+      }
+
+      // Arrow keys — move the entire selection by one grid step.
+      let dx = 0;
+      let dy = 0;
+      if (e.key === "ArrowLeft") dx = -GRID;
+      if (e.key === "ArrowRight") dx = GRID;
+      if (e.key === "ArrowUp") dy = -GRID;
+      if (e.key === "ArrowDown") dy = GRID;
+
+      if (dx !== 0 || dy !== 0) {
+        e.preventDefault();
+        const multiplier = e.shiftKey ? 5 : 1;
+        dx *= multiplier;
+        dy *= multiplier;
+
+        setWidgets(prev =>
+          prev.map(w => {
+            if (!selected.includes(w.id)) return w;
+
+            const maxX = CANVAS_W - w.props.width;
+            const maxY = CANVAS_H - w.props.height;
+
+            return {
+              ...w,
+              x: Math.max(0, Math.min(maxX, snap(w.x + dx))),
+              y: Math.max(0, Math.min(maxY, snap(w.y + dy))),
+            };
+          })
+        );
+      }
     };
+
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected, handleLayerAction]);
+  }, [selected, widgets, clipboard, normalizeLayerOrder, CANVAS_W, CANVAS_H]);
+
 
   const clearCanvas = useCallback(() => {
     setWidgets([]);
-    setSelected(null);
+    setSelected([]);
     setPages(prev => ({ ...prev, [pageType]: { widgets: [] } }));
   }, [pageType]);
-  const selectedWidget = useMemo(() => widgets.find(w => w.id === selected) || null, [widgets, selected]);
+  const selectedWidget = useMemo(() => {
+    if (selected.length !== 1) return null;
+    return widgets.find(w => w.id === selected[0]) || null;
+  }, [widgets, selected]);
   const filteredPalette = useMemo(() => COMPONENT_TYPES.filter(c => c.label.toLowerCase().includes(paletteSearch.toLowerCase()) || c.desc.toLowerCase().includes(paletteSearch.toLowerCase())), [paletteSearch]);
 
   const displayWidth = CANVAS_W * scale;
@@ -459,11 +800,12 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
           <div ref={canvasContainerRef} className="flex-1 min-w-0 min-h-0 overflow-hidden flex items-center justify-center px-4 py-3" style={{ background: "var(--panel-canvas)" }}>
             {loading ? (<div className="flex items-center gap-2 text-[var(--accent-green)] text-xs mt-20"><div className="w-4 h-4 border-2 border-[var(--accent-green)] border-t-transparent rounded-full animate-spin" /> Loading layout…</div>) : (
               <div style={{ width: displayWidth, height: displayHeight, position: "relative", flex: "0 0 auto", overflow: "hidden" }}>
-                <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={() => setSelected(null)} className="relative origin-top-left overflow-hidden" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
+                <div ref={canvasRef} onMouseDown={startMarquee} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={e => { if (e.target === canvasRef.current && !marquee) clearSelection(); }} className="relative origin-top-left overflow-hidden" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
+                  {marquee && <div className="absolute pointer-events-none" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height, border: "1px dashed var(--accent-green)", background: "var(--accent-green)", opacity: 0.12, zIndex: 999999 }} /> }
                   {widgets.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-4xl opacity-10 mb-2">🖱</span><p className="text-[var(--border-soft)] text-sm font-mono">Drag components here</p></div>)}
                   {widgets.map(widget => {
-                    const isSel = widget.id === selected;
-                    return (<div key={widget.id} id={`widget-${widget.id}`} onMouseDown={e => startDrag(e, widget.id)} onClick={e => { e.stopPropagation(); setSelected(widget.id); }} className="absolute select-none" style={{ left: widget.x, top: widget.y, width: widget.props.width, height: widget.props.height, cursor: dragInfo?.id === widget.id ? "grabbing" : "grab", outline: isSel ? "2px solid var(--accent-green)" : "1px solid transparent", outlineOffset: 2, borderRadius: 6, zIndex: Number.isFinite(Number(widget.zIndex)) ? Number(widget.zIndex) : 1 }}><div className="w-full h-full overflow-hidden" style={{ borderRadius: 6 }}><WidgetPreview widget={widget} onUpdate={handleWidgetUpdate} /></div>{isSel && <div className="absolute -top-5 left-0 flex items-center gap-1 pointer-events-none"><span className="text-[var(--accent-green)] text-[9px] font-bold bg-[var(--panel-canvas)] px-1.5 py-0.5 rounded font-mono capitalize">{widget.type}</span></div>}{isSel && <div onMouseDown={e => startResize(e, widget.id)} className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize" style={{ background: "var(--accent-green)", borderRadius: "2px 0 4px 0", zIndex: 20 }} />}</div>);
+                    const isSel = selected.includes(widget.id);
+                    return (<div key={widget.id} id={`widget-${widget.id}`} onMouseDown={e => startDrag(e, widget.id)} onClick={e => { e.stopPropagation(); }} className="absolute select-none" style={{ left: widget.x, top: widget.y, width: widget.props.width, height: widget.props.height, cursor: dragInfo?.id === widget.id ? "grabbing" : "grab", outline: isSel ? "2px solid var(--accent-green)" : "1px solid transparent", outlineOffset: 2, borderRadius: 6, zIndex: Number.isFinite(Number(widget.zIndex)) ? Number(widget.zIndex) : 1 }}><div className="w-full h-full overflow-hidden" style={{ borderRadius: 6 }}><WidgetPreview widget={widget} onUpdate={handleWidgetUpdate} /></div>{isSel && <div className="absolute -top-5 left-0 flex items-center gap-1 pointer-events-none"><span className="text-[var(--accent-green)] text-[9px] font-bold bg-[var(--panel-canvas)] px-1.5 py-0.5 rounded font-mono capitalize">{widget.type}</span></div>}{isSel && <div onMouseDown={e => startResize(e, widget.id)} className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize" style={{ background: "var(--accent-green)", borderRadius: "2px 0 4px 0", zIndex: 20 }} />}</div>);
                   })}
                 </div>
               </div>
@@ -473,17 +815,35 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
             <PropertyPanel
               widget={selectedWidget}
               onChange={updated => setWidgets(ws => ws.map(w => w.id === updated.id ? updated : w))}
-              onDelete={() => { setWidgets(ws => normalizeLayerOrder(ws.filter(w => w.id !== selected))); setSelected(null); }}
+              onDelete={() => {
+                if (selected.length === 0) return;
+                setWidgets(ws => normalizeLayerOrder(ws.filter(w => !selected.includes(w.id))));
+                setSelected([]);
+              }}
               onLayerAction={handleLayerAction}
               onDuplicate={() => {
-                if (!selectedWidget) return;
-                const newId = uid();
-                let newX = selectedWidget.x + 16, newY = selectedWidget.y + 16;
-                const maxX = CANVAS_W - selectedWidget.props.width, maxY = CANVAS_H - selectedWidget.props.height;
-                newX = Math.min(newX, maxX); newY = Math.min(newY, maxY);
-                const clone = { ...selectedWidget, id: newId, x: newX, y: newY };
-                setWidgets(ws => normalizeLayerOrder([...ws, clone]));
-                setSelected(newId);
+                if (selected.length === 0) return;
+
+                const clones = widgets
+                  .filter(w => selected.includes(w.id))
+                  .map(w => {
+                    const newId = uid();
+                    const width = Number(w.props?.width || 40);
+                    const height = Number(w.props?.height || 24);
+                    const props = { ...structuredClone(w.props || {}) };
+                    if (props.variable) props.variable = `${props.variable}_copy_${newId.slice(-4)}`;
+
+                    return {
+                      ...structuredClone(w),
+                      id: newId,
+                      x: Math.max(0, Math.min(CANVAS_W - width, w.x + 16)),
+                      y: Math.max(0, Math.min(CANVAS_H - height, w.y + 16)),
+                      props,
+                    };
+                  });
+
+                setWidgets(ws => normalizeLayerOrder([...ws, ...clones]));
+                setSelected(clones.map(w => w.id));
               }}
               canvasWidth={CANVAS_W}
               canvasHeight={CANVAS_H}
@@ -494,7 +854,8 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
         <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--panel-canvas)" }}>
           <span className="text-[var(--border)] text-[9px] font-mono">{widgets.length} widget{widgets.length !== 1 ? "s" : ""} · {pageType === "dynamic" ? "Dynamic Page" : pageType === "manual" ? "Manual Page" : "Calibration Page"} · Design {CANVAS_W}×{CANVAS_H}px · Fit {Math.round(scale * 100)}% · Grid {GRID}px</span>
           {selectedWidget && <span className="text-[var(--text-muted)] text-[9px] font-mono">x:{selectedWidget.x} y:{selectedWidget.y} · {selectedWidget.props.width}×{selectedWidget.props.height}</span>}
-          <span className="text-[var(--border)] text-[9px] font-mono">Del = delete · drag to move · ↘ to resize</span>
+          {!selectedWidget && selected.length > 0 && <span className="text-[var(--text-muted)] text-[9px] font-mono">{selected.length} widgets selected</span>}
+          <span className="text-[var(--border)] text-[9px] font-mono">Shift+Click = multi-select · Ctrl+C/V = copy/paste · Del = delete · Arrows = move</span>
         </div>
       </ModalPanel>
     </ModalBackdrop>
