@@ -64,6 +64,17 @@ const FRAME_PRESET_COLORS = {
 const clamp = (value, min, max) =>
   Math.min(max, Math.max(min, Number(value)));
 
+// Numeric TextBox values are displayed with exactly 3 digits
+// after the decimal point. The underlying stored value remains numeric.
+const formatTextBoxNumber = (value) => {
+  if (value === undefined || value === null || value === "") return value;
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return value;
+
+  return numeric.toFixed(3);
+};
+
 const resolveFrameColor = (p) => {
   if (p.framePreset === "custom") return p.frameColor || "#00E5FF";
   return (
@@ -282,6 +293,9 @@ export const textboxDef = {
     textMode: "read",
     writeTrigger: "enter",
     dataType: "number",
+
+    // Fixed numeric display precision.
+    decimalPlaces: 3,
 
     // CALCULATION
     // Each item can come from an Internal Variable or TCP/IP address.
@@ -1571,8 +1585,21 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
   const p = widget.props || {};
   const mode = p.textMode || "read";
   const fallback = p.defaultText ?? p.text ?? "TEXT";
+
+  // Number and Calculation TextBoxes always show 3 decimal places.
+  // Static text is never altered.
+  const shouldFormatNumber =
+    mode === "calculation" ||
+    p.dataType === "number";
+
+  const displayValue = shouldFormatNumber
+    ? formatTextBoxNumber(value)
+    : value;
+
   const externalValue =
-    value === undefined || value === null ? fallback : String(value);
+    displayValue === undefined || displayValue === null
+      ? fallback
+      : String(displayValue);
 
   const [draft, setDraft] = React.useState(externalValue);
   const [focused, setFocused] = React.useState(false);
@@ -1695,6 +1722,7 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
             if (p.writeTrigger === "blur") commit();
           }}
           className="absolute inset-0 w-full h-full bg-transparent border-0 outline-none"
+          step={p.dataType === "number" ? "0.001" : undefined}
           style={{
             color: p.textColor || "#FFFFFF",
             fontSize: `${Number(p.fontSize ?? 18)}px`,

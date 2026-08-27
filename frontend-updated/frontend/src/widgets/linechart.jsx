@@ -6,6 +6,7 @@
 //   - LineChartPropertyPanel  the property panel shown when this widget is selected
 //   - RuntimeLineChart        how it looks/behaves on the live Dynamic CP Page
 //
+import { useInternalVariables } from "../hooks/useInternalVariables";
 import { LINECHART_ADDRESS_TYPES, LINECHART_SERIES_COLORS, PropInput, PropSection, createLineChartSeries, DEFAULT_VISUAL } from "./shared";
 
 // ────────────────────────────────────────────────────────────────
@@ -28,7 +29,9 @@ export const linechartDef = {
       // Trend trigger
       // When enabled: trigger = 1 starts recording, trigger = 0 stops recording.
       triggerEnabled: false,
+      triggerDataSource: "device",
       triggerDevice: "",
+      triggerInternalVariable: "",
       triggerAddressType: "holding_register",
       triggerAddress: "",
       triggerStartValue: 1,
@@ -57,7 +60,11 @@ export const linechartDef = {
 
       // Start with one realtime series. Additional series can be added from the property panel.
       series: [
-        createLineChartSeries(0),
+        {
+          ...createLineChartSeries(0),
+          dataSource: "device",
+          internalVariable: "",
+        },
       ],
 
       width: 420,
@@ -585,6 +592,12 @@ export function LineChartPreview({ widget }) {
 // ────────────────────────────────────────────────────────────────
 
 export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
+  const {
+    variables: internalVariables = [],
+    loading: internalVariablesLoading,
+    error: internalVariablesError,
+  } = useInternalVariables();
+
   return (
   <>
     <PropSection title="Chart">
@@ -663,39 +676,78 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
         onChange={v => set("triggerEnabled", v)}
       />
 
-      <div>
-        <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
-          Trigger Device
-        </label>
-        <select
-          value={p.triggerDevice || ""}
-          onChange={e => set("triggerDevice", e.target.value)}
-          className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
-        >
-          <option value="">Select device...</option>
-          {availableDevices
-            .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
-            .map(dev => (
-              <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
-                {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+      <PropInput
+        label="Data Source"
+        options={[
+          { label: "TCP/IP Device", value: "device" },
+          { label: "Internal Variable", value: "internal" },
+        ]}
+        value={p.triggerDataSource || "device"}
+        onChange={v => set("triggerDataSource", v)}
+      />
+
+      {(p.triggerDataSource || "device") === "device" ? (
+        <>
+          <div>
+            <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+              Trigger Device
+            </label>
+            <select
+              value={p.triggerDevice || ""}
+              onChange={e => set("triggerDevice", e.target.value)}
+              className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+            >
+              <option value="">Select device...</option>
+              {availableDevices
+                .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                .map(dev => (
+                  <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
+                    {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                  </option>
+                ))}
+            </select>
+          </div>
+
+          <PropInput
+            label="Trigger Address Type"
+            options={LINECHART_ADDRESS_TYPES}
+            value={p.triggerAddressType || "holding_register"}
+            onChange={v => set("triggerAddressType", v)}
+          />
+
+          <PropInput
+            label="Trigger Address"
+            value={p.triggerAddress ?? ""}
+            onChange={v => set("triggerAddress", v)}
+            placeholder="0 / 10 / 100"
+          />
+        </>
+      ) : (
+        <div>
+          <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+            Trigger Internal Variable
+          </label>
+          <select
+            value={p.triggerInternalVariable || ""}
+            onChange={e => set("triggerInternalVariable", e.target.value)}
+            className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+          >
+            <option value="">
+              {internalVariablesLoading ? "Loading variables..." : "Select variable..."}
+            </option>
+            {internalVariables.map(item => (
+              <option key={item.id} value={item.name}>
+                {item.name} ({item.data_type || item.type || "string"})
               </option>
             ))}
-        </select>
-      </div>
-
-      <PropInput
-        label="Trigger Address Type"
-        options={LINECHART_ADDRESS_TYPES}
-        value={p.triggerAddressType || "holding_register"}
-        onChange={v => set("triggerAddressType", v)}
-      />
-
-      <PropInput
-        label="Trigger Address"
-        value={p.triggerAddress ?? ""}
-        onChange={v => set("triggerAddress", v)}
-        placeholder="0 / 10 / 100"
-      />
+          </select>
+          {internalVariablesError && (
+            <div className="text-[8px] text-red-400 mt-1">
+              {internalVariablesError}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <PropInput
@@ -722,7 +774,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
 
     <PropSection title="Realtime Series">
       <div className="text-[8px] text-[var(--text-dim)]">
-        One realtime signal is shown by default. Add more PLC series only when needed.
+        Each series can read from TCP/IP Device or Internal Variable.
       </div>
 
       {(Array.isArray(p.series) ? p.series : []).map((series, index) => {
@@ -781,39 +833,78 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
               onChange={v => updateSeries("label", v)}
             />
 
-            <div>
-              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
-                Device
-              </label>
-              <select
-                value={series.device || ""}
-                onChange={e => updateSeries("device", e.target.value)}
-                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
-              >
-                <option value="">Select device...</option>
-                {availableDevices
-                  .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
-                  .map(dev => (
-                    <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
-                      {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+            <PropInput
+              label="Data Source"
+              options={[
+                { label: "TCP/IP Device", value: "device" },
+                { label: "Internal Variable", value: "internal" },
+              ]}
+              value={series.dataSource || "device"}
+              onChange={v => updateSeries("dataSource", v)}
+            />
+
+            {(series.dataSource || "device") === "device" ? (
+              <>
+                <div>
+                  <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                    Device
+                  </label>
+                  <select
+                    value={series.device || ""}
+                    onChange={e => updateSeries("device", e.target.value)}
+                    className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+                  >
+                    <option value="">Select device...</option>
+                    {availableDevices
+                      .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
+                      .map(dev => (
+                        <option key={`${dev.type || "TCP"}-${dev.name}`} value={dev.name}>
+                          {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                <PropInput
+                  label="Address Type"
+                  options={LINECHART_ADDRESS_TYPES}
+                  value={series.addressType || "holding_register"}
+                  onChange={v => updateSeries("addressType", v)}
+                />
+
+                <PropInput
+                  label="Address"
+                  value={series.address ?? ""}
+                  onChange={v => updateSeries("address", v)}
+                  placeholder="0 / 10 / 100"
+                />
+              </>
+            ) : (
+              <div>
+                <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                  Internal Variable
+                </label>
+                <select
+                  value={series.internalVariable || ""}
+                  onChange={e => updateSeries("internalVariable", e.target.value)}
+                  className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+                >
+                  <option value="">
+                    {internalVariablesLoading ? "Loading variables..." : "Select variable..."}
+                  </option>
+                  {internalVariables.map(item => (
+                    <option key={item.id} value={item.name}>
+                      {item.name} ({item.data_type || item.type || "string"})
                     </option>
                   ))}
-              </select>
-            </div>
-
-            <PropInput
-              label="Address Type"
-              options={LINECHART_ADDRESS_TYPES}
-              value={series.addressType || "holding_register"}
-              onChange={v => updateSeries("addressType", v)}
-            />
-
-            <PropInput
-              label="Address"
-              value={series.address ?? ""}
-              onChange={v => updateSeries("address", v)}
-              placeholder="0 / 10 / 100"
-            />
+                </select>
+                {internalVariablesError && (
+                  <div className="text-[8px] text-red-400 mt-1">
+                    {internalVariablesError}
+                  </div>
+                )}
+              </div>
+            )}
 
             <PropInput
               label="Line Color"

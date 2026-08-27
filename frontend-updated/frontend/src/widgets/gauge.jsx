@@ -6,6 +6,7 @@
 //   - GaugePropertyPanel  the property panel shown when this widget is selected
 //   - RuntimeGauge        how it looks/behaves on the live Dynamic CP Page
 //
+import { useInternalVariables } from "../hooks/useInternalVariables";
 import { GAUGE_ADDRESS_TYPES, GAUGE_TYPES, GaugeTypeIcon, PropInput, PropSection, DEFAULT_VISUAL } from "./shared";
 
 // ────────────────────────────────────────────────────────────────
@@ -18,10 +19,20 @@ export const gaugeDef = {
     icon: "◔",
     desc: "Industrial analog value gauge",
     defaultProps: {
+      // Data source:
+      // "device"   = TCP/IP/device value supplied by DynamicCPPage
+      // "internal" = shared Internal Variable value
+      dataSource: "device",
+
+      // Legacy TCP/IP binding fields - kept for compatibility.
       addressType: "holding_register",
       device: "",
       address: "",
       variable: "",
+
+      // Shared Internal Variable binding.
+      internalVariable: "",
+
       simulationValue: 50,
 
       // Gauge semantic type / icon
@@ -387,63 +398,90 @@ export function GaugePreview({ widget }) {
 // ────────────────────────────────────────────────────────────────
 //  PAGE BUILDER — PROPERTY PANEL
 // ────────────────────────────────────────────────────────────────
-
 export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
+  const {
+    variables: internalVariables,
+    loading: internalVariablesLoading,
+    error: internalVariablesError,
+  } = useInternalVariables();
+
   return (
   <>
 
 
-    <PropSection title="Device / Address">
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
-            Device
-          </label>
-          <select
-            value={p.device || ""}
-            onChange={e => set("device", e.target.value)}
-            className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
-          >
-            <option value="">Select device...</option>
-            {availableDevices
-              .filter(dev => String(dev.type || "").toUpperCase() === "TCP")
-              .map((dev) => (
+    <PropSection title="Data Source">
+      <PropInput
+        label="Source"
+        options={[
+          { label: "TCP/IP Device", value: "device" },
+          { label: "Internal Variable", value: "internal" }
+        ]}
+        value={p.dataSource || "device"}
+        onChange={(v) => set("dataSource", v)}
+      />
+
+      {(p.dataSource || "device") === "device" && (
+        <>
+          <PropInput
+            label="Address Type"
+            options={GAUGE_ADDRESS_TYPES}
+            value={p.addressType || "holding_register"}
+            onChange={(v) => set("addressType", v)}
+          />
+
+          <PropInput
+            label="Address"
+            value={p.address || ""}
+            onChange={(v) => set("address", v)}
+            placeholder="D100 / M100"
+          />
+
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
+            Gauge is READ only. Runtime value comes from the TCP/IP/device binding.
+          </div>
+        </>
+      )}
+
+      {(p.dataSource || "device") === "internal" && (
+        <>
+          <div>
+            <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+              Internal Variable
+            </label>
+
+            <select
+              value={p.internalVariable || ""}
+              onChange={(e) => set("internalVariable", e.target.value)}
+              className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+            >
+              <option value="">
+                {internalVariablesLoading
+                  ? "Loading variables..."
+                  : "Select variable..."}
+              </option>
+
+              {internalVariables.map((item) => (
                 <option
-                  key={`${dev.type || "TCP"}-${dev.name}`}
-                  value={dev.name}
+                  key={item.id}
+                  value={item.name}
                 >
-                  {dev.name}{dev.connection ? ` — ${dev.connection}` : ""}
+                  {item.name} ({item.data_type})
                 </option>
               ))}
-          </select>
-        </div>
-        <PropInput
-          label="Address"
-          value={p.address || ""}
-          onChange={v => set("address", v)}
-          placeholder="D100 / M100"
-        />
-      </div>
-    </PropSection>
-            <PropSection title="Address Type">
-      <PropInput
-          label="Address Type"
-          options={GAUGE_ADDRESS_TYPES}
-          value={p.addressType || "holding_register"}
-          onChange={v => set("addressType", v)}
-        />
-    </PropSection>
+            </select>
 
-<PropSection title="Data Binding">
-      <PropInput
-        label="Variable"
-        value={p.variable || ""}
-        onChange={v => set("variable", v)}
-      />
-      <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
-        Gauge is READ only and uses Holding Register only.
-        Runtime reads the Holding Register numeric value and binds it to the gauge.
-      </div>
+            {internalVariablesError && (
+              <div className="text-[8px] text-red-400 mt-1">
+                {internalVariablesError}
+              </div>
+            )}
+          </div>
+
+          <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
+            Gauge is READ only. Runtime value comes from the shared Internal Variable store.
+          </div>
+        </>
+      )}
     </PropSection>
 
     <PropSection title="Gauge Type & Header">
