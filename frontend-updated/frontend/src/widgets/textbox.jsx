@@ -11,6 +11,7 @@
 // DynamicCPPage.jsx and widgets/index.js do not need to change.
 
 import React from "react";
+import { useInternalVariables } from "../hooks/useInternalVariables";
 
 import {
   PropInput,
@@ -871,6 +872,16 @@ export function TextBoxPreview({ widget }) {
 // ────────────────────────────────────────────────────────────────
 
 export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
+  const {
+    variables: internalVariables,
+    loading: internalVariablesLoading,
+  } = useInternalVariables();
+
+  const internalVariableOptions = internalVariables.map((item) => ({
+    value: item.name,
+    label: `${item.name} (${item.data_type || "string"})`,
+  }));
+
   return (
     <>
       <PropSection title="Text Mode">
@@ -951,13 +962,21 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             <>
               <PropInput
                 label="Variable Name"
+                options={[
+                  {
+                    value: "",
+                    label: internalVariablesLoading
+                      ? "Loading internal variables..."
+                      : "Select variable...",
+                  },
+                  ...internalVariableOptions,
+                ]}
                 value={p.variable || ""}
                 onChange={(v) => set("variable", v)}
-                placeholder="Example: ProductCount / Setpoint"
               />
 
               <div className="text-[8px] text-[var(--text-dim)] mt-1">
-                Read and Write use this exact internal variable name. The value is shared with the runtime field variable system.
+                Read and Write use a variable stored in internalvariable.db.
               </div>
             </>
           )}
@@ -1048,13 +1067,21 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
 
           <PropInput
             label="Result Variable"
+            options={[
+              {
+                value: "",
+                label: internalVariablesLoading
+                  ? "Loading internal variables..."
+                  : "Select result variable...",
+              },
+              ...internalVariableOptions,
+            ]}
             value={p.calculationResultVariable || ""}
             onChange={(v) => set("calculationResultVariable", v)}
-            placeholder="Example: FinalResult"
           />
 
           <div className="text-[8px] text-[var(--text-dim)] mt-1 mb-2">
-            Use the Alias names below in the formula. Supported operators:
+            Use the Alias names below in the formula. Internal Variable sources and the Result Variable are selected from internalvariable.db. Supported operators:
             +, -, *, /, %, and parentheses.
           </div>
 
@@ -1102,9 +1129,17 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
                 {(itemValue.sourceType || "internal") === "internal" ? (
                   <PropInput
                     label="Variable Name"
+                    options={[
+                      {
+                        value: "",
+                        label: internalVariablesLoading
+                          ? "Loading internal variables..."
+                          : "Select variable...",
+                      },
+                      ...internalVariableOptions,
+                    ]}
                     value={itemValue.variable || ""}
                     onChange={(v) => updateItem({ variable: v })}
-                    placeholder="ProductCount"
                   />
                 ) : (
                   <>
