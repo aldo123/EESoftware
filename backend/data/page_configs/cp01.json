@@ -640,7 +640,7 @@
           "enabled": true,
           "mode": "manual"
         },
-        "targetPage": "manual",
+        "targetPage": "page_mtdbh2u5_t53w8",
         "variable": "Var_w1787840053813_4_copy_34_9_copy_7_10",
         "variant": "solid",
         "visual": {
@@ -682,7 +682,7 @@
           "enabled": true,
           "mode": "manual"
         },
-        "targetPage": "calibration",
+        "targetPage": "page_mtdbgwng_y1c2c",
         "variable": "Var_w1787840053813_4_copy_34_9_copy_7_10_copy_2_24",
         "variant": "solid",
         "visual": {
@@ -749,6 +749,8 @@
   ],
   "pages": {
     "dynamic": {
+      "name": "Dynamic Page",
+      "icon": "🖥",
       "widgets": [
         {
           "id": "w1786967955592_4",
@@ -1389,7 +1391,7 @@
               "enabled": true,
               "mode": "manual"
             },
-            "targetPage": "manual",
+            "targetPage": "page_mtdbh2u5_t53w8",
             "variable": "Var_w1787840053813_4_copy_34_9_copy_7_10",
             "variant": "solid",
             "visual": {
@@ -1431,7 +1433,7 @@
               "enabled": true,
               "mode": "manual"
             },
-            "targetPage": "calibration",
+            "targetPage": "page_mtdbgwng_y1c2c",
             "variable": "Var_w1787840053813_4_copy_34_9_copy_7_10_copy_2_24",
             "variant": "solid",
             "visual": {
@@ -1497,10 +1499,12 @@
         }
       ]
     },
-    "manual": {
+    "page_mtdbgwng_y1c2c": {
+      "name": "Calibration Device",
+      "icon": "📄",
       "widgets": [
         {
-          "id": "w1787840960397_18",
+          "id": "w1787943641384_1",
           "props": {
             "borderColor": "var(--accent-cyan)",
             "borderWidth": 1,
@@ -1525,357 +1529,11 @@
           },
           "type": "shape",
           "x": 0,
-          "y": 0,
+          "y": 20,
           "zIndex": 1
         },
         {
-          "id": "w1787840960397_19",
-          "props": {
-            "address": "",
-            "addressType": "holding_register",
-            "backgroundColor": "transparent",
-            "borderColor": "transparent",
-            "borderWidth": 0,
-            "calculationFormula": "",
-            "calculationInputs": [],
-            "calculationResultVariable": "",
-            "cornerSize": 10,
-            "dataType": "number",
-            "decimalPlaces": 3,
-            "defaultText": "Manual Control Page",
-            "device": "",
-            "fontSize": 40,
-            "fontWeight": "700",
-            "frameBackground": "rgba(3, 18, 30, 0.88)",
-            "frameBackgroundOpacity": 0.88,
-            "frameColor": "#00E5FF",
-            "frameGlow": false,
-            "frameOpacity": 1,
-            "framePreset": "cyan",
-            "frameStyle": "standard",
-            "frameWidth": 1.5,
-            "glowIntensity": 18,
-            "height": 75,
-            "icon": "",
-            "iconColor": "#FFFFFF",
-            "iconGap": 8,
-            "iconOffsetX": 0,
-            "iconOffsetY": 0,
-            "iconPosition": "left",
-            "iconSize": 20,
-            "iconVerticalAlign": "center",
-            "innerGlow": false,
-            "inputSource": "tcp",
-            "inputType": "realtime",
-            "padding": 8,
-            "radius": 6,
-            "rotation": 0,
-            "scanEffect": false,
-            "scanSpeed": 2,
-            "showFrameAccent": true,
-            "showFrameDots": false,
-            "sourceDevice": "",
-            "text": "TEXT",
-            "textAlign": "center",
-            "textColor": "#FFFFFF",
-            "textMode": "static",
-            "textOffsetX": 0,
-            "textOffsetY": 0,
-            "variable": "Var_w1787839925258_3_copy_7_13_copy_7_19",
-            "verticalAlign": "center",
-            "visual": {
-              "accentColor": "var(--accent-cyan)",
-              "backgroundColor": "var(--panel-canvas)",
-              "borderColor": "var(--panel-mid)",
-              "borderRadius": 12,
-              "borderWidth": 1,
-              "glow": true,
-              "glowIntensity": 18,
-              "secondaryTextColor": "var(--panel-line)",
-              "textColor": "#FFFFFF",
-              "theme": "wik_cyan"
-            },
-            "width": 1980,
-            "writeTrigger": "enter"
-          },
-          "type": "textbox",
-          "x": 0,
-          "y": 0,
-          "zIndex": 2
-        },
-        {
-          "id": "w1787840960397_20",
-          "props": {
-            "action": "navigate",
-            "address": "",
-            "addressType": "coil",
-            "builderState": 0,
-            "device": "",
-            "fontSize": 18,
-            "height": 60,
-            "labelOff": "🎯",
-            "labelOn": "🎯",
-            "offBackground": "#000000",
-            "offBorder": "#000000",
-            "onBackground": "#000000",
-            "onBorder": "#000000",
-            "simulation": {
-              "enabled": true,
-              "mode": "manual"
-            },
-            "targetPage": "calibration",
-            "variable": "Var_w1787840053813_4_copy_7_14_copy_7_20",
-            "variant": "solid",
-            "visual": {
-              "accentColor": "var(--accent-cyan)",
-              "backgroundColor": "var(--panel-canvas)",
-              "borderColor": "var(--panel-mid)",
-              "borderRadius": 12,
-              "borderWidth": 1,
-              "glow": true,
-              "glowIntensity": 18,
-              "secondaryTextColor": "var(--panel-line)",
-              "textColor": "#FFFFFF",
-              "theme": "wik_cyan"
-            },
-            "width": 70
-          },
-          "type": "button",
-          "x": 100,
-          "y": 5,
-          "zIndex": 3
-        },
-        {
-          "id": "w1787840960397_21",
-          "props": {
-            "action": "navigate",
-            "address": "",
-            "addressType": "coil",
-            "builderState": 0,
-            "device": "",
-            "fontSize": 18,
-            "height": 60,
-            "labelOff": "⏱",
-            "labelOn": "⏱",
-            "offBackground": "#000000",
-            "offBorder": "#000000",
-            "onBackground": "#000000",
-            "onBorder": "#000000",
-            "simulation": {
-              "enabled": true,
-              "mode": "manual"
-            },
-            "targetPage": "dynamic",
-            "variable": "Var_w1787840053813_4_copy_34_9_copy_7_15_copy_7_21",
-            "variant": "solid",
-            "visual": {
-              "accentColor": "var(--accent-cyan)",
-              "backgroundColor": "var(--panel-canvas)",
-              "borderColor": "var(--panel-mid)",
-              "borderRadius": 12,
-              "borderWidth": 1,
-              "glow": true,
-              "glowIntensity": 18,
-              "secondaryTextColor": "var(--panel-line)",
-              "textColor": "#FFFFFF",
-              "theme": "wik_cyan"
-            },
-            "width": 70
-          },
-          "type": "button",
-          "x": 185,
-          "y": 5,
-          "zIndex": 4
-        },
-        {
-          "id": "w1787840960397_22",
-          "props": {
-            "action": "navigate",
-            "address": "",
-            "addressType": "coil",
-            "builderState": 1,
-            "device": "",
-            "fontSize": 18,
-            "height": 60,
-            "labelOff": "🕹",
-            "labelOn": "🕹",
-            "offBackground": "#000000",
-            "offBorder": "#000000",
-            "onBackground": "#000000",
-            "onBorder": "#000000",
-            "simulation": {
-              "enabled": true,
-              "mode": "manual"
-            },
-            "targetPage": "manual",
-            "variable": "Var_w1787840053813_4_copy_34_9_copy_7_10_copy_7_16_copy_7_22",
-            "variant": "solid",
-            "visual": {
-              "accentColor": "var(--accent-cyan)",
-              "backgroundColor": "var(--panel-canvas)",
-              "borderColor": "var(--panel-mid)",
-              "borderRadius": 12,
-              "borderWidth": 1,
-              "glow": true,
-              "glowIntensity": 18,
-              "secondaryTextColor": "var(--panel-line)",
-              "textColor": "#FFFFFF",
-              "theme": "wik_cyan"
-            },
-            "width": 70
-          },
-          "type": "button",
-          "x": 15,
-          "y": 5,
-          "zIndex": 5
-        },
-        {
-          "id": "w1787845044217_27",
-          "props": {
-            "action": "write",
-            "address": "1",
-            "addressType": "coil",
-            "builderState": 0,
-            "device": "PLC",
-            "fontSize": 18,
-            "height": 60,
-            "labelOff": "CY1 OFF",
-            "labelOn": "CY1 ON",
-            "simulation": {
-              "enabled": true,
-              "mode": "manual"
-            },
-            "targetPage": "",
-            "variable": "CY1",
-            "variant": "neon",
-            "visual": {
-              "accentColor": "var(--accent-cyan)",
-              "backgroundColor": "var(--panel-canvas)",
-              "borderColor": "var(--panel-mid)",
-              "borderRadius": 12,
-              "borderWidth": 1,
-              "glow": true,
-              "glowIntensity": 18,
-              "secondaryTextColor": "var(--panel-line)",
-              "textColor": "#FFFFFF",
-              "theme": "wik_cyan"
-            },
-            "width": 180
-          },
-          "type": "button",
-          "x": 15,
-          "y": 145,
-          "zIndex": 6
-        },
-        {
-          "id": "w1787845047652_28",
-          "props": {
-            "address": "0",
-            "addressType": "discrete_input",
-            "builderState": 0,
-            "device": "PLC",
-            "height": 60,
-            "label": "CY1 EXT",
-            "offColor": "var(--border-soft)",
-            "onColor": "var(--accent-cyan)",
-            "shape": "square",
-            "showLabel": true,
-            "simulation": {
-              "enabled": true,
-              "mode": "manual"
-            },
-            "variable": "CY1 EXT",
-            "visual": {
-              "accentColor": "var(--accent-cyan)",
-              "backgroundColor": "var(--panel-canvas)",
-              "borderColor": "var(--panel-mid)",
-              "borderRadius": 12,
-              "borderWidth": 1,
-              "glow": true,
-              "glowIntensity": 18,
-              "secondaryTextColor": "var(--panel-line)",
-              "textColor": "#FFFFFF",
-              "theme": "wik_cyan"
-            },
-            "width": 120
-          },
-          "type": "light",
-          "x": 20,
-          "y": 225,
-          "zIndex": 7
-        },
-        {
-          "id": "w1787845192724_29",
-          "props": {
-            "address": "2",
-            "addressType": "discrete_input",
-            "builderState": 0,
-            "device": "PLC",
-            "height": 60,
-            "label": "CY1 RET",
-            "offColor": "var(--border-soft)",
-            "onColor": "var(--accent-cyan)",
-            "shape": "square",
-            "showLabel": true,
-            "simulation": {
-              "enabled": true,
-              "mode": "manual"
-            },
-            "variable": "CY1 RET",
-            "visual": {
-              "accentColor": "var(--accent-cyan)",
-              "backgroundColor": "var(--panel-canvas)",
-              "borderColor": "var(--panel-mid)",
-              "borderRadius": 12,
-              "borderWidth": 1,
-              "glow": true,
-              "glowIntensity": 18,
-              "secondaryTextColor": "var(--panel-line)",
-              "textColor": "#FFFFFF",
-              "theme": "wik_cyan"
-            },
-            "width": 120
-          },
-          "type": "light",
-          "x": 20,
-          "y": 290,
-          "zIndex": 8
-        }
-      ]
-    },
-    "calibration": {
-      "widgets": [
-        {
-          "id": "w1787840902441_17",
-          "props": {
-            "borderColor": "var(--accent-cyan)",
-            "borderWidth": 1,
-            "fill": "var(--panel-mid)",
-            "height": 75,
-            "radius": 8,
-            "rotation": 0,
-            "shapeType": "rectangle",
-            "visual": {
-              "accentColor": "var(--accent-cyan)",
-              "backgroundColor": "var(--panel-canvas)",
-              "borderColor": "var(--panel-mid)",
-              "borderRadius": 12,
-              "borderWidth": 1,
-              "glow": true,
-              "glowIntensity": 18,
-              "secondaryTextColor": "var(--panel-line)",
-              "textColor": "#FFFFFF",
-              "theme": "wik_cyan"
-            },
-            "width": 1980
-          },
-          "type": "shape",
-          "x": 0,
-          "y": 0,
-          "zIndex": 1
-        },
-        {
-          "id": "w1787840890927_13",
+          "id": "w1787943641384_2",
           "props": {
             "address": "",
             "addressType": "holding_register",
@@ -1927,7 +1585,7 @@
             "textMode": "static",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "Var_w1787839925258_3_copy_7_13",
+            "variable": "Var_w1787839925258_3_copy_7_13_copy_84_2",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -1946,11 +1604,11 @@
           },
           "type": "textbox",
           "x": 0,
-          "y": 0,
+          "y": 20,
           "zIndex": 2
         },
         {
-          "id": "w1787840890927_14",
+          "id": "w1787943641384_3",
           "props": {
             "action": "navigate",
             "address": "",
@@ -1969,8 +1627,8 @@
               "enabled": true,
               "mode": "manual"
             },
-            "targetPage": "calibration",
-            "variable": "Var_w1787840053813_4_copy_7_14",
+            "targetPage": "page_mtdbgwng_y1c2c",
+            "variable": "Var_w1787840053813_4_copy_7_14_copy_84_3",
             "variant": "solid",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -1987,12 +1645,12 @@
             "width": 70
           },
           "type": "button",
-          "x": 100,
-          "y": 5,
+          "x": 120,
+          "y": 25,
           "zIndex": 3
         },
         {
-          "id": "w1787840890927_15",
+          "id": "w1787943641384_4",
           "props": {
             "action": "navigate",
             "address": "",
@@ -2012,7 +1670,7 @@
               "mode": "manual"
             },
             "targetPage": "dynamic",
-            "variable": "Var_w1787840053813_4_copy_34_9_copy_7_15",
+            "variable": "Var_w1787840053813_4_copy_34_9_copy_7_15_copy_84_4",
             "variant": "solid",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2029,12 +1687,12 @@
             "width": 70
           },
           "type": "button",
-          "x": 185,
-          "y": 5,
+          "x": 205,
+          "y": 25,
           "zIndex": 4
         },
         {
-          "id": "w1787840890927_16",
+          "id": "w1787943641384_5",
           "props": {
             "action": "navigate",
             "address": "",
@@ -2053,8 +1711,8 @@
               "enabled": true,
               "mode": "manual"
             },
-            "targetPage": "manual",
-            "variable": "Var_w1787840053813_4_copy_34_9_copy_7_10_copy_7_16",
+            "targetPage": "page_mtdbh2u5_t53w8",
+            "variable": "Var_w1787840053813_4_copy_34_9_copy_7_10_copy_7_16_copy_84_5",
             "variant": "solid",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2071,12 +1729,12 @@
             "width": 70
           },
           "type": "button",
-          "x": 15,
-          "y": 5,
+          "x": 35,
+          "y": 25,
           "zIndex": 5
         },
         {
-          "id": "w1787843922022_10",
+          "id": "w1787943641384_6",
           "props": {
             "address": "",
             "addressType": "holding_register",
@@ -2108,7 +1766,7 @@
             "trackColor": "var(--panel-mid)",
             "unit": "°C",
             "unitColor": "var(--accent-cyan)",
-            "variable": "Var_w1787843922022_10",
+            "variable": "Var_w1787843922022_10_copy_84_6",
             "visual": {
               "accentColor": "var(--accent-cyan)",
               "backgroundColor": "var(--panel-canvas)",
@@ -2124,12 +1782,12 @@
             "width": 250
           },
           "type": "gauge",
-          "x": 25,
-          "y": 85,
+          "x": 45,
+          "y": 105,
           "zIndex": 6
         },
         {
-          "id": "w1787843928261_11",
+          "id": "w1787943641384_7",
           "props": {
             "address": "",
             "addressType": "holding_register",
@@ -2181,7 +1839,7 @@
             "textMode": "static",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "Var_w1787843928261_11",
+            "variable": "Var_w1787843928261_11_copy_84_7",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2199,12 +1857,12 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 0,
-          "y": 290,
+          "x": 20,
+          "y": 310,
           "zIndex": 7
         },
         {
-          "id": "w1787844147254_15",
+          "id": "w1787943641384_8",
           "props": {
             "address": "",
             "addressType": "holding_register",
@@ -2256,7 +1914,7 @@
             "textMode": "static",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "Var_w1787843928261_11_copy_4_15",
+            "variable": "Var_w1787843928261_11_copy_4_15_copy_84_8",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2274,12 +1932,12 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 0,
-          "y": 330,
+          "x": 20,
+          "y": 350,
           "zIndex": 8
         },
         {
-          "id": "w1787844158031_16",
+          "id": "w1787943641384_9",
           "props": {
             "address": "5",
             "addressType": "holding_register",
@@ -2331,7 +1989,7 @@
             "textMode": "read",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "Var_w1787843928261_11_copy_4_15_copy_1_16",
+            "variable": "Var_w1787843928261_11_copy_4_15_copy_1_16_copy_84_9",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2349,12 +2007,12 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 105,
-          "y": 290,
+          "x": 125,
+          "y": 310,
           "zIndex": 9
         },
         {
-          "id": "w1787844216464_18",
+          "id": "w1787943641384_10",
           "props": {
             "address": "5",
             "addressType": "holding_register",
@@ -2406,7 +2064,7 @@
             "textMode": "write",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "PressureK",
+            "variable": "PressureK_copy_4_10",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2424,12 +2082,12 @@
             "writeTrigger": "blur"
           },
           "type": "textbox",
-          "x": 105,
-          "y": 330,
+          "x": 125,
+          "y": 350,
           "zIndex": 10
         },
         {
-          "id": "w1787844249691_23",
+          "id": "w1787943641384_11",
           "props": {
             "address": "",
             "addressType": "holding_register",
@@ -2481,7 +2139,7 @@
             "textMode": "static",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "Var_w1787843928261_11_copy_4_15_copy_1_23",
+            "variable": "Var_w1787843928261_11_copy_4_15_copy_1_23_copy_4_11",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2499,12 +2157,12 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 0,
-          "y": 370,
+          "x": 20,
+          "y": 390,
           "zIndex": 11
         },
         {
-          "id": "w1787844249692_24",
+          "id": "w1787943641384_12",
           "props": {
             "address": "5",
             "addressType": "holding_register",
@@ -2556,7 +2214,7 @@
             "textMode": "write",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "PressureB",
+            "variable": "PressureB_copy_4_12",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2574,12 +2232,12 @@
             "writeTrigger": "blur"
           },
           "type": "textbox",
-          "x": 105,
-          "y": 370,
+          "x": 125,
+          "y": 390,
           "zIndex": 12
         },
         {
-          "id": "w1787844267664_25",
+          "id": "w1787943641384_13",
           "props": {
             "address": "",
             "addressType": "holding_register",
@@ -2631,7 +2289,7 @@
             "textMode": "static",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "Var_w1787843928261_11_copy_4_15_copy_1_23_copy_4_25",
+            "variable": "Var_w1787843928261_11_copy_4_15_copy_1_23_copy_4_25_copy_4_13",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2649,12 +2307,12 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 0,
-          "y": 410,
+          "x": 20,
+          "y": 430,
           "zIndex": 13
         },
         {
-          "id": "w1787844267665_26",
+          "id": "w1787943641384_14",
           "props": {
             "address": "5",
             "addressType": "holding_register",
@@ -2734,7 +2392,7 @@
             "textMode": "calculation",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "Var_w1787843928261_11_copy_4_15_copy_1_16_copy_4_18_copy_2_24_copy_5_26",
+            "variable": "Var_w1787843928261_11_copy_4_15_copy_1_16_copy_4_18_copy_2_24_copy_5_26_copy_4_14",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2752,19 +2410,404 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 105,
-          "y": 410,
+          "x": 125,
+          "y": 430,
           "zIndex": 14
+        }
+      ]
+    },
+    "page_mtdbh2u5_t53w8": {
+      "name": "Manual Control",
+      "icon": "📄",
+      "widgets": [
+        {
+          "id": "w1787943649636_15",
+          "props": {
+            "borderColor": "var(--accent-cyan)",
+            "borderWidth": 1,
+            "fill": "var(--panel-mid)",
+            "height": 75,
+            "radius": 8,
+            "rotation": 0,
+            "shapeType": "rectangle",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 1980
+          },
+          "type": "shape",
+          "x": 0,
+          "y": 40,
+          "zIndex": 1
+        },
+        {
+          "id": "w1787943649636_16",
+          "props": {
+            "address": "",
+            "addressType": "holding_register",
+            "backgroundColor": "transparent",
+            "borderColor": "transparent",
+            "borderWidth": 0,
+            "calculationFormula": "",
+            "calculationInputs": [],
+            "calculationResultVariable": "",
+            "cornerSize": 10,
+            "dataType": "number",
+            "decimalPlaces": 3,
+            "defaultText": "Manual Control Page",
+            "device": "",
+            "fontSize": 40,
+            "fontWeight": "700",
+            "frameBackground": "rgba(3, 18, 30, 0.88)",
+            "frameBackgroundOpacity": 0.88,
+            "frameColor": "#00E5FF",
+            "frameGlow": false,
+            "frameOpacity": 1,
+            "framePreset": "cyan",
+            "frameStyle": "standard",
+            "frameWidth": 1.5,
+            "glowIntensity": 18,
+            "height": 75,
+            "icon": "",
+            "iconColor": "#FFFFFF",
+            "iconGap": 8,
+            "iconOffsetX": 0,
+            "iconOffsetY": 0,
+            "iconPosition": "left",
+            "iconSize": 20,
+            "iconVerticalAlign": "center",
+            "innerGlow": false,
+            "inputSource": "tcp",
+            "inputType": "realtime",
+            "padding": 8,
+            "radius": 6,
+            "rotation": 0,
+            "scanEffect": false,
+            "scanSpeed": 2,
+            "showFrameAccent": true,
+            "showFrameDots": false,
+            "sourceDevice": "",
+            "text": "TEXT",
+            "textAlign": "center",
+            "textColor": "#FFFFFF",
+            "textMode": "static",
+            "textOffsetX": 0,
+            "textOffsetY": 0,
+            "variable": "Var_w1787839925258_3_copy_7_13_copy_7_19_copy_66_2_copy_6_16",
+            "verticalAlign": "center",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 1980,
+            "writeTrigger": "enter"
+          },
+          "type": "textbox",
+          "x": 0,
+          "y": 40,
+          "zIndex": 2
+        },
+        {
+          "id": "w1787943649636_17",
+          "props": {
+            "action": "navigate",
+            "address": "",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "🎯",
+            "labelOn": "🎯",
+            "offBackground": "#000000",
+            "offBorder": "#000000",
+            "onBackground": "#000000",
+            "onBorder": "#000000",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "page_mtdbgwng_y1c2c",
+            "variable": "Var_w1787840053813_4_copy_7_14_copy_7_20_copy_66_3_copy_6_17",
+            "variant": "solid",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 70
+          },
+          "type": "button",
+          "x": 140,
+          "y": 45,
+          "zIndex": 3
+        },
+        {
+          "id": "w1787943649636_18",
+          "props": {
+            "action": "navigate",
+            "address": "",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "⏱",
+            "labelOn": "⏱",
+            "offBackground": "#000000",
+            "offBorder": "#000000",
+            "onBackground": "#000000",
+            "onBorder": "#000000",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "dynamic",
+            "variable": "Var_w1787840053813_4_copy_34_9_copy_7_15_copy_7_21_copy_66_4_copy_6_18",
+            "variant": "solid",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 70
+          },
+          "type": "button",
+          "x": 225,
+          "y": 45,
+          "zIndex": 4
+        },
+        {
+          "id": "w1787943649636_19",
+          "props": {
+            "action": "navigate",
+            "address": "",
+            "addressType": "coil",
+            "builderState": 1,
+            "device": "",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "🕹",
+            "labelOn": "🕹",
+            "offBackground": "#000000",
+            "offBorder": "#000000",
+            "onBackground": "#000000",
+            "onBorder": "#000000",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "page_mtdbh2u5_t53w8",
+            "variable": "Var_w1787840053813_4_copy_34_9_copy_7_10_copy_7_16_copy_7_22_copy_66_5_copy_6_19",
+            "variant": "solid",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 70
+          },
+          "type": "button",
+          "x": 55,
+          "y": 45,
+          "zIndex": 5
+        },
+        {
+          "id": "w1787943649636_20",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 55,
+          "y": 185,
+          "zIndex": 6
+        },
+        {
+          "id": "w1787943649636_21",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 60,
+          "y": 265,
+          "zIndex": 7
+        },
+        {
+          "id": "w1787943649636_22",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 60,
+          "y": 330,
+          "zIndex": 8
+        },
+        {
+          "id": "w1787943710461_23",
+          "props": {
+            "address": "",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "",
+            "height": 60,
+            "label": "STATUS",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "circle",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "Var_w1787943710461_23",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 750,
+          "y": 210,
+          "zIndex": 9
         }
       ]
     }
   },
   "canvas": {
-    "width": 1980,
+    "width": 1920,
     "height": 1080
   },
-  "canvasWidth": 1980,
+  "canvasWidth": 1920,
   "canvasHeight": 1080,
-  "designCanvasWidth": 1980,
+  "designCanvasWidth": 1920,
   "designCanvasHeight": 1080
 }
