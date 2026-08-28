@@ -13,6 +13,7 @@ const NODE_TYPES = [
   { type: "device_trigger", category: "trigger", color: "#3B82F6", icon: "📡", label: "Device Trigger", desc: "Start a flow from RS232 / Modbus TCP / Modbus RTU" },
   { type: "zone_inspect", category: "check", color: "#8B5CF6", icon: "🔍", label: "Zone Inspect", desc: "Inspect a camera ROI (vision engine)" },
   { type: "count_over_time", category: "check", color: "#8B5CF6", icon: "⏱", label: "Count Over Time", desc: "Count detections in a camera ROI over N seconds" },
+  { type: "custom_script", category: "check", color: "#F59E0B", icon: "🧩", label: "Custom Script", desc: "Write custom logic for cases no other node covers" },
 ];
 
 const CATEGORY_COLORS = {
@@ -50,6 +51,9 @@ const DEFAULT_NODE_CONFIG = {
   count_over_time: {
     camera_id: "", roi_x: "0", roi_y: "0", roi_w: "100", roi_h: "100",
     method: "contour_blob", method_params: {}, duration: "3", max_count: "999", target_field: "",
+  },
+  custom_script: {
+    code: "# fields: dict of current field values (read/write)\n# result: set True/False to pick the True/False output\n# log(msg): add a line to the run log\n\nresult = True\n",
   },
 };
 
@@ -212,9 +216,12 @@ function RoiPicker({ cameraId, roi, onChange, thresholdValue }) {
 // static/field-key/device-register "source" dropdowns, condition rows, etc.)
 const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDevices = [], tcpDevices = [], rtuDevices = [] }) {
   const [localConfig, setLocalConfig] = useState({});
+  const [checking, setChecking] = useState(false);
+  const [checkResult, setCheckResult] = useState(null);
 
   useEffect(() => {
     setLocalConfig(node?.config || {});
+    setCheckResult(null);
   }, [node?.id]);
 
   if (!node) return (
@@ -237,6 +244,21 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
   const applyChanges = () => {
     onChange({ ...node, config: localConfig });
     if (onApply) onApply();
+  };
+
+  const runCheck = async () => {
+    setChecking(true);
+    setCheckResult(null);
+    try {
+      const r = await fetch(`${API}/api/logic-builder/custom-script/check`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: c.code || "", fields: {} }),
+      });
+      setCheckResult(await r.json());
+    } catch {
+      setCheckResult({ success: false, error: "Network error — backend gak kejangkau" });
+    }
+    setChecking(false);
   };
 
   return (
@@ -424,6 +446,46 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
           <Field label="Store count in field key"><Input value={c.target_field} onChange={v => setLocal("target_field", v)} placeholder="e.g. zone1_count" /></Field>
           <p className="text-[var(--text-muted)] text-[9px] mt-1">
             Node ini nunggu selama Duration detik sambil ngitung. Count ≤ Max Count → <b style={{ color: "#22C55E" }}>Green (True)</b>, lebih dari itu → <b style={{ color: "#EF4444" }}>Red (False)</b>.
+          </p>
+        </>)}
+
+        {node.type === "custom_script" && (<>
+          <Field label="Script (Python)">
+            <textarea
+              value={c.code ?? ""}
+              onChange={e => setLocal("code", e.target.value)}
+              spellCheck={false}
+              rows={12}
+              className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] font-mono rounded px-2 py-1.5 outline-none focus:border-[#F59E0B]/60 resize-y"
+            />
+          </Field>
+
+          <button
+            onClick={runCheck}
+            disabled={checking}
+            className="w-full h-7 rounded-lg border border-[#F59E0B]/50 text-[#F59E0B] hover:bg-[#F59E0B]/10 font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+          >
+            {checking ? <><div className="w-3 h-3 border-2 border-[#F59E0B] border-t-transparent rounded-full animate-spin" /> Checking…</> : "▶ Check Script"}
+          </button>
+
+          {checkResult && (
+            checkResult.success ? (
+              <div className="rounded-lg border border-[#22C55E]/40 bg-[#22C55E]/10 px-2 py-1.5 text-[9px] text-[#22C55E] flex flex-col gap-1">
+                <span className="font-bold">✓ OK — jalan tanpa error (result = {String(checkResult.result)})</span>
+                {checkResult.logs?.length > 0 && checkResult.logs.map((l, i) => <span key={i} className="text-[var(--text-muted)]">log: {l}</span>)}
+                {Object.keys(checkResult.fields || {}).length > 0 && (
+                  <span className="text-[var(--text-muted)]">fields: {JSON.stringify(checkResult.fields)}</span>
+                )}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-[#EF4444]/40 bg-[#EF4444]/10 px-2 py-1.5 text-[9px] text-[#EF4444] font-mono break-words">
+                ✗ {checkResult.error}
+              </div>
+            )
+          )}
+
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">
+            Escape hatch buat logic yang gak cocok di node manapun. Script baca/tulis dict <code>fields</code>, set <code>result</code> (True/False) buat pilih output, dan bisa panggil <code>log("...")</code>. Gak ada akses file/OS/import — cuma operasi Python dasar + <code>math</code>.
           </p>
         </>)}
       </div>

@@ -23,8 +23,8 @@ import {
 // palette list, and save/load. See src/widgets/index.js for the registry.
 // ──────────────────────────────────────────────────────────────────
 
-const CANVAS_PRESETS = [{ label: "Full HD • 1980 × 1080", width: 1980, height: 1080 }];
-const DEFAULT_CANVAS = { width: 1980, height: 1080 };
+const CANVAS_PRESETS = [{ label: "Full HD • 1920 × 1080", width: 1920, height: 1080 }];
+const DEFAULT_CANVAS = { width: 1920, height: 1080 };
 const canvasKey = (width, height) => `${width}x${height}`;
 
 // ── WIDGET PREVIEW (dispatches to the widget's own Preview component) ──
@@ -35,16 +35,89 @@ function WidgetPreview({ widget }) {
 }
 
 // ── PROPERTY PANEL (common chrome + dispatches to the widget's own panel) ──
+// Shown in the right panel instead of single-widget properties whenever
+// 2+ widgets are selected — lines them up without touching width/height.
+function AlignButton({ onClick, title, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="h-10 rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] hover:border-[var(--accent-green)]/60 hover:bg-[var(--accent-green)]/10 text-[var(--text-secondary)] hover:text-[var(--accent-green)] transition-colors flex flex-col items-center justify-center gap-0.5"
+    >
+      <span className="text-sm leading-none">{children}</span>
+    </button>
+  );
+}
+
+function AlignDistributePanel({ count, onAlign, onDelete, onDuplicate }) {
+  return (
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2.5 border-b border-[var(--border-soft)] shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-base shrink-0">▦</span>
+          <span className="text-[var(--text-primary)] font-bold text-xs">{count} widgets selected</span>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <button type="button" onClick={onDuplicate} title="Duplicate" aria-label="Duplicate"
+            className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-blue)] hover:bg-[var(--bg-hover)] transition-colors"><IconDupe /></button>
+          <button type="button" onClick={onDelete} title="Delete" aria-label="Delete"
+            className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--accent-red)] hover:bg-[var(--status-red-bg)]/20 transition-colors"><IconTrash /></button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3" style={{ scrollbarWidth: "thin" }}>
+        <PropSection title="Align Horizontal">
+          <div className="grid grid-cols-3 gap-2">
+            <AlignButton title="Align Left" onClick={() => onAlign("left")}>⊢⯀</AlignButton>
+            <AlignButton title="Align Center" onClick={() => onAlign("center-h")}>⊢⯀⊣</AlignButton>
+            <AlignButton title="Align Right" onClick={() => onAlign("right")}>⯀⊣</AlignButton>
+          </div>
+        </PropSection>
+
+        <PropSection title="Align Vertical">
+          <div className="grid grid-cols-3 gap-2">
+            <AlignButton title="Align Top" onClick={() => onAlign("top")}>⊤⯀</AlignButton>
+            <AlignButton title="Align Middle" onClick={() => onAlign("middle-v")}>⯀↕</AlignButton>
+            <AlignButton title="Align Bottom" onClick={() => onAlign("bottom")}>⯀⊥</AlignButton>
+          </div>
+        </PropSection>
+
+        <PropSection title="Distribute Spacing">
+          <div className="grid grid-cols-2 gap-2">
+            <AlignButton title="Distribute Horizontally (needs 3+)" onClick={() => onAlign("distribute-h")}>↔ Horizontal</AlignButton>
+            <AlignButton title="Distribute Vertically (needs 3+)" onClick={() => onAlign("distribute-v")}>↕ Vertical</AlignButton>
+          </div>
+          {count < 3 && (
+            <p className="text-[var(--text-faint)] text-[9px] mt-1">Distribute butuh minimal 3 widget dipilih.</p>
+          )}
+        </PropSection>
+      </div>
+    </div>
+  );
+}
+
 function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction, canvasWidth, canvasHeight, availableDevices = [], availablePages = [] }) {
   if (!widget) return (<div className="flex flex-col items-center justify-center h-full text-center px-4"><span className="text-3xl opacity-20 mb-2">🖱</span><p className="text-[var(--text-muted)] text-[10px]">Click a widget on the canvas to edit its properties</p></div>);
   const { type, props: p, x, y } = widget;
 
+  // Accepts either set(key, val) or set({ key1: val1, key2: val2 }) for a
+  // batched update. Dispatches a { id, propsPatch } patch (merged against
+  // the LIVE widget in PageBuilder's state) rather than a full replacement
+  // built from this render's `p` — so several set() calls made back-to-back
+  // in one handler (e.g. two related fields) no longer clobber each other.
   const set = useCallback((key, val) => {
-    let newProps = { ...p, [key]: val };
-    if (key === "width") { const maxW = canvasWidth - x; newProps.width = Math.min(maxW, Math.max(40, val)); }
-    if (key === "height") { const maxH = canvasHeight - y; newProps.height = Math.min(maxH, Math.max(24, val)); }
-    onChange({ ...widget, props: newProps });
-  }, [widget, onChange, canvasWidth, canvasHeight, x, y, p]);
+    const patch = key && typeof key === "object" ? { ...key } : { [key]: val };
+    if (Object.prototype.hasOwnProperty.call(patch, "width")) {
+      const maxW = canvasWidth - x;
+      patch.width = Math.min(maxW, Math.max(40, patch.width));
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, "height")) {
+      const maxH = canvasHeight - y;
+      patch.height = Math.min(maxH, Math.max(24, patch.height));
+    }
+    onChange({ id: widget.id, propsPatch: patch });
+  }, [widget, onChange, canvasWidth, canvasHeight, x, y]);
 
   const handleXChange = useCallback((v) => { const newX = Math.max(0, Math.min(snap(v), canvasWidth - p.width)); onChange({ ...widget, x: newX }); }, [widget, onChange, canvasWidth, p.width]);
   const handleYChange = useCallback((v) => { const newY = Math.max(0, Math.min(snap(v), canvasHeight - p.height)); onChange({ ...widget, y: newY }); }, [widget, onChange, canvasHeight, p.height]);
@@ -89,7 +162,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction,
   </div></div>);
 }
 
-export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }) {
+export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevices = [] }) {
   // Dynamic Page is the permanent MAIN page.
   // Custom pages are stored alongside it and may be deleted.
   const [pageType, setPageType] = useState("dynamic");
@@ -102,12 +175,99 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
   });
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [newPageName, setNewPageName] = useState("");
-  const [widgets, setWidgets] = useState([]);
+  const [widgets, setWidgetsRaw] = useState([]);
+  // Undo/redo history for the CURRENT page's widget list. Kept as plain refs
+  // (not state) since pushing to them must never itself trigger a re-render —
+  // only the resulting `widgets` update should. `suppressHistoryRef` is set
+  // around page loads/switches/the canvas-resize clamp effect, and around
+  // continuous drag/resize gestures (which push ONE snapshot at gesture start
+  // instead of one per mousemove frame).
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+  const suppressHistoryRef = useRef(false);
+  // Widgets snapshot taken at the start of a drag/resize gesture, pushed to
+  // history lazily on the gesture's first real mousemove (see below) — a
+  // plain click that never moves anything should not leave an undo step.
+  const gestureSnapshotRef = useRef(null);
+
+  const pushHistory = useCallback((snapshot) => {
+    undoStackRef.current.push(snapshot);
+    if (undoStackRef.current.length > 100) undoStackRef.current.shift();
+    redoStackRef.current = [];
+  }, []);
+
+  const resetHistory = useCallback(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+  }, []);
+
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+  const syncUndoRedoFlags = useCallback(() => {
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(redoStackRef.current.length > 0);
+  }, []);
+
+  // `skipHistory` is captured in the closure passed to setWidgetsRaw below,
+  // so whether this particular call counts as undoable is decided at the
+  // moment setWidgets() is CALLED — not read from a mutable ref at the
+  // moment React eventually runs the updater. That distinction matters:
+  // React 18 batches/defers state updates from effects and promises, so a
+  // "suppressHistoryRef.current = true; setWidgets(...); ...= false" pattern
+  // around an effect body silently did nothing (the flag was back to false
+  // by the time the updater actually ran). suppressHistoryRef.current is
+  // still read here as a fallback for the drag/resize gestures below, whose
+  // setWidgets calls come from native mousemove listeners outside React's
+  // effect scheduling and do observe the ref synchronously.
+  const setWidgets = useCallback((updater, opts) => {
+    const skip = opts?.skipHistory || suppressHistoryRef.current;
+    setWidgetsRaw(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (!skip && next !== prev) pushHistory(prev);
+      return next;
+    });
+  }, [pushHistory]);
+
+  // Keep the Undo/Redo buttons in sync with the ref-based stacks whenever
+  // `widgets` changes, regardless of what caused the change.
+  useEffect(() => { syncUndoRedoFlags(); }, [widgets, syncUndoRedoFlags]);
+
+  // The stack-empty check happens INSIDE the updater, not just before calling
+  // setWidgetsRaw — React 18 (StrictMode especially) can invoke an updater
+  // later/twice relative to when the surrounding function ran, so a guard
+  // only in the outer function body can pass twice while the stack is only
+  // long enough for one pop, popping `undefined` the second time and
+  // crashing on `.length`. Checking at pop-time is correct regardless of how
+  // many times or when React actually runs this updater.
+  const undo = useCallback(() => {
+    setWidgetsRaw(prev => {
+      if (undoStackRef.current.length === 0) return prev;
+      const previous = undoStackRef.current.pop();
+      redoStackRef.current.push(prev);
+      return previous;
+    });
+    syncUndoRedoFlags();
+  }, [syncUndoRedoFlags]);
+
+  const redo = useCallback(() => {
+    setWidgetsRaw(prev => {
+      if (redoStackRef.current.length === 0) return prev;
+      const next = redoStackRef.current.pop();
+      undoStackRef.current.push(prev);
+      return next;
+    });
+    syncUndoRedoFlags();
+  }, [syncUndoRedoFlags]);
   const [selected, setSelected] = useState([]);
   const [clipboard, setClipboard] = useState([]);
   const [dragInfo, setDragInfo] = useState(null);
   const [marquee, setMarquee] = useState(null);
   const marqueeRef = useRef(null);
+  // A completed marquee-drag still fires a native "click" on mouseup (click
+  // fires whenever mousedown/mouseup share a target, no matter how far the
+  // mouse moved between them) — without this guard that click immediately
+  // wiped the selection the drag had just made, so multi-select never stuck.
+  const justMarqueedRef = useRef(false);
   const [paletteSearch, setPaletteSearch] = useState("");
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -165,12 +325,13 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
       },
     }));
 
-    setWidgets(nextPage ? normalizePage(pages[nextPage]?.widgets || []) : []);
+    resetHistory();
+    setWidgets(nextPage ? normalizePage(pages[nextPage]?.widgets || []) : [], { skipHistory: true });
     setSelected([]);
     setDragInfo(null);
     setResizing(null);
     setPageType(nextPage);
-  }, [pageType, pages, widgets, normalizeLayerOrder, normalizePage]);
+  }, [pageType, pages, widgets, normalizeLayerOrder, normalizePage, resetHistory]);
 
   const handleLayerAction = useCallback((action) => {
     if (selected.length === 0) return;
@@ -218,6 +379,112 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     );
   }, []);
 
+  // Align/distribute the currently selected widgets. `mode` is one of:
+  // left/center-h/right/top/middle-v/bottom/distribute-h/distribute-v.
+  // Position math only — never touches width/height, so widget content
+  // (charts, tables, etc.) never gets resized by lining things up.
+  const alignSelected = useCallback((mode) => {
+    setWidgets(prev => {
+      const selectedSet = new Set(selected);
+      const targets = prev.filter(w => selectedSet.has(w.id));
+      if (targets.length < 2) return prev;
+
+      const rectOf = (w) => ({
+        x: w.x,
+        y: w.y,
+        w: Number(w.props?.width || 0),
+        h: Number(w.props?.height || 0),
+      });
+
+      const minX = Math.min(...targets.map(w => rectOf(w).x));
+      const maxRight = Math.max(...targets.map(w => rectOf(w).x + rectOf(w).w));
+      const minY = Math.min(...targets.map(w => rectOf(w).y));
+      const maxBottom = Math.max(...targets.map(w => rectOf(w).y + rectOf(w).h));
+
+      const updates = new Map();
+
+      if (mode === "left") {
+        targets.forEach(w => updates.set(w.id, { x: minX }));
+      } else if (mode === "right") {
+        targets.forEach(w => updates.set(w.id, { x: maxRight - rectOf(w).w }));
+      } else if (mode === "center-h") {
+        const centerX = (minX + maxRight) / 2;
+        targets.forEach(w => updates.set(w.id, { x: Math.round(centerX - rectOf(w).w / 2) }));
+      } else if (mode === "top") {
+        targets.forEach(w => updates.set(w.id, { y: minY }));
+      } else if (mode === "bottom") {
+        targets.forEach(w => updates.set(w.id, { y: maxBottom - rectOf(w).h }));
+      } else if (mode === "middle-v") {
+        const centerY = (minY + maxBottom) / 2;
+        targets.forEach(w => updates.set(w.id, { y: Math.round(centerY - rectOf(w).h / 2) }));
+      } else if (mode === "distribute-h") {
+        if (targets.length < 3) return prev;
+        const sorted = [...targets].sort((a, b) => rectOf(a).x - rectOf(b).x);
+        const totalWidth = sorted.reduce((sum, w) => sum + rectOf(w).w, 0);
+        const span = (rectOf(sorted[sorted.length - 1]).x + rectOf(sorted[sorted.length - 1]).w) - rectOf(sorted[0]).x;
+        const gap = (span - totalWidth) / (sorted.length - 1);
+        let cursor = rectOf(sorted[0]).x;
+        sorted.forEach(w => {
+          updates.set(w.id, { x: Math.round(cursor) });
+          cursor += rectOf(w).w + gap;
+        });
+      } else if (mode === "distribute-v") {
+        if (targets.length < 3) return prev;
+        const sorted = [...targets].sort((a, b) => rectOf(a).y - rectOf(b).y);
+        const totalHeight = sorted.reduce((sum, w) => sum + rectOf(w).h, 0);
+        const span = (rectOf(sorted[sorted.length - 1]).y + rectOf(sorted[sorted.length - 1]).h) - rectOf(sorted[0]).y;
+        const gap = (span - totalHeight) / (sorted.length - 1);
+        let cursor = rectOf(sorted[0]).y;
+        sorted.forEach(w => {
+          updates.set(w.id, { y: Math.round(cursor) });
+          cursor += rectOf(w).h + gap;
+        });
+      }
+
+      if (updates.size === 0) return prev;
+      return prev.map(w => {
+        const u = updates.get(w.id);
+        if (!u) return w;
+        return {
+          ...w,
+          x: u.x !== undefined ? Math.max(0, Math.min(CANVAS_W - rectOf(w).w, u.x)) : w.x,
+          y: u.y !== undefined ? Math.max(0, Math.min(CANVAS_H - rectOf(w).h, u.y)) : w.y,
+        };
+      });
+    });
+  }, [selected, CANVAS_W, CANVAS_H]);
+
+  const deleteSelected = useCallback(() => {
+    if (selected.length === 0) return;
+    setWidgets(ws => normalizeLayerOrder(ws.filter(w => !selected.includes(w.id))));
+    setSelected([]);
+  }, [selected, normalizeLayerOrder]);
+
+  const duplicateSelected = useCallback(() => {
+    if (selected.length === 0) return;
+
+    const clones = widgets
+      .filter(w => selected.includes(w.id))
+      .map(w => {
+        const newId = uid();
+        const width = Number(w.props?.width || 40);
+        const height = Number(w.props?.height || 24);
+        const props = { ...structuredClone(w.props || {}) };
+        if (props.variable) props.variable = `${props.variable}_copy_${newId.slice(-4)}`;
+
+        return {
+          ...structuredClone(w),
+          id: newId,
+          x: Math.max(0, Math.min(CANVAS_W - width, w.x + 16)),
+          y: Math.max(0, Math.min(CANVAS_H - height, w.y + 16)),
+          props,
+        };
+      });
+
+    setWidgets(ws => normalizeLayerOrder([...ws, ...clones]));
+    setSelected(clones.map(w => w.id));
+  }, [selected, widgets, CANVAS_W, CANVAS_H, normalizeLayerOrder]);
+
   useEffect(() => {
     if (!cpNumber) { setLoading(false); return; }
     fetch(`${API}/api/page-config/${cpNumber}`)
@@ -256,14 +523,15 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
 
         setPages(normalizedPages);
         setPageType("dynamic");
-        setWidgets(normalizedPages.dynamic.widgets);
+        resetHistory();
+        setWidgets(normalizedPages.dynamic.widgets, { skipHistory: true });
         setSelected([]);
         setDragInfo(null);
         setResizing(null);
         setLoading(false);
       })
       .catch(() => setLoading(false));
-  }, [cpNumber, normalizePage]);
+  }, [cpNumber, normalizePage, resetHistory]);
 
   // The selected resolution is the DESIGN HMI canvas.
   // The Builder always fits this canvas completely inside the editor.
@@ -291,7 +559,9 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     return () => observer.disconnect();
   }, [CANVAS_W, CANVAS_H]);
 
-  // Keep widgets inside the newly selected logical canvas.
+  // Keep widgets inside the newly selected logical canvas. Runs on every
+  // CANVAS_W/H change (including mount) and is normally a no-op — it must
+  // never itself count as an undoable edit.
   useEffect(() => {
     setWidgets(prev => prev.map(w => {
       const p = w.props || {};
@@ -301,7 +571,7 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
       const y = Math.max(0, Math.min(Number(w.y || 0), CANVAS_H - height));
       if (x === w.x && y === w.y && width === p.width && height === p.height) return w;
       return { ...w, x, y, props: { ...p, width, height } };
-    }));
+    }), { skipHistory: true });
   }, [CANVAS_W, CANVAS_H]);
 
   const handleCanvasDrop = useCallback((e) => {
@@ -386,6 +656,7 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
       if (m) {
         const moved = Math.abs(m.currentX - m.startX) > 2 || Math.abs(m.currentY - m.startY) > 2;
         if (!moved && !m.additive) setSelected([]);
+        if (moved) justMarqueedRef.current = true;
       }
       marqueeRef.current = null;
       setMarquee(null);
@@ -426,13 +697,19 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     const offsetX = (e.clientX - rect.left) / scale;
     const offsetY = (e.clientY - rect.top) / scale;
 
+    // One history snapshot for the whole drag, pushed lazily on the first
+    // actual mousemove (see the effect below) rather than here — a plain
+    // click with no movement should not leave a no-op undo step behind.
+    gestureSnapshotRef.current = widgets;
+    suppressHistoryRef.current = true;
+
     setDragInfo({
       id,
       selectedIds: activeIds,
       offsetX,
       offsetY,
     });
-  }, [scale, selected, toggleSelection]);
+  }, [scale, selected, toggleSelection, widgets]);
 
   useEffect(() => {
     if (!dragInfo) return;
@@ -440,6 +717,11 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     const onMove = (e) => {
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
+
+      if (gestureSnapshotRef.current) {
+        pushHistory(gestureSnapshotRef.current);
+        gestureSnapshotRef.current = null;
+      }
 
       const mouseX = (e.clientX - canvasRect.left) / scale;
       const mouseY = (e.clientY - canvasRect.top) / scale;
@@ -469,7 +751,12 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
       });
     };
 
-    const onUp = () => setDragInfo(null);
+    const onUp = () => {
+      setDragInfo(null);
+      gestureSnapshotRef.current = null;
+      suppressHistoryRef.current = false;
+      syncUndoRedoFlags();
+    };
 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -477,18 +764,25 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [dragInfo, scale, CANVAS_W, CANVAS_H]);
+  }, [dragInfo, scale, CANVAS_W, CANVAS_H, pushHistory, syncUndoRedoFlags]);
 
   const startResize = useCallback((e, id) => {
     e.stopPropagation(); e.preventDefault();
     const widget = widgets.find(w => w.id === id);
     if (!widget) return;
+    // Same lazy-snapshot approach as startDrag — see gestureSnapshotRef above.
+    gestureSnapshotRef.current = widgets;
+    suppressHistoryRef.current = true;
     setResizing({ id, startX: e.clientX, startY: e.clientY, startW: widget.props.width, startH: widget.props.height });
   }, [widgets]);
 
   useEffect(() => {
     if (!resizing) return;
     const onMove = (e) => {
+      if (gestureSnapshotRef.current) {
+        pushHistory(gestureSnapshotRef.current);
+        gestureSnapshotRef.current = null;
+      }
       const dw = (e.clientX - resizing.startX) / scale;
       const dh = (e.clientY - resizing.startY) / scale;
       setWidgets(ws => ws.map(w => {
@@ -500,11 +794,16 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
         return { ...w, props: { ...w.props, width: Math.min(newW, maxW), height: Math.min(newH, maxH) } };
       }));
     };
-    const onUp = () => setResizing(null);
+    const onUp = () => {
+      setResizing(null);
+      gestureSnapshotRef.current = null;
+      suppressHistoryRef.current = false;
+      syncUndoRedoFlags();
+    };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [resizing, scale, CANVAS_W, CANVAS_H]);
+  }, [resizing, scale, CANVAS_W, CANVAS_H, pushHistory, syncUndoRedoFlags]);
 
   const save = useCallback(async () => {
     setSaving(true); setSaveMsg("");
@@ -556,11 +855,16 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
         }),
       });
       const d = await r.json();
-      if (d.success) setSaveMsg("✓ Saved!"); else setSaveMsg("✗ Save failed");
+      if (d.success) {
+        setSaveMsg("✓ Saved!");
+        onSaved?.();
+      } else {
+        setSaveMsg("✗ Save failed");
+      }
     } catch { setSaveMsg("✗ Network error"); }
     setSaving(false);
     setTimeout(() => setSaveMsg(""), 3000);
-  }, [cpNumber, pages, pageType, widgets, CANVAS_W, CANVAS_H, normalizeLayerOrder, normalizePage]);
+  }, [cpNumber, pages, pageType, widgets, CANVAS_W, CANVAS_H, normalizeLayerOrder, normalizePage, onSaved]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -579,6 +883,18 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
 
       const ctrl = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
+
+      // Ctrl+Z — undo. Ctrl+Shift+Z / Ctrl+Y — redo.
+      if (ctrl && key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        return;
+      }
+      if (ctrl && ((key === "z" && e.shiftKey) || key === "y")) {
+        e.preventDefault();
+        redo();
+        return;
+      }
 
       // Ctrl+A — select all widgets.
       if (ctrl && key === "a") {
@@ -758,7 +1074,7 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selected, widgets, clipboard, normalizeLayerOrder, CANVAS_W, CANVAS_H]);
+  }, [selected, widgets, clipboard, normalizeLayerOrder, CANVAS_W, CANVAS_H, undo, redo]);
 
 
   const createPage = useCallback(() => {
@@ -781,13 +1097,14 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
 
     setPages(prev => ({ ...prev, [id]: newPage }));
     setPageType(id);
-    setWidgets([]);
+    resetHistory();
+    setWidgets([], { skipHistory: true });
     setSelected([]);
     setDragInfo(null);
     setResizing(null);
     setShowCreatePage(false);
     setNewPageName("");
-  }, [newPageName, pages]);
+  }, [newPageName, pages, resetHistory]);
 
   const deleteCurrentPage = useCallback(() => {
     if (!pageType || pageType === "dynamic") return;
@@ -806,11 +1123,12 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
     });
 
     setPageType(nextPage);
-    setWidgets(nextPage ? normalizePage(pages[nextPage]?.widgets || []) : []);
+    resetHistory();
+    setWidgets(nextPage ? normalizePage(pages[nextPage]?.widgets || []) : [], { skipHistory: true });
     setSelected([]);
     setDragInfo(null);
     setResizing(null);
-  }, [pageType, pages, normalizePage]);
+  }, [pageType, pages, normalizePage, resetHistory]);
 
   const clearCanvas = useCallback(() => {
     setWidgets([]);
@@ -836,14 +1154,14 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
 
   return (
     <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm font-sans">
-      <ModalPanel className="relative flex flex-col rounded-2xl overflow-hidden border border-[var(--border)] shadow-2xl" style={{ width: "min(98vw, 1800px)", height: "min(96vh, 900px)", background: "var(--panel-canvas)" }}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
-          <div className="flex items-center gap-3">
-            <span className="text-[var(--accent-green)] font-black text-lg tracking-tighter">WIK</span>
-            <div className="w-px h-5 bg-[var(--border)]" />
-            <span className="text-[var(--text-primary)] font-bold text-sm">Page Builder</span>
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30">CP{String(cpNumber).padStart(2, "0")}</span>
-            <div className="flex items-center gap-1 ml-2 p-1 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-canvas)]">
+      <ModalPanel className="relative flex flex-col rounded-2xl overflow-hidden border border-[var(--border)] shadow-2xl" style={{ width: "min(99vw, 1920px)", height: "min(97vh, 1040px)", background: "var(--panel-canvas)" }}>
+        <div className="flex items-center justify-between gap-x-3 gap-y-2 flex-wrap px-5 py-3 border-b border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
+          <div className="flex items-center gap-3 flex-wrap min-w-0">
+            <span className="text-[var(--accent-green)] font-black text-lg tracking-tighter shrink-0">WIK</span>
+            <div className="w-px h-5 bg-[var(--border)] shrink-0" />
+            <span className="text-[var(--text-primary)] font-bold text-sm shrink-0">Page Builder</span>
+            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[var(--accent-green)]/15 text-[var(--accent-green)] border border-[var(--accent-green)]/30 shrink-0">CP{String(cpNumber).padStart(2, "0")}</span>
+            <div className="flex items-center gap-1 ml-2 p-1 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-canvas)] flex-wrap max-w-full overflow-x-auto" style={{ scrollbarWidth: "thin" }}>
               {Object.entries(pages).map(([key, page]) => (
                 <button
                   key={key}
@@ -868,22 +1186,24 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2 flex-wrap shrink-0">
+            <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Canvas</span>
-              <span className="px-2 h-7 inline-flex items-center rounded border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 text-[var(--accent-green)] text-[10px] font-bold font-mono">FULL HD · 1980 × 1080</span>
+              <span className="px-2 h-7 inline-flex items-center rounded border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 text-[var(--accent-green)] text-[10px] font-bold font-mono whitespace-nowrap">FULL HD · 1920 × 1080</span>
             </div>
             {saveMsg && <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saveMsg.startsWith("✓") ? "text-[var(--accent-green)] bg-[var(--accent-green)]/10" : "text-[var(--accent-red)] bg-[var(--accent-red)]/10"}`}>{saveMsg}</span>}
             {pageType && pageType !== "dynamic" && (
               <button onClick={deleteCurrentPage} className="h-7 px-3 rounded-lg border border-[var(--accent-red)]/30 text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 text-[10px] font-bold transition-colors">Delete Page</button>
             )}
+            <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="w-7 h-7 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xs font-bold">↶</button>
+            <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" className="w-7 h-7 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xs font-bold">↷</button>
             <button onClick={clearCanvas} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] text-[10px] font-bold transition-colors">Clear</button>
             <button onClick={save} disabled={saving || !pageType} className="h-7 px-4 rounded-lg bg-[var(--accent-green)] hover:bg-[var(--accent-green-dark)] text-[var(--status-green-bg)] font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-[var(--status-green-bg)] border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Layout"}</button>
             <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)] transition-colors"><IconX /></button>
           </div>
         </div>
         <div className="flex flex-1 overflow-hidden min-h-0">
-          <div className="shrink-0 border-r border-[var(--border-soft)] flex flex-col" style={{ width: 272, background: "var(--bg-canvas)" }}>
+          <div className="shrink-0 border-r border-[var(--border-soft)] flex flex-col" style={{ width: "clamp(200px, 16vw, 272px)", background: "var(--bg-canvas)" }}>
             <div className="px-3 pt-3 pb-2 shrink-0"><p className="text-[var(--accent-green)] text-[9px] font-bold uppercase tracking-widest mb-2">Components</p><input value={paletteSearch} onChange={e => setPaletteSearch(e.target.value)} placeholder="Search…" className="w-full bg-[var(--border-soft)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded-lg px-2 h-7 outline-none placeholder-[var(--border)] focus:border-[var(--accent-green)]/50" /></div>
             <div className="flex-1 overflow-y-auto px-3 pb-3 flex flex-col gap-1.5 mt-2" style={{ scrollbarWidth: "thin", scrollbarColor: "var(--border) var(--bg-canvas)" }}>
               {filteredPalette.map(comp => (
@@ -925,7 +1245,7 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
           <div ref={canvasContainerRef} className="flex-1 min-w-0 min-h-0 overflow-hidden flex items-center justify-center px-4 py-3" style={{ background: "var(--panel-canvas)" }}>
             {loading ? (<div className="flex items-center gap-2 text-[var(--accent-green)] text-xs mt-20"><div className="w-4 h-4 border-2 border-[var(--accent-green)] border-t-transparent rounded-full animate-spin" /> Loading layout…</div>) : (
               <div style={{ width: displayWidth, height: displayHeight, position: "relative", flex: "0 0 auto", overflow: "hidden" }}>
-                <div ref={canvasRef} onMouseDown={startMarquee} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={e => { if (e.target === canvasRef.current && !marquee) clearSelection(); }} className="relative origin-top-left overflow-hidden" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
+                <div ref={canvasRef} onMouseDown={startMarquee} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={e => { if (justMarqueedRef.current) { justMarqueedRef.current = false; return; } if (e.target === canvasRef.current && !marquee) clearSelection(); }} className="relative origin-top-left overflow-hidden" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
                   {marquee && <div className="absolute pointer-events-none" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height, border: "1px dashed var(--accent-green)", background: "var(--accent-green)", opacity: 0.12, zIndex: 999999 }} /> }
                   {widgets.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-4xl opacity-10 mb-2">{pageType ? "🖱" : "📄"}</span><p className="text-[var(--border-soft)] text-sm font-mono">{pageType ? "Drag components here" : "Create a Page to start designing"}</p></div>)}
                   {widgets.map(widget => {
@@ -936,45 +1256,32 @@ export default function PageBuilder({ cpNumber, onClose, availableDevices = [] }
               </div>
             )}
           </div>
-          <div className="shrink-0 border-l border-[var(--border-soft)] flex flex-col" style={{ width: 296, background: "var(--bg-canvas)" }}>
-            <PropertyPanel
-              widget={selectedWidget}
-              onChange={updated => setWidgets(ws => ws.map(w => w.id === updated.id ? updated : w))}
-              onDelete={() => {
-                if (selected.length === 0) return;
-                setWidgets(ws => normalizeLayerOrder(ws.filter(w => !selected.includes(w.id))));
-                setSelected([]);
-              }}
-              onLayerAction={handleLayerAction}
-              onDuplicate={() => {
-                if (selected.length === 0) return;
-
-                const clones = widgets
-                  .filter(w => selected.includes(w.id))
-                  .map(w => {
-                    const newId = uid();
-                    const width = Number(w.props?.width || 40);
-                    const height = Number(w.props?.height || 24);
-                    const props = { ...structuredClone(w.props || {}) };
-                    if (props.variable) props.variable = `${props.variable}_copy_${newId.slice(-4)}`;
-
-                    return {
-                      ...structuredClone(w),
-                      id: newId,
-                      x: Math.max(0, Math.min(CANVAS_W - width, w.x + 16)),
-                      y: Math.max(0, Math.min(CANVAS_H - height, w.y + 16)),
-                      props,
-                    };
-                  });
-
-                setWidgets(ws => normalizeLayerOrder([...ws, ...clones]));
-                setSelected(clones.map(w => w.id));
-              }}
-              canvasWidth={CANVAS_W}
-              canvasHeight={CANVAS_H}
-               availableDevices={availableDevices}
-              availablePages={Object.entries(pages).map(([id, page]) => ({ id, name: page?.name || id }))}
-            />
+          <div className="shrink-0 border-l border-[var(--border-soft)] flex flex-col overflow-y-auto" style={{ width: "clamp(220px, 17vw, 296px)", background: "var(--bg-canvas)", scrollbarWidth: "thin" }}>
+            {selected.length > 1 ? (
+              <AlignDistributePanel
+                count={selected.length}
+                onAlign={alignSelected}
+                onDelete={deleteSelected}
+                onDuplicate={duplicateSelected}
+              />
+            ) : (
+              <PropertyPanel
+                widget={selectedWidget}
+                onChange={updated => setWidgets(ws => ws.map(w => {
+                  if (w.id !== updated.id) return w;
+                  return updated.propsPatch
+                    ? { ...w, props: { ...w.props, ...updated.propsPatch } }
+                    : updated;
+                }))}
+                onDelete={deleteSelected}
+                onLayerAction={handleLayerAction}
+                onDuplicate={duplicateSelected}
+                canvasWidth={CANVAS_W}
+                canvasHeight={CANVAS_H}
+                availableDevices={availableDevices}
+                availablePages={Object.entries(pages).map(([id, page]) => ({ id, name: page?.name || id }))}
+              />
+            )}
           </div>
         </div>
         {showCreatePage && (

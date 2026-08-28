@@ -12,10 +12,13 @@ import { gaugeDef, GaugePreview, GaugePropertyPanel, RuntimeGauge } from "./gaug
 import { linechartDef, LineChartPreview, LineChartPropertyPanel, RuntimeLineChart } from "./linechart";
 import { cameraFeedDef, CameraFeedPreview, CameraFeedPropertyPanel, RuntimeCameraFeed } from "./camerafeed";
 import { testtableDef, TestTablePreview, TestTablePropertyPanel, RuntimeTestTable } from "./testtable";
+import { imageDef, ImagePreview, ImagePropertyPanel, RuntimeImage } from "./image";
 
 
 
 // Palette shown in the Page Builder sidebar (drag source).
+// CPK Analyzer is NOT here — it moved to its own full-page sidebar menu
+// (src/modal/CpkAnalyzerModal.jsx) instead of being a Page Builder widget.
 export const COMPONENT_TYPES = [
   buttonDef,
   lightDef,
@@ -25,8 +28,7 @@ export const COMPONENT_TYPES = [
   linechartDef,
   cameraFeedDef,
   testtableDef,
-
- 
+  imageDef,
 ];
 
 // type -> canvas preview component (Page Builder, design-time)
@@ -39,8 +41,7 @@ export const WIDGET_PREVIEWS = {
   linechart: LineChartPreview,
   camerafeed: CameraFeedPreview,
   testtable: TestTablePreview,
-
- 
+  image: ImagePreview,
 };
 
 // type -> property panel component (Page Builder, right sidebar)
@@ -53,8 +54,7 @@ export const WIDGET_PROPERTY_PANELS = {
   linechart: LineChartPropertyPanel,
   camerafeed: CameraFeedPropertyPanel,
   testtable: TestTablePropertyPanel,
-
- 
+  image: ImagePropertyPanel,
 };
 
 // type -> runtime component (Dynamic CP Page, live/production)
@@ -67,8 +67,7 @@ export const WIDGET_RUNTIME = {
   linechart: RuntimeLineChart,
   camerafeed: RuntimeCameraFeed,
   testtable: RuntimeTestTable,
-
- 
+  image: RuntimeImage,
 };
 
 // Also re-export each runtime component by name, since DynamicCPPage.jsx
@@ -83,8 +82,7 @@ export {
   RuntimeLineChart,
   RuntimeCameraFeed,
   RuntimeTestTable,
-
-
+  RuntimeImage,
 };
 
 export * from "./shared";

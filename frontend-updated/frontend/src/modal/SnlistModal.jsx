@@ -131,6 +131,8 @@ function ColumnManagerModal({ columns, onSave, onClose }) {
 
 // ── Row Modal ──────────────────────────────────────────────────
 function RowModal({ title, columns, prefill = {}, onSave, onClose }) {
+  const isEdit = !!prefill.id;
+
   const [vals, setVals] = useState(() => {
     const init = {};
     columns.forEach(c => { init[c.key] = prefill[c.key] || ""; });
@@ -147,17 +149,40 @@ function RowModal({ title, columns, prefill = {}, onSave, onClose }) {
           <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"><IconX /></button>
         </div>
         <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
-          {columns.map(col => (
-            <div key={col.key} className="flex items-center gap-3">
-              <span className="text-[var(--text-secondary)] text-[10px] font-bold w-[160px] shrink-0 leading-tight">{col.label}</span>
-              <input
-                value={vals[col.key]}
-                onChange={e => set(col.key, e.target.value)}
-                onKeyDown={e => e.key === "Enter" && onSave(vals)}
-                className="flex-1 h-9 bg-[var(--bg-surface)] border border-[var(--border)] focus:border-[#22C55E]/60 text-[var(--text-primary)] text-xs rounded-lg px-3 outline-none transition-colors"
-              />
+          {!isEdit && (
+            <div className="flex items-center gap-3">
+              <span className="text-[var(--text-secondary)] text-[10px] font-bold w-[160px] shrink-0 leading-tight">Date / Time</span>
+              <span className="flex-1 h-9 flex items-center px-3 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-muted)] text-xs italic">
+                Auto-filled on save (current time)
+              </span>
             </div>
-          ))}
+          )}
+
+          {columns
+            .filter(col => isEdit || col.key !== "date_time")
+            .map(col => (
+              <div key={col.key} className="flex items-center gap-3">
+                <span className="text-[var(--text-secondary)] text-[10px] font-bold w-[160px] shrink-0 leading-tight">{col.label}</span>
+                {col.key === "result" ? (
+                  <select
+                    value={vals[col.key]}
+                    onChange={e => set(col.key, e.target.value)}
+                    className="flex-1 h-9 bg-[var(--bg-surface)] border border-[var(--border)] focus:border-[#22C55E]/60 text-[var(--text-primary)] text-xs rounded-lg px-3 outline-none transition-colors"
+                  >
+                    <option value="">— (not counted in FPY)</option>
+                    <option value="OK">OK</option>
+                    <option value="NG">NG</option>
+                  </select>
+                ) : (
+                  <input
+                    value={vals[col.key]}
+                    onChange={e => set(col.key, e.target.value)}
+                    onKeyDown={e => e.key === "Enter" && onSave(vals)}
+                    className="flex-1 h-9 bg-[var(--bg-surface)] border border-[var(--border)] focus:border-[#22C55E]/60 text-[var(--text-primary)] text-xs rounded-lg px-3 outline-none transition-colors"
+                  />
+                )}
+              </div>
+            ))}
         </div>
         <div className="px-5 py-3 flex gap-2 justify-end border-t border-[var(--border-soft)]">
           <button onClick={onClose} className="h-8 px-4 rounded-xl border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-xs transition-colors">Cancel</button>

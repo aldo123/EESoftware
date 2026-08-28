@@ -6,6 +6,8 @@ import SettingModal from "./modal/SettingModal";
 import MaintenancePage from "./modal/MaintenanceModal";
 import SNListPage from "./modal/SnlistModal";
 import ReferencePage from "./modal/ReferenceModal";
+import CpkAnalyzerPage from "./modal/CpkAnalyzerModal";
+import DashboardPage from "./modal/DashboardModal";
 import PageBuilder from "./modal/PageBuilder";
 import LogicBuilder from "./modal/LogicBuilder";
 import InternalVariable from "./modal/InternalVariable";
@@ -73,7 +75,7 @@ const IconMenu = () => (
 );
 
 // ── Menu items ────────────────────────────────────────────────
-const MENU_ITEMS = ["Main", "Maintenance", "SN List", "Reference"];
+const MENU_ITEMS = ["Main", "Dashboard", "Downtime", "SN List", "Reference", "CPK Analyzer"];
 
 // ── Field (reused) ─────────────────────────────────────────────
 function Field({ icon, placeholder, value, onChange, onKeyDown, type = "text" }) {
@@ -345,6 +347,10 @@ function ReloginModal({ onClose, onLoginSuccess }) {
 export default function MainPage({ user: initialUser, onLogout }) {
   const [user, setUser] = useState(initialUser || { username: "Guest", role: "" });
   const [activeMenu, setActiveMenu] = useState("Main");
+  // Bumped whenever Page Builder saves a layout, so the live Dynamic Page
+  // remounts and re-fetches the new layout instead of needing a manual
+  // page reload to see the change.
+  const [dynamicPageRefreshKey, setDynamicPageRefreshKey] = useState(0);
   const [time, setTime] = useState(new Date());
   const [dbStatus, setDbStatus] = useState(null);
   const [commDevices, setCommDevices] = useState([]);
@@ -721,11 +727,11 @@ export default function MainPage({ user: initialUser, onLogout }) {
     switch (activeMenu) {
       case "Main":
         if (processCode && cpNumber) {
-          return <DynamicCPPage user={user} cpNumber={cpNumber} />;
+          return <DynamicCPPage key={`${cpNumber}-${dynamicPageRefreshKey}`} user={user} cpNumber={cpNumber} />;
         }
         return <MainContent />;
 
-      case "Maintenance":
+      case "Downtime":
         return (
           <MaintenancePage
             user={user}
@@ -749,6 +755,8 @@ export default function MainPage({ user: initialUser, onLogout }) {
         );
       case "SN List": return <SNListPage user={user} />;
       case "Reference": return <ReferencePage user={user} />;
+      case "CPK Analyzer": return <CpkAnalyzerPage />;
+      case "Dashboard": return <DashboardPage />;
       default:
         return <MainContent />;
     }
@@ -778,7 +786,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
   return (
     <div className="w-screen h-screen bg-[var(--bg-canvas)] flex flex-col overflow-hidden font-sans transition-colors">
       {/* HEADER */}
-      <header className="h-[72px] bg-[var(--bg-surface-2)] border-b border-[var(--border-soft)] flex items-center px-5 shrink-0 z-10 transition-colors">
+      <header className="h-[72px] bg-[var(--bg-surface-2)] border-b border-[var(--border-soft)] flex items-center px-5 shrink-0 z-30 transition-colors">
         <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={() => setSidebarOpen(p => !p)}
@@ -858,7 +866,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
           <div className="w-[150px] h-full flex flex-col">
             <nav className="pt-2 flex flex-col gap-0.5">
               {MENU_ITEMS.map(label => {
-                const disabled = (label === "Maintenance" || label === "Reference") && !isEngineer;
+                const disabled = (label === "Downtime" || label === "Reference") && !isEngineer;
                 const active = activeMenu === label;
                 return (
                   <button
@@ -976,7 +984,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
         {showRelogin && <ReloginModal key="relogin" onClose={() => setShowRelogin(false)} onLoginSuccess={handleReloginSuccess} />}
 
         {/* Page Builder – kirim cpNumber yang benar */}
-        {showBuilder && (<PageBuilder key="builder" cpNumber={cpNumber || "2"} availableDevices={commDevices} onClose={() => setShowBuilder(false)} />)}
+        {showBuilder && (<PageBuilder key="builder" cpNumber={cpNumber || "2"} availableDevices={commDevices} onClose={() => setShowBuilder(false)} onSaved={() => setDynamicPageRefreshKey(k => k + 1)} />)}
         {showLogic && (<LogicBuilder key="logic" cpNumber={cpNumber || "2"} onClose={() => setShowLogic(false)} />)}
         {showInternalVariable && (<InternalVariable key="internal-variable" onClose={() => setShowInternalVariable(false)} />)}
         {showSpecification && (<Specification key="specification" onClose={() => setShowSpecification(false)} />)}

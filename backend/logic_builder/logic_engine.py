@@ -12,7 +12,7 @@ TEMPLATES_DIR = os.path.join(DATA_DIR, "logic_templates")
 
 # Node types with true/false branch outputs, used when flattening Group (subflow_call)
 # nodes. Add a type here whenever a new check-style node is built.
-CHECK_NODE_TYPES = {"zone_inspect", "count_over_time"}
+CHECK_NODE_TYPES = {"zone_inspect", "count_over_time", "custom_script"}
 MAX_SUBFLOW_DEPTH = 8
 
 # ─── Runtime State per CP ──────────────────────────────────────────
@@ -421,6 +421,29 @@ class FlowExecutor:
             self._follow(outputs, "true" if ok else "false", db)
             return
 
+        # ─── CUSTOM SCRIPT: escape hatch for logic that doesn't fit any common node —
+        #     runs user code in a restricted sandbox (see custom_script.py) ──
+        if ntype == "custom_script":
+            cfg = node.get("config", {})
+            code = cfg.get("code", "")
+            from logic_builder.custom_script import run_custom_script
+            res = run_custom_script(code, self.fields, cp=self.cp)
+
+            if not res["success"]:
+                self._log(f"Custom Script error: {res['error']}", "#EF4444")
+                self._follow(outputs, "false", db)
+                return
+
+            for k, v in res["fields"].items():
+                self._set_field(k, str(v))
+            for msg in res["logs"]:
+                self._log(f"Custom Script: {msg}", "#3B82F6")
+
+            ok = bool(res["result"])
+            self._log(f"Custom Script -> {'OK' if ok else 'NG'}", "#22C55E" if ok else "#EF4444")
+            self._follow(outputs, "true" if ok else "false", db)
+            return
+
         # ─── (node type lain yang belum dibuat — tambahkan di sini
         #      satu per satu, `if ntype == "...": ... self._follow(outputs, "next", db); return`) ──
         self._log(f"Node type '{ntype}' is not implemented yet", "#EF4444")
@@ -470,6 +493,18 @@ def run_logic(cp):
     except Exception as e:
         print(f"[LOGIC ENGINE] Run error CP{cp}:", e)
         return jsonify({"success": False, "commands": [], "message": f"Logic engine error: {e}"}), 500
+
+
+# ─── CUSTOM SCRIPT CHECK ENDPOINT — dry-run a script's code without a full
+#     flow run (no camera/device needed), for the node's "Check" button ────
+@logic_engine_bp.post("/api/logic-builder/custom-script/check")
+def check_custom_script():
+    from logic_builder.custom_script import run_custom_script
+    body = request.get_json() or {}
+    code = body.get("code", "")
+    fields = body.get("fields", {}) or {}
+    result = run_custom_script(code, fields)
+    return jsonify(result)
 
 
 # ─── RESET STATE ENDPOINT (opsional) ─────────────────────────────

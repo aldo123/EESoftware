@@ -36,10 +36,47 @@ def ensure_table_exists(cp: str):
             conn.execute(f"""
                 CREATE TABLE {table} (
                     id        INTEGER PRIMARY KEY AUTOINCREMENT,
-                    date_time TEXT
+                    date_time TEXT,
+                    result    TEXT
                 )
             """)
             print(f"[SNLIST] Created table {table}")
+        else:
+            # Older tables predate the `result` column (OK/NG) that the FPY
+            # dashboard and Logic Builder's record_result() read/write —
+            # add it in place so existing SN List data isn't disturbed.
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN result TEXT")
+            except sqlite3.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise
+
+
+def record_result(cp: str, result: str, fields: dict = None) -> int:
+    """Append one row to snlist_cp{cp} with the current timestamp and a
+    Logic Builder run's OK/NG outcome — called from custom_script.py's
+    `record_result(...)` sandbox builtin, not over HTTP. Any of `fields`
+    that match an existing SN List column (e.g. chassis_sn) get carried
+    into that row too, same as a manual SN List entry would set them."""
+    ensure_table_exists(cp)
+    table = get_table_name(cp)
+    fields = fields or {}
+
+    with get_snlist_conn() as conn:
+        existing_cols = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        row = {"date_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "result": str(result)}
+        for key, value in fields.items():
+            if key in existing_cols and key not in ("id", "date_time", "result"):
+                row[key] = str(value)
+
+        cols = list(row.keys())
+        placeholders = ", ".join("?" for _ in cols)
+        cursor = conn.execute(
+            f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders})",
+            [row[c] for c in cols],
+        )
+        conn.commit()
+        return cursor.lastrowid
 
 
 def get_columns_from_table(cp: str) -> list:
@@ -64,8 +101,8 @@ def add_column_to_table(cp: str, col_name: str):
 
 
 def drop_column_from_table(cp: str, col_name: str):
-    if col_name in ("id", "date_time"):
-        raise ValueError("Cannot drop id or date_time column")
+    if col_name in ("id", "date_time", "result"):
+        raise ValueError("Cannot drop id, date_time, or result column")
     table = get_table_name(cp)
     ensure_table_exists(cp)
     with get_snlist_conn() as conn:

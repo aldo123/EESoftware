@@ -12,6 +12,7 @@ import {
   RuntimeLineChart,
   RuntimeCameraFeed,
   RuntimeTestTable,
+  RuntimeImage,
 } from "../widgets";
 
 // ──────────────────────────────────────────────────────────────────
@@ -94,88 +95,37 @@ export default function DynamicCPPage({ cpNumber, user }) {
     const container = containerRef.current;
     if (!container) return;
 
+    // containerRef is a normal flex sibling of the sidebar (see MainPage.jsx),
+    // not something the sidebar overlays — its own getBoundingClientRect()
+    // already excludes the sidebar's width, so no extra probing for "where
+    // does the sidebar end" is needed here.
     const updateViewportScale = () => {
       const rect = container.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
 
-      // The main navigation can be a fixed/overlay sidebar which sits on top
-      // of the Dynamic Page.  IMPORTANT: probe the *global* left edge of the
-      // viewport, not rect.left + 1.  When the page itself starts underneath
-      // the sidebar, rect.left may already be 0 and the old probe could land
-      // inside the Dynamic Page instead of the sidebar.
-      //
-      // We only treat a tall element at the left edge as a sidebar. This keeps
-      // the HMI out from underneath the navigation while allowing the sidebar
-      // to disappear and the HMI to expand automatically.
-      let leftInset = 0;
-      const probeX = 8;
-      const probeY = Math.max(120, Math.min(window.innerHeight - 40, rect.top + rect.height * 0.5));
-      const probe = document.elementFromPoint(probeX, probeY);
-      if (probe) {
-        let el = probe;
-        let best = null;
-        for (let i = 0; el && i < 12; i++, el = el.parentElement) {
-          const r = el.getBoundingClientRect?.();
-          if (!r) continue;
-
-          const style = window.getComputedStyle(el);
-          const tallEnough = r.height >= Math.min(window.innerHeight * 0.60, rect.height * 0.60);
-          const leftEdge = r.left <= 2;
-          const reasonableWidth = r.width >= 40 && r.width <= Math.min(420, window.innerWidth * 0.35);
-          const visible = style.display !== 'none' && style.visibility !== 'hidden' && parseFloat(style.opacity || '1') > 0.01;
-          const positioned = style.position === 'fixed' || style.position === 'absolute' || style.position === 'sticky';
-
-          if (leftEdge && tallEnough && reasonableWidth && visible && positioned) {
-            best = r;
-            break;
-          }
-        }
-
-        if (best) {
-          // Convert the sidebar's viewport-right edge into the container's
-          // local coordinate system. Clamp it so it can never consume the
-          // complete HMI area.
-          leftInset = Math.max(0, Math.min(rect.width - 1, best.right - rect.left));
-        }
-      }
-
-      // If the Dynamic Page itself already begins after the sidebar, do not
-      // double-count the sidebar width. The container's left edge is the true
-      // usable-area origin in that layout.
-      if (rect.left >= 1 && leftInset > 0) {
-        leftInset = Math.max(0, leftInset - rect.left);
-      }
-
-      // Measure the usable area AFTER the sidebar overlap. The HMI is then
-      // centered only in the free area, so no widget can sit underneath the
-      // sidebar. No scrollbar is needed.
-      const availableWidth = Math.max(1, rect.width - leftInset - 8);
+      const availableWidth = Math.max(1, rect.width - 8);
       const availableHeight = Math.max(1, rect.height - 8);
       const sx = availableWidth / runtimeResolution.width;
       const sy = availableHeight / runtimeResolution.height;
       const nextScale = Math.min(1, sx, sy);
 
-      setViewportOffsetX(prev => Math.abs(prev - leftInset) < 0.5 ? prev : leftInset);
+      setViewportOffsetX(prev => (prev === 0 ? prev : 0));
       setViewportScale(prev => Math.abs(prev - nextScale) < 0.001 ? prev : nextScale);
     };
 
     updateViewportScale();
     const observer = new ResizeObserver(updateViewportScale);
     observer.observe(container);
-    const mutationObserver = new MutationObserver(updateViewportScale);
-    mutationObserver.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
     window.addEventListener('resize', updateViewportScale);
-    window.addEventListener('scroll', updateViewportScale, true);
-
-    const timer = setInterval(updateViewportScale, 250);
     return () => {
       observer.disconnect();
-      mutationObserver.disconnect();
       window.removeEventListener('resize', updateViewportScale);
-      window.removeEventListener('scroll', updateViewportScale, true);
-      clearInterval(timer);
     };
-  }, [runtimeResolution.width, runtimeResolution.height]);
+    // Re-run once the container actually mounts (it doesn't exist yet while
+    // `loading` is true — see the early `if (loading) return ...` below —
+    // so `loading` flipping to false is what makes containerRef.current
+    // exist for the very first time).
+  }, [runtimeResolution.width, runtimeResolution.height, loading, activePageId]);
 
   // ============================================================
   // TCP PLC RUNTIME
@@ -2308,6 +2258,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     if (type === "gauge") return <RuntimeGauge key={id} widget={widget} value={runtimeValue} />;
     if (type === "testtable") return <RuntimeTestTable key={id} widget={widget} getValue={getTestTableValue} />;
     if (type === "camerafeed") return <RuntimeCameraFeed key={id} widget={widget} cpNumber={cpNumber} />;
+    if (type === "image") return <RuntimeImage key={id} widget={widget} />;
 
     // Manual / Calibration / Timing Limit are no longer special widgets.
     // They are now normal custom pages created through Page Builder.
@@ -2388,22 +2339,24 @@ export default function DynamicCPPage({ cpNumber, user }) {
     >
       <div
         style={{
-          // Runtime HMI is scaled as one complete 1920×1080 surface.
-          // IMPORTANT: only X is repositioned when the sidebar changes.
-          // Y is intentionally fixed at the top of the Dynamic Page so
-          // opening/closing the sidebar never moves the HMI vertically.
-          width: runtimeResolution.width * viewportScale,
-          height: runtimeResolution.height * viewportScale,
+          // Runtime HMI is one complete runtimeResolution-sized surface,
+          // laid out at its NATURAL (untransformed) size and then visually
+          // shrunk to fit the actual available viewport via `scale()`.
+          // Setting width/height alone (without this transform) does not
+          // resize the content painted inside it — that was the bug: the
+          // box's declared size and its rendered content size never agreed,
+          // so nothing ever actually got smaller on a narrower screen.
+          width: runtimeResolution.width,
+          height: runtimeResolution.height,
           position: "absolute",
           // IMPORTANT: X=0 in Page Builder must remain the LEFT EDGE
           // of the usable Dynamic Page canvas. Do not center the HMI
           // horizontally because that would add an invisible X offset
           // even when the first widget is at x=0.
-          // Sidebar visibility changes only this left origin.
           left: `${viewportOffsetX}px`,
           top: 0,
           margin: 0,
-          transform: "none",
+          transform: `scale(${viewportScale})`,
           transformOrigin: "top left",
           flex: "0 0 auto",
         }}
