@@ -54,7 +54,7 @@ export function useDeviceTriggerScanner(cpNumber, active = true) {
       }
     };
 
-    intervalRef.current = setInterval(poll, 300);
+    intervalRef.current = setInterval(poll, 50);
 
     return () => {
       if (intervalRef.current) {

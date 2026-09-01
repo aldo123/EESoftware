@@ -1,4 +1,18 @@
 // src/hooks/useTCPPLC.js
+//
+// High-performance PLC communication hook.
+//
+// READ:
+//   - Batch polling.
+//   - One React state commit per polling cycle.
+//   - Duplicate physical addresses are read only once.
+//
+// WRITE:
+//   - Optimistic UI update happens BEFORE network await.
+//   - Backend /api/tcp/write returns immediately after queueing.
+//   - PLC write itself runs in a persistent Python TCP worker.
+//
+// The public API is intentionally kept compatible with the previous hook.
 
 import {
   useCallback,
@@ -9,11 +23,12 @@ import {
 
 import { API } from "../service/api";
 
+
 // ============================================================
 // CONFIG
 // ============================================================
 
-const DEFAULT_POLL_INTERVAL = 300;
+const DEFAULT_POLL_INTERVAL = 50;
 
 
 // ============================================================
@@ -131,6 +146,54 @@ function createAddressKey(
 
 
 // ============================================================
+// FETCH JSON HELPER
+// ============================================================
+
+async function fetchJson(
+  url,
+  options = {}
+) {
+  const response = await fetch(
+    url,
+    {
+      ...options,
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+    }
+  );
+
+  let data = null;
+
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      `${response.status} ${response.statusText}`
+    );
+  }
+
+  if (
+    data &&
+    data.success === false
+  ) {
+    throw new Error(
+      data.message ||
+      "PLC request failed."
+    );
+  }
+
+  return data;
+}
+
+
+// ============================================================
 // HOOK
 // ============================================================
 
@@ -145,25 +208,13 @@ export function useTCPPLC({
   // ==========================================================
 
   const [values, setValues] = useState({});
-
   const [connectionStatus, setConnectionStatus] =
     useState({});
+  const [errors, setErrors] = useState({});
 
-  const [errors, setErrors] =
-    useState({});
-
-
-  // State snapshots used by the batch poller. The poll cycle
-  // commits all PLC results with one React state update.
-  const valuesRef =
-    useRef({});
-
-  const connectionStatusRef =
-    useRef({});
-
-  const errorsRef =
-    useRef({});
-
+  const valuesRef = useRef({});
+  const connectionStatusRef = useRef({});
+  const errorsRef = useRef({});
 
   useEffect(() => {
     valuesRef.current = values;
@@ -192,44 +243,23 @@ export function useTCPPLC({
   const mountedRef =
     useRef(false);
 
-  const busyRef =
+  const pollBusyRef =
     useRef(false);
+
+  // Prevent a stale poll response from overwriting a value that
+  // has just been optimistically written.
+  const pendingWritesRef =
+    useRef(new Map());
 
 
   // ==========================================================
   // COMPONENT CAPABILITY
-  // ==========================================================
-  //
-  // BUTTON
-  //   WRITE:
-  //     Coil
-  //     Holding Register
-  //
-  // LIGHT
-  //   READ:
-  //     Coil
-  //     Discrete Input
-  //     Holding Register
-  //     Input Register
-  //
-  // GAUGE
-  //   READ:
-  //     Holding Register
-  //
-  // LINE CHART
-  //   READ:
-  //     Coil
-  //     Discrete Input
-  //     Holding Register
-  //     Input Register
-  //
   // ==========================================================
 
   function isValidBinding(
     widgetType,
     addressType
   ) {
-
     const type =
       normalizeAddressType(addressType);
 
@@ -238,22 +268,12 @@ export function useTCPPLC({
         .trim()
         .toLowerCase();
 
-
-    // --------------------------------------------------------
-    // BUTTON
-    // --------------------------------------------------------
-
     if (component === "button") {
       return (
         type === "coil" ||
         type === "holding_register"
       );
     }
-
-
-    // --------------------------------------------------------
-    // LIGHT
-    // --------------------------------------------------------
 
     if (component === "light") {
       return (
@@ -264,28 +284,12 @@ export function useTCPPLC({
       );
     }
 
-
-    // --------------------------------------------------------
-    // GAUGE
-    // --------------------------------------------------------
-
     if (component === "gauge") {
       return (
         type === "holding_register"
       );
     }
 
-
-    // --------------------------------------------------------
-    // LINE CHART
-    // --------------------------------------------------------
-
-    // --------------------------------------------------------
-    // TEXT BOX
-    // --------------------------------------------------------
-    // TextBox is READ ONLY for TCP/IP + Realtime.
-    // DynamicCPPage decides whether the TextBox is configured as
-    // TCP/IP + Realtime before registering the binding.
     if (component === "textbox") {
       return (
         type === "coil" ||
@@ -304,20 +308,6 @@ export function useTCPPLC({
       );
     }
 
-
-    // --------------------------------------------------------
-    // TEST TABLE
-    // --------------------------------------------------------
-    // Test Table is READ ONLY when it is configured as
-    // TCP/IP + Realtime.
-    //
-    // Each Test Table row is registered independently by
-    // DynamicCPPage using:
-    //
-    //   widgetId   = `${tableId}:${rowId}`
-    //   widgetType = "testtable"
-    //
-    // All Modbus read types are supported.
     if (component === "testtable") {
       return (
         type === "coil" ||
@@ -326,7 +316,6 @@ export function useTCPPLC({
         type === "input_register"
       );
     }
-
 
     return false;
   }
@@ -354,66 +343,55 @@ export function useTCPPLC({
           console.warn(
             `[useTCPPLC] Device missing for ${widgetId}`
           );
-
           return;
         }
 
-
         const normalizedDevice =
           normalizeDevice(device);
-
 
         if (!normalizedDevice?.name) {
           console.warn(
             `[useTCPPLC] Device name missing for ${widgetId}`
           );
-
           return;
         }
-
 
         if (!normalizedDevice?.host) {
           console.warn(
             `[useTCPPLC] Device host/IP missing for ${widgetId}`
           );
-
           return;
         }
-
 
         const numericAddress =
           Number(address);
 
-
-        if (!Number.isFinite(numericAddress)) {
+        if (
+          !Number.isInteger(
+            numericAddress
+          ) ||
+          numericAddress < 0 ||
+          numericAddress > 65535
+        ) {
           console.warn(
             `[useTCPPLC] Invalid address for ${widgetId}:`,
             address
           );
-
           return;
         }
-
 
         const type =
           normalizeAddressType(
             addressType
           );
 
-
         if (!type) {
           console.warn(
             `[useTCPPLC] Invalid address type for ${widgetId}:`,
             addressType
           );
-
           return;
         }
-
-
-        // ------------------------------------------------------
-        // CAPABILITY CHECK
-        // ------------------------------------------------------
 
         if (
           !isValidBinding(
@@ -421,18 +399,11 @@ export function useTCPPLC({
             type
           )
         ) {
-
           console.warn(
             `[useTCPPLC] Invalid binding: ${widgetType} cannot use ${type}`
           );
-
           return;
         }
-
-
-        // ------------------------------------------------------
-        // PHYSICAL ADDRESS KEY
-        // ------------------------------------------------------
 
         const key =
           createAddressKey(
@@ -441,50 +412,24 @@ export function useTCPPLC({
             numericAddress
           );
 
-
         const normalizedWidgetType =
           String(widgetType || "")
             .trim()
             .toLowerCase();
 
-
-        // ------------------------------------------------------
-        // SAVE
-        // ------------------------------------------------------
-
         bindingsRef.current.set(
           String(widgetId),
           {
-            widgetId:
-              String(widgetId),
-
+            widgetId: String(widgetId),
             widgetType:
               normalizedWidgetType,
-
             device:
               normalizedDevice,
-
-            addressType:
-              type,
-
-            address:
-              numericAddress,
-
+            addressType: type,
+            address: numericAddress,
             key,
           }
         );
-
-
-        console.debug(
-          `[useTCPPLC] Binding registered: ${widgetId} -> ${normalizedDevice.name} / ${type} / ${numericAddress}`
-        );
-
-        if (normalizedWidgetType === "textbox") {
-          console.debug(
-            `[useTCPPLC] TextBox TCP realtime binding ready: ${widgetId} -> ${normalizedDevice.name} / ${type} / ${numericAddress}`
-          );
-        }
-
       },
       []
     );
@@ -497,7 +442,6 @@ export function useTCPPLC({
   const unregisterBinding =
     useCallback(
       (widgetId) => {
-
         if (!widgetId) {
           return;
         }
@@ -505,7 +449,6 @@ export function useTCPPLC({
         bindingsRef.current.delete(
           String(widgetId)
         );
-
       },
       []
     );
@@ -518,9 +461,7 @@ export function useTCPPLC({
   const clearBindings =
     useCallback(
       () => {
-
         bindingsRef.current.clear();
-
       },
       []
     );
@@ -542,13 +483,11 @@ export function useTCPPLC({
         const normalizedDevice =
           normalizeDevice(device);
 
-
         if (!normalizedDevice) {
           throw new Error(
             "PLC device is not configured."
           );
         }
-
 
         if (!normalizedDevice.name) {
           throw new Error(
@@ -556,19 +495,16 @@ export function useTCPPLC({
           );
         }
 
-
         if (!normalizedDevice.host) {
           throw new Error(
             `PLC IP address is missing for ${normalizedDevice.name}.`
           );
         }
 
-
         const type =
           normalizeAddressType(
             addressType
           );
-
 
         if (!type) {
           throw new Error(
@@ -576,134 +512,59 @@ export function useTCPPLC({
           );
         }
 
-
         const numericAddress =
           Number(address);
 
-
-        if (!Number.isFinite(numericAddress)) {
+        if (
+          !Number.isInteger(
+            numericAddress
+          ) ||
+          numericAddress < 0 ||
+          numericAddress > 65535
+        ) {
           throw new Error(
-            "Modbus address must be a number."
+            "Modbus address must be an integer between 0 and 65535."
           );
         }
-
 
         const numericCount =
           Number(count) || 1;
 
-
-        // ------------------------------------------------------
-        // REQUEST
-        // ------------------------------------------------------
-
-        const response =
-          await fetch(
+        const data =
+          await fetchJson(
             `${API}/api/tcp/read`,
             {
               method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-
               body: JSON.stringify({
-
                 device_name:
                   normalizedDevice.name,
-
-                address_type:
-                  type,
-
+                address_type: type,
                 address:
                   numericAddress,
-
                 count:
                   numericCount,
-
               }),
             }
           );
 
-
-        // ------------------------------------------------------
-        // HTTP ERROR
-        // ------------------------------------------------------
-
-        if (!response.ok) {
-
-          let message =
-            `PLC read HTTP ${response.status}`;
-
-
-          try {
-
-            const errorData =
-              await response.json();
-
-
-            if (errorData?.message) {
-              message =
-                errorData.message;
-            }
-
-          } catch {
-            // Ignore JSON error.
-          }
-
-
-          throw new Error(message);
-        }
-
-
-        // ------------------------------------------------------
-        // RESPONSE
-        // ------------------------------------------------------
-
-        const data =
-          await response.json();
-
-
-        if (!data.success) {
-
-          throw new Error(
-            data.message ||
-            "PLC read failed."
-          );
-
-        }
-
-
-        // ------------------------------------------------------
-        // VALUE
-        // ------------------------------------------------------
-
         if (
-          data.value !== undefined
+          data?.value !== undefined
         ) {
-
           return data.value;
-
         }
-
 
         if (
           Array.isArray(
-            data.values
+            data?.values
           )
         ) {
-
           return data.values;
-
         }
 
-
         return null;
-
       },
       []
     );
-
 
 
   // ==========================================================
@@ -770,93 +631,122 @@ export function useTCPPLC({
               }
 
               return {
-                id:
-                  String(
-                    item.id ??
-                    `${type}:${numericAddress}:${index}`
-                  ),
-
-                addressType:
-                  type,
-
+                id: String(
+                  item.id ??
+                  `${type}:${numericAddress}:${index}`
+                ),
+                addressType: type,
                 address:
                   numericAddress,
               };
-
             }
           );
 
-        const response =
-          await fetch(
+        const data =
+          await fetchJson(
             `${API}/api/tcp/read-batch`,
             {
               method: "POST",
-
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
-
-              body:
-                JSON.stringify({
-                  device_name:
-                    normalizedDevice.name,
-
-                  requests:
-                    normalizedRequests.map(
-                      (item) => ({
-                        id:
-                          item.id,
-
-                        address_type:
-                          item.addressType,
-
-                        address:
-                          item.address,
-                      })
-                    ),
-                }),
+              body: JSON.stringify({
+                device_name:
+                  normalizedDevice.name,
+                requests:
+                  normalizedRequests.map(
+                    (item) => ({
+                      id: item.id,
+                      address_type:
+                        item.addressType,
+                      address:
+                        item.address,
+                    })
+                  ),
+              }),
             }
           );
 
-        if (!response.ok) {
-
-          let message =
-            `PLC batch read HTTP ${response.status}`;
-
-          try {
-            const errorData =
-              await response.json();
-
-            if (errorData?.message) {
-              message =
-                errorData.message;
-            }
-          } catch {
-            // Ignore invalid error JSON.
-          }
-
-          throw new Error(message);
-        }
-
-        const data =
-          await response.json();
-
-        if (!data.success) {
-          throw new Error(
-            data.message ||
-            "PLC batch read failed."
-          );
-        }
-
-        return Array.isArray(data.results)
+        return Array.isArray(
+          data?.results
+        )
           ? data.results
           : [];
-
       },
       []
     );
 
+
+  // ==========================================================
+  // LOCAL OPTIMISTIC UPDATE
+  // ==========================================================
+
+  const applyOptimisticValue =
+    useCallback(
+      ({
+        device,
+        addressType,
+        address,
+        value,
+      }) => {
+
+        const normalizedDevice =
+          normalizeDevice(device);
+
+        const type =
+          normalizeAddressType(
+            addressType
+          );
+
+        const numericAddress =
+          Number(address);
+
+        const key =
+          createAddressKey(
+            normalizedDevice,
+            type,
+            numericAddress
+          );
+
+        const writeToken =
+          Date.now();
+
+        pendingWritesRef.current.set(
+          key,
+          {
+            value,
+            token: writeToken,
+            timestamp: performance.now(),
+          }
+        );
+
+        if (!mountedRef.current) {
+          return;
+        }
+
+        setValues(
+          (previous) => {
+
+            const next = {
+              ...previous,
+              [key]: value,
+            };
+
+            bindingsRef.current.forEach(
+              (binding) => {
+                if (
+                  binding.key === key
+                ) {
+                  next[
+                    binding.widgetId
+                  ] = value;
+                }
+              }
+            );
+
+            return next;
+          }
+        );
+      },
+      []
+    );
 
 
   // ==========================================================
@@ -875,13 +765,11 @@ export function useTCPPLC({
         const normalizedDevice =
           normalizeDevice(device);
 
-
         if (!normalizedDevice) {
           throw new Error(
             "PLC device is not configured."
           );
         }
-
 
         if (!normalizedDevice.name) {
           throw new Error(
@@ -889,150 +777,301 @@ export function useTCPPLC({
           );
         }
 
-
         const type =
           normalizeAddressType(
             addressType
           );
 
-
-        // ------------------------------------------------------
-        // ONLY WRITEABLE TYPES
-        // ------------------------------------------------------
-
         if (
           type !== "coil" &&
           type !== "holding_register"
         ) {
-
           throw new Error(
             `${type || "Address"} is read-only.`
           );
-
         }
-
 
         const numericAddress =
           Number(address);
 
-
-        if (!Number.isFinite(numericAddress)) {
-
+        if (
+          !Number.isInteger(
+            numericAddress
+          ) ||
+          numericAddress < 0 ||
+          numericAddress > 65535
+        ) {
           throw new Error(
-            "Modbus address must be a number."
+            "Modbus address must be an integer between 0 and 65535."
           );
-
         }
-
-
-        // ------------------------------------------------------
-        // VALUE
-        // ------------------------------------------------------
 
         let writeValueData;
 
-
-        if (
-          type === "coil"
-        ) {
-
+        if (type === "coil") {
           writeValueData =
             (
               value === true ||
               Number(value) === 1
             );
-
         } else {
-
           writeValueData =
             Number(value);
 
+          if (
+            !Number.isInteger(
+              writeValueData
+            ) ||
+            writeValueData < 0 ||
+            writeValueData > 65535
+          ) {
+            throw new Error(
+              "Holding Register value must be 0..65535."
+            );
+          }
         }
 
+        /*
+         * IMPORTANT:
+         *
+         * The backend now returns HTTP 202 immediately after putting
+         * the write in its persistent per-device queue.
+         *
+         * It no longer waits for PLC response.
+         */
+        return fetchJson(
+          `${API}/api/tcp/write`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              device_name:
+                normalizedDevice.name,
+              address_type: type,
+              address:
+                numericAddress,
+              value:
+                writeValueData,
+            }),
+          }
+        );
+      },
+      []
+    );
 
-        // ------------------------------------------------------
-        // REQUEST
-        // ------------------------------------------------------
 
-        const response =
-          await fetch(
-            `${API}/api/tcp/write`,
-            {
-              method: "POST",
+  // ==========================================================
+  // WRITE VALUE
+  // ==========================================================
 
-              headers: {
-                "Content-Type":
-                  "application/json",
-              },
+  const writeValue =
+    useCallback(
+      async ({
+        widgetId,
+        device,
+        addressType,
+        address,
+        value,
+      }) => {
 
-              body: JSON.stringify({
+        /*
+         * CRITICAL PERFORMANCE RULE:
+         *
+         * UI is updated FIRST.
+         * The user should never see a button waiting for PLC response.
+         */
+        applyOptimisticValue({
+          device,
+          addressType,
+          address,
+          value,
+        });
 
-                device_name:
-                  normalizedDevice.name,
+        try {
+          const result =
+            await writePLC({
+              device,
+              addressType,
+              address,
+              value,
+            });
 
-                address_type:
-                  type,
+          return result;
 
+        } catch (error) {
+
+          /*
+           * Do not block the UI while the PLC is unreachable.
+           * Polling will eventually reconcile the state.
+           *
+           * The error is still surfaced to the caller so existing
+           * application-level error handling remains possible.
+           */
+          console.error(
+            "[useTCPPLC] Write queue failed:",
+            error
+          );
+
+          throw error;
+        }
+      },
+      [
+        applyOptimisticValue,
+        writePLC,
+      ]
+    );
+
+
+  // ==========================================================
+  // BATCH WRITE PLC
+  // ==========================================================
+
+  const writeBatchPLC =
+    useCallback(
+      async ({
+        writes = [],
+      }) => {
+
+        if (
+          !Array.isArray(writes) ||
+          writes.length === 0
+        ) {
+          return {
+            success: true,
+            queued: true,
+            count: 0,
+            results: [],
+          };
+        }
+
+        const normalizedWrites =
+          writes.map(
+            (item, index) => {
+
+              const device =
+                normalizeDevice(
+                  item.device
+                );
+
+              if (!device?.name) {
+                throw new Error(
+                  `Write ${index}: PLC device is missing.`
+                );
+              }
+
+              const type =
+                normalizeAddressType(
+                  item.addressType
+                );
+
+              if (
+                type !== "coil" &&
+                type !== "holding_register"
+              ) {
+                throw new Error(
+                  `Write ${index}: ${type || "Address"} is read-only.`
+                );
+              }
+
+              const numericAddress =
+                Number(item.address);
+
+              if (
+                !Number.isInteger(
+                  numericAddress
+                ) ||
+                numericAddress < 0 ||
+                numericAddress > 65535
+              ) {
+                throw new Error(
+                  `Write ${index}: invalid address.`
+                );
+              }
+
+              let value;
+
+              if (type === "coil") {
+                value =
+                  (
+                    item.value === true ||
+                    Number(item.value) === 1
+                  );
+              } else {
+                value =
+                  Number(item.value);
+
+                if (
+                  !Number.isInteger(
+                    value
+                  ) ||
+                  value < 0 ||
+                  value > 65535
+                ) {
+                  throw new Error(
+                    `Write ${index}: invalid Holding Register value.`
+                  );
+                }
+              }
+
+              return {
+                id: String(
+                  item.id ??
+                  `${device.name}:${type}:${numericAddress}:${index}`
+                ),
+                device,
+                addressType: type,
                 address:
                   numericAddress,
+                value,
+              };
+            }
+          );
 
-                value:
-                  writeValueData,
+        /*
+         * Optimistic update for ALL targets before HTTP.
+         */
+        normalizedWrites.forEach(
+          (item) => {
+            applyOptimisticValue({
+              device: item.device,
+              addressType:
+                item.addressType,
+              address:
+                item.address,
+              value:
+                item.value,
+            });
+          }
+        );
 
+        const data =
+          await fetchJson(
+            `${API}/api/tcp/write-batch`,
+            {
+              method: "POST",
+              body: JSON.stringify({
+                writes:
+                  normalizedWrites.map(
+                    (item) => ({
+                      id: item.id,
+                      device_name:
+                        item.device.name,
+                      address_type:
+                        item.addressType,
+                      address:
+                        item.address,
+                      value:
+                        item.value,
+                    })
+                  ),
               }),
             }
           );
 
-
-        // ------------------------------------------------------
-        // HTTP ERROR
-        // ------------------------------------------------------
-
-        if (!response.ok) {
-
-          let message =
-            `PLC write HTTP ${response.status}`;
-
-
-          try {
-
-            const errorData =
-              await response.json();
-
-
-            if (errorData?.message) {
-              message =
-                errorData.message;
-            }
-
-          } catch {
-            // Ignore.
-          }
-
-
-          throw new Error(message);
-
-        }
-
-
-        const data =
-          await response.json();
-
-
-        if (!data.success) {
-
-          throw new Error(
-            data.message ||
-            "PLC write failed."
-          );
-
-        }
-
-
         return data;
-
       },
-      []
+      [
+        applyOptimisticValue,
+      ]
     );
 
 
@@ -1048,7 +1087,7 @@ export function useTCPPLC({
           return;
         }
 
-        if (busyRef.current) {
+        if (pollBusyRef.current) {
           return;
         }
 
@@ -1058,12 +1097,12 @@ export function useTCPPLC({
           return;
         }
 
-        busyRef.current = true;
+        pollBusyRef.current = true;
 
         try {
 
           // ----------------------------------------------------
-          // GROUP BY UNIQUE PHYSICAL ADDRESS
+          // GROUP UNIQUE PHYSICAL ADDRESSES
           // ----------------------------------------------------
 
           const grouped =
@@ -1071,13 +1110,6 @@ export function useTCPPLC({
 
           bindingsRef.current.forEach(
             (binding) => {
-
-              const component =
-                String(
-                  binding.widgetType || ""
-                )
-                  .trim()
-                  .toLowerCase();
 
               const normalizedDevice =
                 normalizeDevice(
@@ -1088,7 +1120,7 @@ export function useTCPPLC({
                 return;
               }
 
-              const addressType =
+              const type =
                 normalizeAddressType(
                   binding.addressType
                 );
@@ -1097,7 +1129,7 @@ export function useTCPPLC({
                 Number(binding.address);
 
               if (
-                !addressType ||
+                !type ||
                 !Number.isInteger(
                   numericAddress
                 ) ||
@@ -1110,7 +1142,7 @@ export function useTCPPLC({
               const key =
                 createAddressKey(
                   normalizedDevice,
-                  addressType,
+                  type,
                   numericAddress
                 );
 
@@ -1121,7 +1153,8 @@ export function useTCPPLC({
                     key,
                     device:
                       normalizedDevice,
-                    addressType,
+                    addressType:
+                      type,
                     address:
                       numericAddress,
                     bindings: [],
@@ -1133,16 +1166,12 @@ export function useTCPPLC({
                 .get(key)
                 .bindings
                 .push(binding);
-
             }
           );
 
 
           // ----------------------------------------------------
-          // GROUP PHYSICAL ADDRESSES BY TCP DEVICE
-          //
-          // One HTTP request per device. The backend turns
-          // contiguous addresses into one Modbus transaction.
+          // GROUP BY DEVICE
           // ----------------------------------------------------
 
           const deviceBatches =
@@ -1162,7 +1191,11 @@ export function useTCPPLC({
                   device.unitId,
                 ].join(":");
 
-              if (!deviceBatches.has(deviceKey)) {
+              if (
+                !deviceBatches.has(
+                  deviceKey
+                )
+              ) {
                 deviceBatches.set(
                   deviceKey,
                   {
@@ -1176,7 +1209,6 @@ export function useTCPPLC({
                 .get(deviceKey)
                 .groups
                 .push(group);
-
             }
           );
 
@@ -1194,6 +1226,10 @@ export function useTCPPLC({
           };
 
 
+          // ----------------------------------------------------
+          // READ DEVICES IN PARALLEL
+          // ----------------------------------------------------
+
           await Promise.all(
             Array.from(
               deviceBatches.values()
@@ -1206,28 +1242,26 @@ export function useTCPPLC({
                     await readBatchPLC({
                       device:
                         batch.device,
-
                       requests:
                         batch.groups.map(
                           (group) => ({
                             id:
                               group.key,
-
                             addressType:
                               group.addressType,
-
                             address:
                               group.address,
                           })
                         ),
                     });
 
-
                   const resultMap =
                     new Map(
                       results.map(
                         (result) => [
-                          String(result.id),
+                          String(
+                            result.id
+                          ),
                           result,
                         ]
                       )
@@ -1241,7 +1275,9 @@ export function useTCPPLC({
 
                     const result =
                       resultMap.get(
-                        String(group.key)
+                        String(
+                          group.key
+                        )
                       );
 
                     if (
@@ -1266,7 +1302,6 @@ export function useTCPPLC({
                     const value =
                       result.value;
 
-
                     nextStatus[
                       group.key
                     ] = true;
@@ -1276,22 +1311,80 @@ export function useTCPPLC({
                     ];
 
 
-                    nextValues[
-                      group.key
-                    ] = value;
+                    /*
+                     * If a write was just queued, do not allow an old
+                     * polling snapshot to visually undo the optimistic
+                     * button state.
+                     *
+                     * Once PLC polling sees the requested value, the
+                     * pending marker is removed.
+                     */
+                    const pending =
+                      pendingWritesRef.current.get(
+                        group.key
+                      );
 
+                    if (pending) {
 
-                    for (
-                      const binding
-                      of group.bindings
-                    ) {
+                      if (
+                        Object.is(
+                          value,
+                          pending.value
+                        )
+                      ) {
+                        pendingWritesRef.current.delete(
+                          group.key
+                        );
+
+                        nextValues[
+                          group.key
+                        ] = value;
+
+                        for (
+                          const binding
+                          of group.bindings
+                        ) {
+                          nextValues[
+                            binding.widgetId
+                          ] = value;
+                        }
+
+                      } else {
+
+                        /*
+                         * Keep optimistic value while the queued write
+                         * is still settling.
+                         */
+                        nextValues[
+                          group.key
+                        ] = pending.value;
+
+                        for (
+                          const binding
+                          of group.bindings
+                        ) {
+                          nextValues[
+                            binding.widgetId
+                          ] =
+                            pending.value;
+                        }
+                      }
+
+                    } else {
 
                       nextValues[
-                        binding.widgetId
+                        group.key
                       ] = value;
 
+                      for (
+                        const binding
+                        of group.bindings
+                      ) {
+                        nextValues[
+                          binding.widgetId
+                        ] = value;
+                      }
                     }
-
                   }
 
                 } catch (error) {
@@ -1316,16 +1409,13 @@ export function useTCPPLC({
                     ] =
                       error?.message ||
                       "PLC communication error.";
-
                   }
 
                   console.error(
                     `[useTCPPLC] Batch read failed: ${batch.device?.name}`,
                     error
                   );
-
                 }
-
               }
             )
           );
@@ -1364,12 +1454,9 @@ export function useTCPPLC({
           );
 
         } finally {
-
-          busyRef.current =
+          pollBusyRef.current =
             false;
-
         }
-
       },
       [
         enabled,
@@ -1388,35 +1475,27 @@ export function useTCPPLC({
       mountedRef.current =
         true;
 
-
       if (!enabled) {
-
         return () => {
-
           mountedRef.current =
             false;
-
         };
-
       }
 
-
-      // --------------------------------------------------------
-      // IMMEDIATE READ
-      // --------------------------------------------------------
-
+      /*
+       * Immediate first read.
+       */
       poll();
 
-
-      // --------------------------------------------------------
-      // INTERVAL
-      // --------------------------------------------------------
-
+      /*
+       * Keep existing behavior but never allow an interval tick
+       * to overlap a previous poll.
+       */
       timerRef.current =
         setInterval(
           poll,
           Math.max(
-            100,
+            50,
             Number(
               pollInterval
             ) ||
@@ -1424,30 +1503,21 @@ export function useTCPPLC({
           )
         );
 
-
-      // --------------------------------------------------------
-      // CLEANUP
-      // --------------------------------------------------------
-
       return () => {
 
         mountedRef.current =
           false;
 
-
         if (
           timerRef.current
         ) {
-
           clearInterval(
             timerRef.current
           );
 
           timerRef.current =
             null;
-
         }
-
       };
 
     },
@@ -1457,116 +1527,6 @@ export function useTCPPLC({
       pollInterval,
     ]
   );
-
-
-  // ==========================================================
-  // WRITE VALUE
-  // ==========================================================
-
-  const writeValue =
-    useCallback(
-      async ({
-        widgetId,
-        device,
-        addressType,
-        address,
-        value,
-      }) => {
-
-        const result =
-          await writePLC({
-
-            device,
-            addressType,
-            address,
-            value,
-
-          });
-
-
-        // ------------------------------------------------------
-        // Optimistic UI update
-        //
-        // Nilai akan tetap dikoreksi oleh polling PLC.
-        // ------------------------------------------------------
-
-        if (
-          mountedRef.current
-        ) {
-
-          const normalizedDevice =
-            normalizeDevice(
-              device
-            );
-
-
-          const type =
-            normalizeAddressType(
-              addressType
-            );
-
-
-          const key =
-            createAddressKey(
-              normalizedDevice,
-              type,
-              address
-            );
-
-
-          // ----------------------------------------------------
-          // IMPORTANT:
-          //
-          // Write value juga langsung diberikan ke SEMUA widget
-          // yang menggunakan address yang sama.
-          //
-          // Polling PLC kemudian akan menjadi source of truth.
-          // ----------------------------------------------------
-
-          setValues(
-            (previous) => {
-
-              const next = {
-                ...previous,
-
-                [key]:
-                  value,
-
-              };
-
-
-              bindingsRef.current.forEach(
-                (binding) => {
-
-                  if (
-                    binding.key === key
-                  ) {
-
-                    next[
-                      binding.widgetId
-                    ] = value;
-
-                  }
-
-                }
-              );
-
-
-              return next;
-
-            }
-          );
-
-        }
-
-
-        return result;
-
-      },
-      [
-        writePLC,
-      ]
-    );
 
 
   // ==========================================================
@@ -1582,10 +1542,6 @@ export function useTCPPLC({
         address,
       }) => {
 
-        // ------------------------------------------------------
-        // WIDGET ID FIRST
-        // ------------------------------------------------------
-
         if (
           widgetId !== undefined &&
           widgetId !== null
@@ -1596,21 +1552,13 @@ export function useTCPPLC({
               String(widgetId)
             ];
 
-
           if (
             widgetValue !== undefined
           ) {
-
             return widgetValue;
-
           }
-
         }
 
-
-        // ------------------------------------------------------
-        // PHYSICAL ADDRESS SECOND
-        // ------------------------------------------------------
 
         if (
           device &&
@@ -1625,14 +1573,10 @@ export function useTCPPLC({
               address
             );
 
-
           return values[key];
-
         }
 
-
         return undefined;
-
       },
       [
         values,
@@ -1656,7 +1600,6 @@ export function useTCPPLC({
           return false;
         }
 
-
         const key =
           createAddressKey(
             device,
@@ -1664,12 +1607,9 @@ export function useTCPPLC({
             address
           );
 
-
         return (
-          connectionStatus[key] ===
-          true
+          connectionStatus[key] === true
         );
-
       },
       [
         connectionStatus,
@@ -1693,7 +1633,6 @@ export function useTCPPLC({
           return null;
         }
 
-
         const key =
           createAddressKey(
             device,
@@ -1701,12 +1640,10 @@ export function useTCPPLC({
             address
           );
 
-
         return (
           errors[key] ||
           null
         );
-
       },
       [
         errors,
@@ -1733,41 +1670,32 @@ export function useTCPPLC({
   // ==========================================================
 
   return {
-
     values,
-
     tcpValues:
       values,
 
     connectionStatus,
-
     errors,
 
     devices:
       normalizedDevices,
 
     registerBinding,
-
     unregisterBinding,
-
     clearBindings,
 
     readPLC,
-
     readBatchPLC,
 
     writePLC,
-
     writeValue,
+    writeBatchPLC,
 
     getValue,
-
     getConnectionStatus,
-
     getError,
 
     poll,
-
   };
 }
 

@@ -59,7 +59,7 @@ export function useRS232Scanner(cpNumber, active = true) {
     };
 
     // Interval 200ms untuk menghindari race condition
-    intervalRef.current = setInterval(poll, 200);
+    intervalRef.current = setInterval(poll, 50);
 
     return () => {
       if (intervalRef.current) {

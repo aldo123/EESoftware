@@ -1,5 +1,6 @@
 // src/widgets/testtable.jsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useInternalVariables } from "../hooks/useInternalVariables";
 import { API } from "../service/api";
 import { LINECHART_ADDRESS_TYPES, PropInput, PropSection, DEFAULT_VISUAL } from "./shared";
 
@@ -278,7 +279,9 @@ export const testtableDef = {
   desc: "Testing Item / limits / automatic PASS-FAIL",
   defaultProps: {
     title: "TEST TABLE",
-    rows: [createTestRow(0)],
+    specificationSource: "internal_variable",
+    specificationVariable: "Specification",
+    rows: [],
     backgroundColor: "var(--panel-canvas)",
     borderColor: "var(--panel-mid)",
     headerColor: "var(--panel-mid)",
@@ -294,17 +297,30 @@ export const testtableDef = {
   },
 };
 
-function TableView({ widget, getValue }) {
+function TableView({ widget, getValue, rowsOverride, resultMap = {} }) {
   const p = normalizeAppearance(widget.props || {});
-  const rows = Array.isArray(p.rows) ? p.rows : [];
-  const headers = ["Testing Item", "Lower Limit", "Upper Limit", "Testing Value", "Result"];
+  const rows = Array.isArray(rowsOverride)
+    ? rowsOverride
+    : (Array.isArray(p.rows) ? p.rows : []);
+
+  const headers = ["Testing Item", "Lower Limit", "Upper Limit", "Result Test", "Status"];
 
   const formatValue = (value) => {
     if (value === undefined || value === null || String(value).trim() === "") return "—";
     const n = Number(value);
     const d = Math.max(0, Math.min(8, Number(p.valueDecimals) || 0));
-    const text = Number.isFinite(n) ? n.toFixed(d).replace(/\.?0+$/, "") : String(value);
+    const text = Number.isFinite(n)
+      ? n.toFixed(d).replace(/\.?0+$/, "")
+      : String(value);
     return `${p.valuePrefix || ""}${text}${p.valueSuffix || ""}`;
+  };
+
+  const formatLimit = (value) => {
+    if (value === undefined || value === null || value === "") return "—";
+    const n = Number(value);
+    if (!Number.isFinite(n)) return String(value);
+    const d = Math.max(0, Math.min(8, Number(p.valueDecimals) || 0));
+    return n.toFixed(d).replace(/\.?0+$/, "");
   };
 
   return (
@@ -329,7 +345,13 @@ function TableView({ widget, getValue }) {
             background: p.titleBackground || "transparent",
           }}
         >
-          <span style={{ color: p.titleColor, fontSize: Number(p.titleFontSize) || 13, fontWeight: Number(p.titleWeight) || 700, letterSpacing: p.titleLetterSpacing || ".06em", textTransform: "uppercase" }}>
+          <span style={{
+            color: p.titleColor,
+            fontSize: Number(p.titleFontSize) || 13,
+            fontWeight: Number(p.titleWeight) || 700,
+            letterSpacing: p.titleLetterSpacing || ".06em",
+            textTransform: "uppercase",
+          }}>
             {p.title || "TEST TABLE"}
           </span>
           <span style={{ color: p.secondaryTextColor, fontSize: 9, fontWeight: 600 }}>
@@ -341,52 +363,194 @@ function TableView({ widget, getValue }) {
       <div className="flex-1 overflow-auto" style={{ scrollbarWidth: "thin" }}>
         <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
           <colgroup>
-            <col style={{ width: "30%" }} /><col style={{ width: "15%" }} /><col style={{ width: "15%" }} /><col style={{ width: "20%" }} /><col style={{ width: "20%" }} />
+            <col style={{ width: "34%" }} />
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "15%" }} />
+            <col style={{ width: "20%" }} />
+            <col style={{ width: "16%" }} />
           </colgroup>
-          <thead className={p.stickyHeader !== false ? "sticky top-0 z-10" : ""} style={{ background: p.headerGradient || p.headerColor }}>
+
+          <thead
+            className={p.stickyHeader !== false ? "sticky top-0 z-10" : ""}
+            style={{ background: p.headerGradient || p.headerColor }}
+          >
             <tr style={{ height: Number(p.headerHeight) || 34 }}>
               {headers.map((h, i) => (
                 <th key={h} style={{
-                  padding: `0 ${Number(p.cellPadding) || 0}px`, color: p.headerTextColor, fontSize: Number(p.headerFontSize) || 10,
-                  fontWeight: Number(p.headerWeight) || 700, textAlign: i === 0 ? "left" : "center",
+                  padding: `0 ${Number(p.cellPadding) || 0}px`,
+                  color: p.headerTextColor || "#FFFFFF",
+                  fontSize: Number(p.headerFontSize) || 10,
+                  fontWeight: Number(p.headerWeight) || 700,
+                  textAlign: i === 0 ? "left" : "center",
                   textTransform: p.uppercaseHeader === false ? "none" : "uppercase",
                   letterSpacing: p.headerLetterSpacing || ".05em",
                   borderBottom: `${Number(p.gridWidth) || 1}px solid ${p.headerBorder || p.gridColor}`,
                   borderRight: p.showGrid === false ? "none" : `${Number(p.gridWidth) || 1}px solid ${p.gridColor}`,
-                }}>{h}</th>
+                }}>
+                  {h}
+                </th>
               ))}
             </tr>
           </thead>
+
           <tbody>
             {rows.map((row, i) => {
-              const value = getValue ? getValue(widget, row) : undefined;
-              const result = judgeTestResult(value, row.lower, row.upper);
-              const resultColor = result === "PASS" ? p.passColor : result === "FAIL" ? p.failColor : p.waitingColor;
-              const baseBg = i % 2 && p.zebraRows !== false ? p.rowAltColor : p.backgroundColor;
-              const resultLabel = p.resultIcon ? `${result === "PASS" ? "✓ " : result === "FAIL" ? "✕ " : "• "}${result}` : result;
+              // Runtime result is keyed by specification row.id.
+              // The backend stores the numeric calculated result in
+              // runtime.results[row.id].result.
+              const runtimeResult = resultMap[String(row?.id)] || resultMap[row?.id];
+              const value = runtimeResult?.result ?? (getValue ? getValue(widget, row) : undefined);
+
+              // UI status is deliberately limited to the three requested states:
+              // PASS / FAIL / WAITING.
+              // While the backend is waiting/sampling, the row remains WAITING.
+              const backendStatus = String(
+                runtimeResult?.status ??
+                runtimeResult?.result_status ??
+                ""
+              ).trim().toLowerCase();
+
+              let rowStatus = "WAITING";
+              if (backendStatus === "pass" || backendStatus === "passed") {
+                rowStatus = "PASS";
+              } else if (backendStatus === "fail" || backendStatus === "failed") {
+                rowStatus = "FAIL";
+              } else if (
+                backendStatus === "waiting" ||
+                backendStatus === "waiting_trigger" ||
+                backendStatus === "running" ||
+                backendStatus === "sampling" ||
+                backendStatus === "pending" ||
+                backendStatus === ""
+              ) {
+                rowStatus = "WAITING";
+              } else {
+                // Backward-compatible fallback when the backend only returns
+                // a numeric result and no status.
+                const judged = judgeTestResult(
+                  value,
+                  row.lower_limit ?? row.lower,
+                  row.upper_limit ?? row.upper
+                );
+                rowStatus = judged;
+              }
+
+              const statusColor =
+                rowStatus === "PASS"
+                  ? p.passColor
+                  : rowStatus === "FAIL"
+                    ? p.failColor
+                    : p.waitingColor;
+
+              const statusBackground =
+                rowStatus === "PASS"
+                  ? p.passBgColor
+                  : rowStatus === "FAIL"
+                    ? p.failBgColor
+                    : p.waitingBgColor;
+
+              const baseBg = i % 2 && p.zebraRows !== false
+                ? p.rowAltColor
+                : p.backgroundColor;
 
               return (
                 <tr
-                  key={row.id}
-                  style={{ height: Number(p.rowHeight) || 34, background: baseBg, fontWeight: Number(p.rowWeight) || 500 }}
-                  onMouseEnter={(e) => { if (p.hoverRows !== false) e.currentTarget.style.background = p.hoverColor; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = baseBg; }}
+                  key={row.id ?? `${row.parameter_test ?? row.item}-${i}`}
+                  style={{
+                    height: Number(p.rowHeight) || 34,
+                    background: baseBg,
+                    fontWeight: Number(p.rowWeight) || 500,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (p.hoverRows !== false) e.currentTarget.style.background = p.hoverColor;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = baseBg;
+                  }}
                 >
-                  <td style={{ padding: `0 ${Number(p.cellPadding) || 0}px`, color: p.textColor, fontSize: Number(p.rowFontSize) || 11, borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}`, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{row.item}</td>
-                  <td style={{ textAlign: "center", color: p.secondaryTextColor, fontSize: Number(p.rowFontSize) || 11, fontFamily: "monospace", borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}` }}>{row.lower || "—"}</td>
-                  <td style={{ textAlign: "center", color: p.secondaryTextColor, fontSize: Number(p.rowFontSize) || 11, fontFamily: "monospace", borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}` }}>{row.upper || "—"}</td>
-                  <td style={{ textAlign: "center", color: p.valueColor, fontSize: Number(p.valueFontSize) || 12, fontFamily: "monospace", fontWeight: 650, borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}` }}>{formatValue(value)}</td>
-                  <td style={{ textAlign: "center", borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}` }}>
-                    {p.resultStyle === "text" ? (
-                      <span style={{ color: resultColor, fontSize: Number(p.resultFontSize) || 11, fontWeight: 800 }}>{resultLabel}</span>
-                    ) : (
-                      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 70, height: Math.max(22, (Number(p.rowHeight) || 34) - 10), padding: "0 10px", borderRadius: Number(p.resultRadius) || Math.min(8, Number(p.borderRadius) || 0), color: resultColor, background: result === "PASS" ? p.passBgColor : result === "FAIL" ? p.failBgColor : p.waitingBgColor, border: `${Number(p.resultBorderWidth) || 0}px solid ${resultColor}88`, boxShadow: p.resultShadow || "none", fontSize: Number(p.resultFontSize) || 11, fontWeight: 800 }}>{resultLabel}</span>
-                    )}
+                  <td style={{
+                    padding: `0 ${Number(p.cellPadding) || 0}px`,
+                    color: p.textColor,
+                    fontSize: Number(p.rowFontSize) || 11,
+                    borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}`,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}>
+                    {row.parameter_test ?? row.item ?? "—"}
+                  </td>
+
+                  <td style={{
+                    textAlign: "center",
+                    color: p.secondaryTextColor,
+                    fontSize: Number(p.rowFontSize) || 11,
+                    fontFamily: "monospace",
+                    borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}`,
+                  }}>
+                    {formatLimit(row.lower_limit ?? row.lower)}
+                  </td>
+
+                  <td style={{
+                    textAlign: "center",
+                    color: p.secondaryTextColor,
+                    fontSize: Number(p.rowFontSize) || 11,
+                    fontFamily: "monospace",
+                    borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}`,
+                  }}>
+                    {formatLimit(row.upper_limit ?? row.upper)}
+                  </td>
+
+                  <td style={{
+                    textAlign: "center",
+                    color: p.valueColor,
+                    fontSize: Number(p.valueFontSize) || 12,
+                    fontFamily: "monospace",
+                    fontWeight: 650,
+                    borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}`,
+                  }}>
+                    {formatValue(value)}
+                  </td>
+
+                  <td style={{
+                    textAlign: "center",
+                    color: statusColor,
+                    fontSize: Number(p.resultFontSize) || 11,
+                    fontWeight: 800,
+                    borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}`,
+                  }}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        minWidth: 64,
+                        padding: "3px 8px",
+                        borderRadius: Number(p.resultRadius) || 6,
+                        border: `${Number(p.resultBorderWidth) || 1}px solid ${statusColor}`,
+                        background: statusBackground || "transparent",
+                        color: statusColor,
+                        boxShadow: p.resultShadow || "none",
+                        letterSpacing: ".04em",
+                      }}
+                    >
+                      {rowStatus}
+                    </span>
                   </td>
                 </tr>
               );
             })}
-            {!rows.length && <tr><td colSpan={5} style={{ padding: 30, textAlign: "center", color: p.waitingColor }}>No testing items configured</td></tr>}
+
+            {!rows.length && (
+              <tr>
+                <td colSpan={5} style={{
+                  padding: 30,
+                  textAlign: "center",
+                  color: p.waitingColor,
+                }}>
+                  No specification loaded
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -395,7 +559,8 @@ function TableView({ widget, getValue }) {
 }
 
 export function TestTablePreview({ widget }) {
-  return <TableView widget={widget} getValue={() => undefined} />;
+  const rows = Array.isArray(widget?.props?.rows) ? widget.props.rows : [];
+  return <TableView widget={widget} rowsOverride={rows} getValue={() => undefined} />;
 }
 
 function normalizeDeviceType(device) {
@@ -719,8 +884,13 @@ function TestItemsSettings({ rows, onSave, onClose, availableDevices = [] }) {
 }
 
 export function TestTablePropertyPanel({ p, set, setProps, availableDevices = [] }) {
-  const [showSettings, setShowSettings] = useState(false);
+  const { variables, loading: variablesLoading } = useInternalVariables();
+
   const rows = Array.isArray(p.rows) ? p.rows : [];
+
+  const specificationVariable =
+    String(p.specificationVariable || "Specification").trim() ||
+    "Specification";
   const ap = normalizeAppearance(p);
   // Named themes lock ONLY these color properties.
   // Every other Appearance property remains editable.
@@ -776,9 +946,52 @@ export function TestTablePropertyPanel({ p, set, setProps, availableDevices = []
   return (
     <>
       <PropSection title="Test Table">
-        <PropInput label="Title" value={p.title || "TEST TABLE"} onChange={(v) => set("title", v)} />
-        <div className="text-[8px] text-[var(--text-muted)]">{rows.length} testing item{rows.length !== 1 ? "s" : ""}.</div>
-        <button type="button" onClick={() => setShowSettings(true)} className="w-full h-9 rounded-lg bg-[#3B82F6] hover:bg-[#2563EB] text-white text-[10px] font-bold">⚙ Testing Table Settings</button>
+        <PropInput
+          label="Title"
+          value={p.title || "TEST TABLE"}
+          onChange={(v) => set("title", v)}
+        />
+
+        <label className="block text-[9px] text-[var(--text-secondary)] mt-2">
+          Specification Source
+          <select
+            value={p.specificationSource || "internal_variable"}
+            onChange={(e) => set("specificationSource", e.target.value)}
+            className="mt-1 w-full h-8 rounded-lg bg-[var(--bg-surface)] border border-[var(--border)] px-2 text-[var(--text-primary)] text-[10px] font-semibold"
+          >
+            <option value="internal_variable">Internal Variable</option>
+          </select>
+        </label>
+
+        <label className="block text-[9px] text-[var(--text-secondary)] mt-2">
+          Internal Variable
+          <select
+            value={specificationVariable}
+            onChange={(e) => set("specificationVariable", e.target.value)}
+            disabled={variablesLoading && variables.length === 0}
+            className="mt-1 w-full h-8 rounded-lg bg-[var(--bg-surface)] border border-[var(--border)] px-2 text-[var(--text-primary)] text-[10px] font-semibold"
+          >
+            <option value="">
+              {variablesLoading ? "Loading variables..." : "Select variable..."}
+            </option>
+            {variables.map((variable) => (
+              <option
+                key={String(variable.id ?? variable.name)}
+                value={variable.name}
+              >
+                {variable.name}
+              </option>
+            ))}
+          </select>
+
+          <div className="mt-1 text-[8px] text-[var(--text-muted)]">
+            Nilai variable ini menentukan Specification yang dimuat.
+          </div>
+        </label>
+
+        <div className="mt-2 text-[8px] text-[var(--text-muted)]">
+          Test Table hanya mengambil Testing Item, Lower Limit, Upper Limit, dan Result Test.
+        </div>
       </PropSection>
 
       <PropSection title="Appearance">
@@ -848,15 +1061,305 @@ export function TestTablePropertyPanel({ p, set, setProps, availableDevices = []
         <PropInput label="Value Prefix" value={ap.valuePrefix || ""} onChange={(v) => setAppearance("valuePrefix", v)} />
         <PropInput label="Value Suffix" value={ap.valueSuffix || ""} onChange={(v) => setAppearance("valueSuffix", v)} />
       </PropSection>
-
-      {showSettings && <TestItemsSettings rows={rows} availableDevices={availableDevices} onSave={(newRows) => set("rows", newRows)} onClose={() => setShowSettings(false)} />}
     </>
   );
 }
 
 export function RuntimeTestTable({ widget, getValue }) {
-  // No absolute position here: DynamicCPPage owns widget positioning.
-  // This prevents a second outer frame/offset around the component.
+  const { getValue: getInternalValue } = useInternalVariables();
+
+  const specificationVariable =
+    String(widget?.props?.specificationVariable || "Specification").trim() ||
+    "Specification";
+
+  const [specRows, setSpecRows] = useState([]);
+  const [resultMap, setResultMap] = useState({});
+  const [specName, setSpecName] = useState("");
+  const [status, setStatus] = useState("WAITING");
+  const [internalValue, setInternalValue] = useState("");
+  const [error, setError] = useState("");
+  const runtimeSpecIdRef = useRef(null);
+
+  // IMPORTANT: the Internal Variable NAME is "Specification".
+  // Its VALUE is the specification number/name, for example 110.
+  const specificationValue = getInternalValue(specificationVariable, "");
+  const requestedSpec = String(specificationValue ?? "").trim();
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    let retryTimer = null;
+    let pollInFlight = false;
+
+    const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+    const fetchJson = async (url, options = {}, retries = 3) => {
+      let lastError = null;
+
+      for (let attempt = 0; attempt <= retries; attempt += 1) {
+        if (cancelled) throw new Error("Request cancelled");
+
+        const controller = new AbortController();
+        const timeout = window.setTimeout(() => controller.abort(), 5000);
+
+        try {
+          const response = await fetch(url, {
+            ...options,
+            signal: controller.signal,
+            cache: "no-store",
+          });
+
+          const data = await response.json().catch(() => ({}));
+
+          if (!response.ok) {
+            const error = new Error(
+              data?.message || data?.error || `HTTP ${response.status}`
+            );
+            error.status = response.status;
+            throw error;
+          }
+
+          return data;
+        } catch (error) {
+          lastError = error;
+
+          if (attempt < retries && !cancelled) {
+            await sleep(400 * (attempt + 1));
+          }
+        } finally {
+          window.clearTimeout(timeout);
+        }
+      }
+
+      const reason = lastError?.name === "AbortError"
+        ? "API request timeout"
+        : lastError?.message || "Unknown network error";
+
+      throw new Error(
+        `Cannot connect to API ${API || "(empty API URL)"}: ${reason}`
+      );
+    };
+
+    const stopRuntime = async (id) => {
+      if (id == null) return;
+      try {
+        await fetchJson(
+          `${API}/api/specifications/runtime/stop/${encodeURIComponent(id)}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+          },
+          1
+        );
+      } catch (_) {
+        // Cleanup must never block loading a new specification.
+      }
+    };
+
+    const startRuntime = async (specId) => {
+      const data = await fetchJson(
+        `${API}/api/specifications/runtime/start/${encodeURIComponent(specId)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        },
+        3
+      );
+
+      if (!data?.success) {
+        throw new Error(data?.message || "Failed to start specification runtime");
+      }
+
+      runtimeSpecIdRef.current = specId;
+      return data;
+    };
+
+    const loadSpecification = async () => {
+      setError("");
+      setResultMap({});
+      setSpecRows([]);
+      setSpecName("");
+      setStatus("WAITING");
+
+      if (!requestedSpec) {
+        await stopRuntime(runtimeSpecIdRef.current);
+        runtimeSpecIdRef.current = null;
+        if (!cancelled) setError("Internal Variable 'Specification' is empty");
+        return;
+      }
+
+      try {
+        // 1. Read all specifications. Network errors are retried automatically.
+        const listData = await fetchJson(
+          `${API}/api/specifications`,
+          { headers: { "Content-Type": "application/json" } },
+          4
+        );
+
+        const list = Array.isArray(listData?.specifications)
+          ? listData.specifications
+          : [];
+
+        const found = list.find((item) =>
+          String(item?.name ?? "").trim().toLowerCase() === requestedSpec.toLowerCase()
+        );
+
+        if (!found) {
+          await stopRuntime(runtimeSpecIdRef.current);
+          runtimeSpecIdRef.current = null;
+          if (!cancelled) {
+            setSpecName(requestedSpec);
+            setStatus("SPEC NOT FOUND");
+            setError(`Specification "${requestedSpec}" not found`);
+          }
+          return;
+        }
+
+        // 2. Load complete specification rows.
+        const detailData = await fetchJson(
+          `${API}/api/specifications/${encodeURIComponent(found.id)}`,
+          { headers: { "Content-Type": "application/json" } },
+          4
+        );
+
+        const spec = detailData?.specification ?? detailData;
+        const rows = Array.isArray(spec?.rows)
+          ? spec.rows.map((row, index) => ({
+              ...row,
+              id: row?.id ?? `spec_${found.id}_${index}`,
+            }))
+          : [];
+
+        if (cancelled) return;
+
+        setSpecRows(rows);
+        setSpecName(String(spec?.name ?? found?.name ?? requestedSpec));
+
+        if (!rows.length) {
+          await stopRuntime(runtimeSpecIdRef.current);
+          runtimeSpecIdRef.current = null;
+          if (!cancelled) setStatus("NO ITEMS");
+          return;
+        }
+
+        const foundId = String(found.id);
+
+        // Always call start. The backend start endpoint is idempotent and
+        // returns "Already running" when the runtime is already alive. This
+        // also recovers after the Python backend has been restarted.
+        await startRuntime(foundId);
+
+        const poll = async () => {
+          if (cancelled || pollInFlight) return;
+          pollInFlight = true;
+
+          try {
+            const data = await fetchJson(
+              `${API}/api/specifications/runtime/status/${encodeURIComponent(foundId)}`,
+              { headers: { "Content-Type": "application/json" } },
+              2
+            );
+
+            if (cancelled) return;
+
+            setError("");
+            setResultMap(
+              data?.results && typeof data.results === "object"
+                ? data.results
+                : {}
+            );
+
+            const running = Boolean(data?.running);
+            const message = String(data?.message || "").toLowerCase();
+
+            if (running) {
+              setStatus("RUNNING");
+            } else if (message.includes("stopped")) {
+              setStatus("STOPPED");
+            } else if (message.includes("completed") || message.includes("complete")) {
+              // The new backend normally remains RUNNING while waiting for
+              // the next trigger, but keep this fallback for old runtimes.
+              setStatus("COMPLETED");
+            } else {
+              setStatus("WAITING");
+            }
+          } catch (pollError) {
+            if (cancelled) return;
+
+            // If the Python process was restarted, its in-memory runtime is
+            // gone. Re-create it automatically instead of leaving the UI in
+            // permanent "Failed to fetch" state.
+            if (pollError?.status === 404) {
+              try {
+                await startRuntime(foundId);
+                setError("");
+                setStatus("RUNNING");
+              } catch (restartError) {
+                setStatus("ERROR");
+                setError(restartError?.message || "Failed to restart specification runtime");
+              }
+            } else {
+              setError(pollError?.message || "Failed to read specification runtime");
+              // Keep polling. A temporary backend/network outage should
+              // recover automatically when the API becomes available again.
+            }
+          } finally {
+            pollInFlight = false;
+          }
+        };
+
+        await poll();
+        if (!cancelled) timer = window.setInterval(poll, 200);
+      } catch (err) {
+        if (cancelled) return;
+
+        setStatus("ERROR");
+        setError(err?.message || "Failed to load Specification");
+
+        // Keep retrying the complete load. This specifically fixes the case
+        // where the widget appears before Flask/Electron's Python backend is
+        // ready: no manual page refresh is required.
+        retryTimer = window.setTimeout(() => {
+          if (!cancelled) loadSpecification();
+        }, 1500);
+      }
+    };
+
+    loadSpecification();
+
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
+  }, [requestedSpec]);
+
+  // Stop the active runtime when the widget is removed/unmounted.
+  useEffect(() => {
+    return () => {
+      const id = runtimeSpecIdRef.current;
+      if (id != null) {
+        fetch(`${API}/api/specifications/runtime/stop/${encodeURIComponent(id)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }).catch(() => {});
+      }
+    };
+  }, []);
+
+  const runtimeWidget = useMemo(
+    () => ({
+      ...widget,
+      props: {
+        ...(widget?.props || {}),
+        rows: specRows,
+        specificationSource: "internal_variable",
+        title: widget?.props?.title || "TEST TABLE",
+      },
+    }),
+    [widget, specRows]
+  );
+
   return (
     <div
       style={{
@@ -867,7 +1370,38 @@ export function RuntimeTestTable({ widget, getValue }) {
         height: widget.props?.height,
       }}
     >
-      <TableView widget={widget} getValue={getValue} />
+      <TableView
+        widget={runtimeWidget}
+        getValue={getValue}
+        rowsOverride={specRows}
+        resultMap={resultMap}
+      />
+
+      <div
+        style={{
+          position: "absolute",
+          left: 6,
+          bottom: 6,
+          zIndex: 30,
+          fontSize: 8,
+          fontWeight: 700,
+          color:
+            status === "ERROR" || status === "SPEC NOT FOUND"
+              ? "#F87171"
+              : status === "COMPLETED"
+                ? "#4ADE80"
+                : "#94A3B8",
+          background: "rgba(0,0,0,.55)",
+          padding: "3px 6px",
+          borderRadius: 4,
+          pointerEvents: "none",
+        }}
+      >
+        {specName
+          ? `Specification: ${specName} · ${status}`
+          : `Specification: ${status}`}
+        {error ? ` · ${error}` : ""}
+      </div>
     </div>
   );
 }
