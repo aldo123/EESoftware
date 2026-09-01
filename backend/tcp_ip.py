@@ -1,34 +1,38 @@
 """
-tcp_ip.py - Modbus TCP communication layer for EE Interlock.
+tcp_ip.py - High-performance Modbus TCP communication layer.
 
-Supported Modbus areas:
-    Coil             FC01 Read / FC05 Write Single / FC15 Write Multiple
-    Discrete Input   FC02 Read
-    Holding Register FC03 Read / FC06 Write Single / FC16 Write Multiple
-    Input Register   FC04 Read
-
-Address convention:
-    Addresses sent to this module are ZERO-BASED Modbus addresses.
-    Example:
-        Discrete Input 0  -> FC02 address 0
-        Coil 3            -> FC01/FC05 address 3
-        Holding Register 30 -> FC03 address 30
-
-TCP devices are loaded automatically from:
-    setting.json
-    -> Communication Devices
-    -> _table
-    -> Type == TCP
+Design:
+- Persistent TCP connection per PLC.
+- One write queue/worker per PLC.
+- Single writes are ACKed by the local API immediately; PLC I/O happens
+  asynchronously in the background.
+- Batch writes automatically use FC15/FC16 for contiguous addresses.
+- Reads remain synchronous so realtime polling can obtain current PLC state.
+- Existing /api/tcp/read, /api/tcp/read-batch, /api/tcp/write and
+  /api/tcp/write-batch endpoints are kept compatible.
+- Addresses are ZERO-BASED Modbus addresses.
 """
 
 import json
 import os
+import queue
 import socket
 import struct
 import sys
 import threading
 import time
 from flask import Blueprint, request, jsonify
+
+
+# ============================================================
+# CONFIG
+# ============================================================
+
+DEFAULT_TIMEOUT = 0.35
+DEFAULT_RECONNECT_INTERVAL = 1.0
+MAX_WRITE_QUEUE = 4096
+MAX_COILS_PER_WRITE = 1968
+MAX_REGISTERS_PER_WRITE = 123
 
 
 # ============================================================
@@ -86,7 +90,6 @@ def _load_tcp_devices():
                 continue
 
             name = str(row.get("Device Name", "")).strip()
-
             if not name:
                 continue
 
@@ -113,9 +116,15 @@ def _load_tcp_devices():
                 unit_id = 1
 
             try:
-                timeout = float(row.get("Timeout", 1) or 1)
+                timeout = float(
+                    row.get("Timeout", DEFAULT_TIMEOUT)
+                    or DEFAULT_TIMEOUT
+                )
             except (TypeError, ValueError):
-                timeout = 1.0
+                timeout = DEFAULT_TIMEOUT
+
+            # Very large timeouts make an HMI feel frozen.
+            timeout = max(0.10, min(timeout, 5.0))
 
             item = dict(row)
             item.update({
@@ -123,7 +132,7 @@ def _load_tcp_devices():
                 "Type": "TCP",
                 "IP Address": ip,
                 "Port": port,
-                "Device ID": unit_id,
+                "Device ID": max(0, min(255, unit_id)),
                 "Timeout": timeout,
             })
 
@@ -153,18 +162,38 @@ _load_devices = _load_tcp_devices
 # ============================================================
 
 class ModbusTCPClient:
+    """
+    Persistent Modbus TCP client.
+
+    The socket is reused for all requests. A single socket is serialized
+    with self.lock because normal Modbus TCP request/response traffic must
+    remain ordered on one connection.
+
+    Writes have a separate queue so HTTP requests do not wait for the PLC.
+    """
+
     def __init__(self, device):
         self.name = str(device.get("Device Name", ""))
+
         self.ip = ""
         self.port = 502
         self.unit_id = 1
-        self.timeout = 1.0
+        self.timeout = DEFAULT_TIMEOUT
 
         self.sock = None
         self.running = False
         self.lock = threading.RLock()
+
         self.last_attempt = 0.0
         self.transaction_id = 0
+
+        self.write_queue = queue.Queue(maxsize=MAX_WRITE_QUEUE)
+        self.write_thread = threading.Thread(
+            target=self._write_worker,
+            daemon=True,
+            name=f"ModbusWrite-{self.name}",
+        )
+        self.write_thread.start()
 
         self.configure(device)
 
@@ -192,10 +221,14 @@ class ModbusTCPClient:
             self.unit_id = 1
 
         try:
-            self.timeout = float(device.get("Timeout", 1) or 1)
+            self.timeout = float(
+                device.get("Timeout", DEFAULT_TIMEOUT)
+                or DEFAULT_TIMEOUT
+            )
         except (TypeError, ValueError):
-            self.timeout = 1.0
+            self.timeout = DEFAULT_TIMEOUT
 
+        self.timeout = max(0.10, min(self.timeout, 5.0))
         self.unit_id = max(0, min(255, self.unit_id))
 
     def is_connected(self):
@@ -213,6 +246,8 @@ class ModbusTCPClient:
 
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 s.settimeout(self.timeout)
 
                 print(
@@ -292,6 +327,11 @@ class ModbusTCPClient:
         return b"".join(chunks)
 
     def request(self, function_code, payload=b""):
+        """
+        Execute one Modbus request synchronously.
+
+        Used by reads and by the background write worker.
+        """
         with self.lock:
             if not self.is_connected():
                 if not self.connect():
@@ -301,12 +341,8 @@ class ModbusTCPClient:
 
             transaction_id = self._next_transaction_id()
 
-            # MBAP:
-            # Transaction ID (2)
-            # Protocol ID    (2)
-            # Length         (2)
-            # Unit ID        (1)
             pdu = bytes([function_code]) + payload
+
             mbap = struct.pack(
                 ">HHHB",
                 transaction_id,
@@ -318,14 +354,19 @@ class ModbusTCPClient:
             try:
                 self.sock.sendall(mbap + pdu)
 
-                # First read MBAP header.
                 header = self._recv_exact(
                     self.sock,
                     7,
                 )
 
-                rx_tid, protocol_id, length, rx_unit = (
-                    struct.unpack(">HHHB", header)
+                (
+                    rx_tid,
+                    protocol_id,
+                    length,
+                    rx_unit,
+                ) = struct.unpack(
+                    ">HHHB",
+                    header,
                 )
 
                 if rx_tid != transaction_id:
@@ -340,21 +381,31 @@ class ModbusTCPClient:
                         f"{protocol_id}"
                     )
 
+                if rx_unit != self.unit_id:
+                    raise ValueError(
+                        f"Unexpected Unit ID: "
+                        f"{rx_unit} != {self.unit_id}"
+                    )
+
                 if length < 2:
                     raise ValueError(
                         f"Invalid Modbus length: {length}"
                     )
 
-                # Length includes Unit ID, which is already in header.
                 pdu_length = length - 1
+
                 rx_pdu = self._recv_exact(
                     self.sock,
                     pdu_length,
                 )
 
+                if not rx_pdu:
+                    raise RuntimeError(
+                        "Empty Modbus PDU"
+                    )
+
                 rx_fc = rx_pdu[0]
 
-                # Modbus exception response.
                 if rx_fc == (function_code | 0x80):
                     exception_code = (
                         rx_pdu[1]
@@ -377,8 +428,6 @@ class ModbusTCPClient:
                 return rx_pdu[1:]
 
             except Exception as exc:
-                # Keep the socket alive for PLC-level Modbus exceptions.
-                # Reconnect only when the underlying transport is broken.
                 transport_error = isinstance(
                     exc,
                     (
@@ -393,6 +442,294 @@ class ModbusTCPClient:
                     self.disconnect()
 
                 raise
+
+    # --------------------------------------------------------
+    # WRITE QUEUE
+    # --------------------------------------------------------
+
+    def enqueue_write(self, job):
+        """
+        Put a write job in the persistent per-device queue.
+
+        This method intentionally does NOT wait for the PLC.
+        """
+        self.write_queue.put_nowait(job)
+
+    def _write_worker(self):
+        while True:
+            job = self.write_queue.get()
+
+            try:
+                self._execute_write_job(job)
+            except Exception as e:
+                print(
+                    f"[MODBUS WRITE WORKER] "
+                    f"{self.name}: {e}"
+                )
+            finally:
+                self.write_queue.task_done()
+
+    def _execute_write_job(self, job):
+        mode = job.get("mode", "single")
+
+        if mode == "batch":
+            self._execute_batch_write(job.get("writes", []))
+            return
+
+        self._execute_single_write(
+            job.get("address_type"),
+            job.get("address"),
+            job.get("value"),
+        )
+
+    def _execute_single_write(
+        self,
+        area,
+        address,
+        value,
+    ):
+        area = _normalize_area(area)
+        address = _validate_address(address)
+
+        if area == "coil":
+            bit_value = bool(value)
+
+            payload = struct.pack(
+                ">HH",
+                address,
+                0xFF00 if bit_value else 0x0000,
+            )
+
+            response = self.request(5, payload)
+
+            if len(response) != 4:
+                raise RuntimeError(
+                    "Invalid FC05 response"
+                )
+
+            return
+
+        if area == "holding_register":
+            register_value = int(value)
+
+            if not 0 <= register_value <= 65535:
+                raise ValueError(
+                    "Holding Register value must be 0..65535"
+                )
+
+            payload = struct.pack(
+                ">HH",
+                address,
+                register_value,
+            )
+
+            response = self.request(6, payload)
+
+            if len(response) != 4:
+                raise RuntimeError(
+                    "Invalid FC06 response"
+                )
+
+            return
+
+        raise ValueError(
+            f"{area} is read-only"
+        )
+
+    def _execute_batch_write(self, writes):
+        """
+        Group contiguous writes and use FC15/FC16 where possible.
+        Non-contiguous targets are sent individually.
+
+        All groups are executed sequentially on this PLC connection.
+        """
+        if not writes:
+            return
+
+        normalized = []
+
+        for item in writes:
+            if not isinstance(item, dict):
+                continue
+
+            area = _normalize_area(
+                item.get("address_type")
+            )
+            address = _validate_address(
+                item.get("address")
+            )
+
+            if area not in (
+                "coil",
+                "holding_register",
+            ):
+                raise ValueError(
+                    f"{area} is read-only"
+                )
+
+            value = item.get("value")
+
+            if area == "coil":
+                value = bool(value)
+            else:
+                value = int(value)
+                if not 0 <= value <= 65535:
+                    raise ValueError(
+                        "Holding Register value must be 0..65535"
+                    )
+
+            normalized.append({
+                "area": area,
+                "address": address,
+                "value": value,
+            })
+
+        # Preserve first-seen order, but remove duplicate physical targets.
+        unique = {}
+        for item in normalized:
+            key = (
+                item["area"],
+                item["address"],
+            )
+            unique[key] = item
+
+        items = list(unique.values())
+
+        # Sort by area/address so contiguous ranges can be combined.
+        items.sort(
+            key=lambda x: (
+                x["area"],
+                x["address"],
+            )
+        )
+
+        groups = []
+        current = []
+
+        for item in items:
+            if not current:
+                current = [item]
+                continue
+
+            previous = current[-1]
+
+            same_area = (
+                previous["area"] == item["area"]
+            )
+
+            contiguous = (
+                previous["address"] + 1
+                == item["address"]
+            )
+
+            limit = (
+                MAX_COILS_PER_WRITE
+                if item["area"] == "coil"
+                else MAX_REGISTERS_PER_WRITE
+            )
+
+            within_limit = (
+                len(current) < limit
+            )
+
+            if (
+                same_area
+                and contiguous
+                and within_limit
+            ):
+                current.append(item)
+            else:
+                groups.append(current)
+                current = [item]
+
+        if current:
+            groups.append(current)
+
+        for group in groups:
+            area = group[0]["area"]
+
+            if area == "coil":
+                if len(group) == 1:
+                    self._execute_single_write(
+                        area,
+                        group[0]["address"],
+                        group[0]["value"],
+                    )
+                else:
+                    self._write_multiple_coils(group)
+
+            elif area == "holding_register":
+                if len(group) == 1:
+                    self._execute_single_write(
+                        area,
+                        group[0]["address"],
+                        group[0]["value"],
+                    )
+                else:
+                    self._write_multiple_registers(group)
+
+    def _write_multiple_coils(self, group):
+        start = group[0]["address"]
+        values = [
+            bool(item["value"])
+            for item in group
+        ]
+
+        count = len(values)
+        byte_count = (count + 7) // 8
+        packed = bytearray(byte_count)
+
+        for i, value in enumerate(values):
+            if value:
+                packed[i // 8] |= 1 << (i % 8)
+
+        payload = struct.pack(
+            ">HHB",
+            start,
+            count,
+            byte_count,
+        ) + bytes(packed)
+
+        response = self.request(
+            15,
+            payload,
+        )
+
+        if len(response) != 4:
+            raise RuntimeError(
+                "Invalid FC15 response"
+            )
+
+    def _write_multiple_registers(self, group):
+        start = group[0]["address"]
+        values = [
+            int(item["value"])
+            for item in group
+        ]
+
+        count = len(values)
+
+        payload = struct.pack(
+            ">HHB",
+            start,
+            count,
+            count * 2,
+        )
+
+        payload += b"".join(
+            struct.pack(">H", value)
+            for value in values
+        )
+
+        response = self.request(
+            16,
+            payload,
+        )
+
+        if len(response) != 4:
+            raise RuntimeError(
+                "Invalid FC16 response"
+            )
 
 
 # ============================================================
@@ -410,7 +747,7 @@ def sync_devices():
     }
 
     with _clients_lock:
-        # Remove devices deleted from Setting.
+        # Remove deleted devices.
         for name in list(_clients):
             if name not in devices:
                 _clients[name].disconnect()
@@ -452,18 +789,23 @@ def reconnect_loop():
             with _clients_lock:
                 clients = list(_clients.items())
 
+            now = time.time()
+
             for name, client in clients:
                 if (
                     not client.is_connected()
-                    and time.time() - client.last_attempt >= 3
+                    and now - client.last_attempt
+                    >= DEFAULT_RECONNECT_INTERVAL
                 ):
-                    client.last_attempt = time.time()
+                    client.last_attempt = now
                     client.connect()
 
         except Exception as e:
-            print(f"[MODBUS] reconnect loop error: {e}")
+            print(
+                f"[MODBUS] reconnect loop error: {e}"
+            )
 
-        time.sleep(1)
+        time.sleep(0.25)
 
 
 threading.Thread(
@@ -480,11 +822,14 @@ threading.Thread(
 AREA_MAP = {
     "coil": 1,
     "coils": 1,
+
     "discrete_input": 2,
     "discrete_inputs": 2,
     "input": 2,
+
     "holding_register": 3,
     "holding_registers": 3,
+
     "input_register": 4,
     "input_registers": 4,
 }
@@ -501,16 +846,21 @@ def _normalize_area(value):
         "discrete_input": "discrete_input",
         "discrete inputs": "discrete_input",
         "discrete_inputs": "discrete_input",
+        "digital input": "discrete_input",
+        "digital_input": "discrete_input",
 
         "holding register": "holding_register",
         "holding_register": "holding_register",
         "holding registers": "holding_register",
         "holding_registers": "holding_register",
+        "holding": "holding_register",
 
         "input register": "input_register",
         "input_register": "input_register",
         "input registers": "input_register",
         "input_registers": "input_register",
+        "analog input": "input_register",
+        "analog_input": "input_register",
     }
 
     if area not in aliases:
@@ -565,7 +915,6 @@ def _get_client(device_name):
         client = _clients.get(device_name)
 
     if not client:
-        # Refresh once in case Setting was just changed.
         sync_devices()
 
         with _clients_lock:
@@ -579,7 +928,12 @@ def _get_client(device_name):
     return client
 
 
-def _read_bits(client, function_code, address, count):
+def _read_bits(
+    client,
+    function_code,
+    address,
+    count,
+):
     payload = struct.pack(
         ">HH",
         address,
@@ -599,6 +953,11 @@ def _read_bits(client, function_code, address, count):
     byte_count = data[0]
     raw = data[1:1 + byte_count]
 
+    if len(raw) < byte_count:
+        raise RuntimeError(
+            "Incomplete Modbus bit response"
+        )
+
     values = []
 
     for i in range(count):
@@ -615,7 +974,12 @@ def _read_bits(client, function_code, address, count):
     return values
 
 
-def _read_registers(client, function_code, address, count):
+def _read_registers(
+    client,
+    function_code,
+    address,
+    count,
+):
     payload = struct.pack(
         ">HH",
         address,
@@ -656,50 +1020,82 @@ def _read_registers(client, function_code, address, count):
 
 
 # ============================================================
-# BATCH READ HELPERS
+# BATCH READ
 # ============================================================
 
 def _max_count_for_area(area):
-    return 2000 if area in ("coil", "discrete_input") else 125
+    return (
+        2000
+        if area in (
+            "coil",
+            "discrete_input",
+        )
+        else 125
+    )
 
 
-def _read_batch_ranges(client, area, requests_list):
-    """Read requested addresses using contiguous Modbus ranges."""
+def _read_batch_ranges(
+    client,
+    area,
+    requests_list,
+):
     if not requests_list:
         return []
 
     function_code = AREA_MAP[area]
 
     by_address = {}
+
     for item in requests_list:
         address = int(item["address"])
-        by_address.setdefault(address, []).append(item)
+        by_address.setdefault(
+            address,
+            [],
+        ).append(item)
 
-    addresses = sorted(by_address)
+    addresses = sorted(
+        by_address
+    )
+
     max_count = _max_count_for_area(area)
 
     ranges = []
+
     start = addresses[0]
     previous = addresses[0]
 
     for address in addresses[1:]:
-        contiguous = address == previous + 1
-        within_limit = (address - start + 1) <= max_count
+        contiguous = (
+            address == previous + 1
+        )
+
+        within_limit = (
+            address - start + 1
+        ) <= max_count
 
         if contiguous and within_limit:
             previous = address
             continue
 
-        ranges.append((start, previous))
+        ranges.append(
+            (start, previous)
+        )
+
         start = address
         previous = address
 
-    ranges.append((start, previous))
+    ranges.append(
+        (start, previous)
+    )
 
     result_by_address = {}
 
     for start_address, end_address in ranges:
-        count = end_address - start_address + 1
+        count = (
+            end_address
+            - start_address
+            + 1
+        )
 
         if function_code in (1, 2):
             values = _read_bits(
@@ -717,23 +1113,29 @@ def _read_batch_ranges(client, area, requests_list):
             )
 
         for offset, value in enumerate(values):
-            result_by_address[start_address + offset] = value
+            result_by_address[
+                start_address + offset
+            ] = value
 
     results = []
 
     for address, items in by_address.items():
-        value = result_by_address.get(address)
+        value = result_by_address.get(
+            address
+        )
 
         for item in items:
             results.append({
                 "id": item["id"],
                 "address": address,
                 "value": value,
-                "success": address in result_by_address,
+                "success": (
+                    address
+                    in result_by_address
+                ),
             })
 
     return results
-
 
 
 # ============================================================
@@ -769,6 +1171,11 @@ def devices():
                 if client
                 else False
             ),
+            "write_queue": (
+                client.write_queue.qsize()
+                if client
+                else 0
+            ),
         })
 
     return jsonify({
@@ -789,6 +1196,7 @@ def status():
             "port": client.port,
             "unit_id": client.unit_id,
             "protocol": "Modbus TCP",
+            "write_queue": client.write_queue.qsize(),
         }
         for name, client in clients.items()
     })
@@ -804,6 +1212,7 @@ def address_types():
                 "label": "Coil",
                 "function_read": 1,
                 "function_write": 5,
+                "function_write_multiple": 15,
                 "read_only": False,
                 "data_type": "BOOL",
             },
@@ -820,6 +1229,7 @@ def address_types():
                 "label": "Holding Register",
                 "function_read": 3,
                 "function_write": 6,
+                "function_write_multiple": 16,
                 "read_only": False,
                 "data_type": "UINT16",
             },
@@ -855,6 +1265,7 @@ def connect():
                     )
                 },
             })
+
         except Exception as e:
             return jsonify({
                 "success": False,
@@ -893,7 +1304,9 @@ def disconnect():
         if not client:
             return jsonify({
                 "success": False,
-                "message": f"Device '{name}' not found",
+                "message": (
+                    f"Device '{name}' not found"
+                ),
             }), 404
 
         client.disconnect()
@@ -911,52 +1324,79 @@ def disconnect():
     })
 
 
-
 @tcp_ip_bp.post("/api/tcp/read-batch")
 def read_batch():
-    """
-    High-performance batch Modbus read.
-
-    The backend groups addresses by area and combines contiguous
-    addresses into one Modbus transaction.
-    """
     body = request.get_json() or {}
 
     try:
-        device_name = body.get("device_name")
+        device_name = body.get(
+            "device_name"
+        )
+
         if not device_name:
-            raise ValueError("device_name is required")
+            raise ValueError(
+                "device_name is required"
+            )
 
-        raw_requests = body.get("requests")
-        if not isinstance(raw_requests, list) or not raw_requests:
-            raise ValueError("requests must be a non-empty list")
+        raw_requests = body.get(
+            "requests"
+        )
 
-        client = _get_client(device_name)
+        if (
+            not isinstance(
+                raw_requests,
+                list,
+            )
+            or not raw_requests
+        ):
+            raise ValueError(
+                "requests must be a non-empty list"
+            )
+
+        client = _get_client(
+            device_name
+        )
+
         grouped = {}
 
-        for index, item in enumerate(raw_requests):
+        for index, item in enumerate(
+            raw_requests
+        ):
             if not isinstance(item, dict):
                 raise ValueError(
-                    f"requests[{index}] must be an object"
+                    f"requests[{index}] "
+                    f"must be an object"
                 )
 
-            request_id = str(item.get("id", index))
+            request_id = str(
+                item.get(
+                    "id",
+                    index,
+                )
+            )
 
             area = _normalize_area(
-                item.get("address_type")
+                item.get(
+                    "address_type"
+                )
             )
 
             address = _validate_address(
                 item.get("address")
             )
 
-            grouped.setdefault(area, []).append({
+            grouped.setdefault(
+                area,
+                [],
+            ).append({
                 "id": request_id,
                 "address": address,
             })
 
         all_results = []
 
+        # Different Modbus areas are separate function-code
+        # transactions. The same socket remains persistent.
         for area, area_requests in grouped.items():
             all_results.extend(
                 _read_batch_ranges(
@@ -973,21 +1413,36 @@ def read_batch():
 
         ordered_results = []
 
-        for index, item in enumerate(raw_requests):
-            request_id = str(item.get("id", index))
+        for index, item in enumerate(
+            raw_requests
+        ):
+            request_id = str(
+                item.get(
+                    "id",
+                    index,
+                )
+            )
 
-            result = by_id.get(request_id)
+            result = by_id.get(
+                request_id
+            )
 
             if result is None:
                 result = {
                     "id": request_id,
                     "success": False,
                     "value": None,
-                    "address": item.get("address"),
-                    "message": "No value returned",
+                    "address": item.get(
+                        "address"
+                    ),
+                    "message": (
+                        "No value returned"
+                    ),
                 }
 
-            ordered_results.append(result)
+            ordered_results.append(
+                result
+            )
 
         return jsonify({
             "success": True,
@@ -1009,53 +1464,45 @@ def read_batch():
 
 @tcp_ip_bp.post("/api/tcp/read")
 def read_address():
-    """
-    Read one or multiple Modbus addresses.
-
-    Request:
-    {
-        "device_name": "PLC Simulator",
-        "address_type": "discrete_input",
-        "address": 0,
-        "count": 1
-    }
-
-    Response:
-    {
-        "success": true,
-        "device_name": "PLC Simulator",
-        "address_type": "discrete_input",
-        "address": 0,
-        "count": 1,
-        "values": [false],
-        "value": false,
-        "function_code": 2
-    }
-    """
     body = request.get_json() or {}
 
     try:
-        device_name = body.get("device_name")
+        device_name = body.get(
+            "device_name"
+        )
+
         area = _normalize_area(
             body.get("address_type")
         )
+
         address = _validate_address(
             body.get("address")
         )
 
         default_count = 1
+
         count = _validate_count(
-            body.get("count", default_count),
-            2000 if area in (
-                "coil",
-                "discrete_input",
-            )
-            else 125,
+            body.get(
+                "count",
+                default_count,
+            ),
+            (
+                2000
+                if area in (
+                    "coil",
+                    "discrete_input",
+                )
+                else 125
+            ),
         )
 
-        client = _get_client(device_name)
+        client = _get_client(
+            device_name
+        )
 
-        function_code = AREA_MAP[area]
+        function_code = AREA_MAP[
+            area
+        ]
 
         if function_code in (1, 2):
             values = _read_bits(
@@ -1079,7 +1526,11 @@ def read_address():
             "address": address,
             "count": count,
             "values": values,
-            "value": values[0] if count == 1 else values,
+            "value": (
+                values[0]
+                if count == 1
+                else values
+            ),
             "function_code": function_code,
         })
 
@@ -1090,122 +1541,309 @@ def read_address():
         }), 400
 
 
+# ============================================================
+# ASYNC SINGLE WRITE
+# ============================================================
+
 @tcp_ip_bp.post("/api/tcp/write")
 def write_address():
     """
-    Write Modbus Coil or Holding Register.
+    FAST WRITE ENDPOINT.
 
-    Coil:
-        FC05, value true/false or 1/0
+    Important:
+    The HTTP request returns after validation and queue insertion.
+    It does NOT wait for the PLC response.
 
-    Holding Register:
-        FC06, value 0..65535
+    Response:
+        202 Accepted
+        {
+            "success": true,
+            "queued": true,
+            ...
+        }
 
-    Request:
-    {
-        "device_name": "PLC Simulator",
-        "address_type": "coil",
-        "address": 0,
-        "value": true
-    }
+    The background per-device worker performs the actual Modbus FC05/FC06.
     """
+
     body = request.get_json() or {}
 
     try:
-        device_name = body.get("device_name")
+        device_name = str(
+            body.get(
+                "device_name",
+                "",
+            )
+        ).strip()
+
+        if not device_name:
+            raise ValueError(
+                "device_name is required"
+            )
+
         area = _normalize_area(
             body.get("address_type")
         )
+
+        if area not in (
+            "coil",
+            "holding_register",
+        ):
+            raise ValueError(
+                f"{area} is read-only"
+            )
+
         address = _validate_address(
             body.get("address")
         )
+
         value = body.get("value")
 
-        client = _get_client(device_name)
-
         if area == "coil":
-            bit_value = bool(value)
-
-            payload = struct.pack(
-                ">HH",
-                address,
-                0xFF00 if bit_value else 0x0000,
-            )
-
-            response = client.request(
-                5,
-                payload,
-            )
-
-            if len(response) != 4:
-                raise RuntimeError(
-                    "Invalid FC05 response"
+            value = (
+                value is True
+                or str(value).lower() in (
+                    "1",
+                    "true",
+                    "on",
                 )
-
-            response_address, response_value = (
-                struct.unpack(">HH", response)
             )
+        else:
+            value = int(value)
 
-            return jsonify({
-                "success": True,
-                "device_name": device_name,
-                "address_type": area,
-                "address": response_address,
-                "value": bool(response_value),
-                "function_code": 5,
-            })
-
-        if area == "holding_register":
-            register_value = int(value)
-
-            if register_value < 0 or register_value > 65535:
+            if not 0 <= value <= 65535:
                 raise ValueError(
-                    "Holding Register value must be "
-                    "0..65535"
+                    "Holding Register value "
+                    "must be 0..65535"
                 )
 
-            payload = struct.pack(
-                ">HH",
-                address,
-                register_value,
-            )
-
-            response = client.request(
-                6,
-                payload,
-            )
-
-            if len(response) != 4:
-                raise RuntimeError(
-                    "Invalid FC06 response"
-                )
-
-            response_address, response_value = (
-                struct.unpack(">HH", response)
-            )
-
-            return jsonify({
-                "success": True,
-                "device_name": device_name,
-                "address_type": area,
-                "address": response_address,
-                "value": response_value,
-                "function_code": 6,
-            })
-
-        raise ValueError(
-            f"{area} is read-only"
+        client = _get_client(
+            device_name
         )
+
+        client.enqueue_write({
+            "mode": "single",
+            "address_type": area,
+            "address": address,
+            "value": value,
+        })
+
+        return jsonify({
+            "success": True,
+            "queued": True,
+            "device_name": device_name,
+            "address_type": area,
+            "address": address,
+            "value": value,
+            "queue_size": (
+                client.write_queue.qsize()
+            ),
+        }), 202
+
+    except queue.Full:
+        return jsonify({
+            "success": False,
+            "queued": False,
+            "message": (
+                "PLC write queue is full"
+            ),
+        }), 503
 
     except Exception as e:
         return jsonify({
             "success": False,
+            "queued": False,
             "message": str(e),
         }), 400
 
 
-# Compatibility endpoint for the previous raw TCP implementation.
-# It remains available but should NOT be used for Modbus address access.
+# ============================================================
+# ASYNC BATCH WRITE
+# ============================================================
+
+@tcp_ip_bp.post("/api/tcp/write-batch")
+def write_batch():
+    """
+    FAST BATCH WRITE.
+
+    The entire list is inserted into the appropriate PLC queues and the
+    HTTP request returns immediately.
+
+    For each PLC:
+      contiguous Coil targets -> FC15
+      contiguous Holding Register targets -> FC16
+      isolated targets -> FC05 / FC06
+
+    This endpoint is therefore suitable for RESET operations containing
+    many targets.
+    """
+
+    body = request.get_json() or {}
+    writes = body.get("writes", [])
+
+    if (
+        not isinstance(writes, list)
+        or not writes
+    ):
+        return jsonify({
+            "success": False,
+            "queued": False,
+            "message": (
+                "writes must be a non-empty list"
+            ),
+            "results": [],
+        }), 400
+
+    grouped_by_device = {}
+
+    try:
+        for index, item in enumerate(writes):
+            if not isinstance(item, dict):
+                raise ValueError(
+                    f"writes[{index}] "
+                    f"must be an object"
+                )
+
+            item_id = str(
+                item.get(
+                    "id",
+                    index,
+                )
+            )
+
+            device_name = str(
+                item.get(
+                    "device_name",
+                    "",
+                )
+            ).strip()
+
+            if not device_name:
+                raise ValueError(
+                    f"writes[{index}].device_name "
+                    f"is required"
+                )
+
+            area = _normalize_area(
+                item.get(
+                    "address_type"
+                )
+            )
+
+            if area not in (
+                "coil",
+                "holding_register",
+            ):
+                raise ValueError(
+                    f"{area} is read-only"
+                )
+
+            address = _validate_address(
+                item.get("address")
+            )
+
+            value = item.get("value")
+
+            if area == "coil":
+                value = (
+                    value is True
+                    or str(value).lower()
+                    in (
+                        "1",
+                        "true",
+                        "on",
+                    )
+                )
+            else:
+                value = int(value)
+
+                if not 0 <= value <= 65535:
+                    raise ValueError(
+                        "Holding Register value "
+                        "must be 0..65535"
+                    )
+
+            grouped_by_device.setdefault(
+                device_name,
+                [],
+            ).append({
+                "id": item_id,
+                "address_type": area,
+                "address": address,
+                "value": value,
+            })
+
+        queued = []
+        clients = {}
+
+        for device_name, device_writes in (
+            grouped_by_device.items()
+        ):
+            client = _get_client(
+                device_name
+            )
+
+            clients[device_name] = client
+
+            client.enqueue_write({
+                "mode": "batch",
+                "writes": device_writes,
+            })
+
+            queued.extend(
+                {
+                    "id": item["id"],
+                    "device_name": device_name,
+                    "address_type": item[
+                        "address_type"
+                    ],
+                    "address": item[
+                        "address"
+                    ],
+                    "value": item["value"],
+                    "queued": True,
+                }
+                for item in device_writes
+            )
+
+        return jsonify({
+            "success": True,
+            "queued": True,
+            "count": len(queued),
+            "results": queued,
+            "devices": {
+                name: {
+                    "queue_size": (
+                        client.write_queue.qsize()
+                    )
+                }
+                for name, client
+                in clients.items()
+            },
+        }), 202
+
+    except queue.Full:
+        return jsonify({
+            "success": False,
+            "queued": False,
+            "message": (
+                "PLC write queue is full"
+            ),
+            "results": [],
+        }), 503
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "queued": False,
+            "message": str(e),
+            "results": [],
+        }), 400
+
+
+# ============================================================
+# COMPATIBILITY RAW TCP ENDPOINT
+# ============================================================
+
 @tcp_ip_bp.post("/api/tcp/send")
 def raw_send():
     body = request.get_json() or {}
@@ -1230,7 +1868,8 @@ def raw_send():
             payload = data.encode()
         else:
             raise ValueError(
-                "data must be string, list, or bytearray"
+                "data must be string, list, "
+                "or bytearray"
             )
 
         with client.lock:
@@ -1240,7 +1879,9 @@ def raw_send():
                         "Unable to connect"
                     )
 
-            client.sock.sendall(payload)
+            client.sock.sendall(
+                payload
+            )
 
         return jsonify({
             "success": True,
@@ -1252,3 +1893,15 @@ def raw_send():
             "success": False,
             "message": str(e),
         }), 400
+
+
+# ============================================================
+# INITIAL DEVICE SYNC
+# ============================================================
+
+try:
+    sync_devices()
+except Exception as e:
+    print(
+        f"[MODBUS] Initial device sync failed: {e}"
+    )

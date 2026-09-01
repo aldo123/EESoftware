@@ -1,9 +1,9 @@
 {
     "Control Point": {
-        "Control Point Code": "BM01-VM01-CP20",
-        "Control Point Family": "CP20 V-Mini",
-        "Control Point Name": "CP20 - Pallet Label Printing",
-        "Data Point": "CP20 V-Mini",
+        "Control Point Code": "BM01-VM01-CP01",
+        "Control Point Family": "CP01 EE Software",
+        "Control Point Name": "CP01 - Equipment Software",
+        "Data Point": "CP01 EE",
         "Interlock ByPass": "No",
         "Process": "CP01"
     },

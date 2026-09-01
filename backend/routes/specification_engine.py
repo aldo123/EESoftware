@@ -17,6 +17,7 @@ import re
 import statistics
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, wait
 import urllib.error
 import urllib.request
 
@@ -441,6 +442,7 @@ class SpecificationRuntime:
 
         self.message = "Idle"
         self.started_at = None
+        self.cycle_count = 0
 
     def start(self):
         if self.running:
@@ -463,7 +465,8 @@ class SpecificationRuntime:
         self.running = False
         self.message = "Stopped"
 
-    def _wait_trigger(self, row):
+    def _wait_trigger_on(self, row):
+        """Wait until a configured trigger becomes TRUE."""
         while not self.stop_event.is_set():
             try:
                 if _read_trigger(row):
@@ -473,51 +476,78 @@ class SpecificationRuntime:
                 self.results[key]["status"] = "trigger_error"
                 self.results[key]["error"] = str(exc)
 
-            if (
-                str(row.get("trigger_start"))
-                == "Realtime"
-            ):
-                return True
+            time.sleep(0.1)
+
+        return False
+
+    def _wait_trigger_off(self, row):
+        """Wait for a falling edge before accepting the next trigger."""
+        trigger_type = str(row.get("trigger_start") or "").strip()
+
+        # Realtime is intentionally level-free: every completed window
+        # immediately starts the next window.
+        if trigger_type == "Realtime":
+            return True
+
+        while not self.stop_event.is_set():
+            try:
+                if not _read_trigger(row):
+                    return True
+            except Exception as exc:
+                key = str(row["id"])
+                self.results[key]["status"] = "trigger_error"
+                self.results[key]["error"] = str(exc)
 
             time.sleep(0.1)
 
         return False
 
-    def _run_row(self, row):
+    def _run_row(self, row, trigger_time=None, wait_for_trigger=True):
         key = str(row["id"])
         result = self.results[key]
 
         result["status"] = "waiting_trigger"
 
-        if not self._wait_trigger(row):
-            result["status"] = "stopped"
-            return
+        if wait_for_trigger:
+            if not self._wait_trigger(row):
+                result["status"] = "stopped"
+                return
+            trigger_time = time.monotonic()
+
+        if trigger_time is None:
+            trigger_time = time.monotonic()
 
         result["status"] = "running"
 
         start = float(row.get("time_start") or 0)
         stop = float(row.get("time_stop") or 0)
 
-        trigger_time = time.monotonic()
+        # trigger_time is supplied by the trigger group. Do NOT reset it here.
+        # This keeps Time Start/Stop synchronized across rows sharing a trigger.
         samples = []
+        sample_interval = 0.070
+        next_sample = trigger_time + start
 
         while not self.stop_event.is_set():
-            elapsed = time.monotonic() - trigger_time
+            now = time.monotonic()
 
-            if elapsed >= stop:
+            if now >= trigger_time + stop:
                 break
 
-            if elapsed >= start:
-                try:
-                    raw = _read_source(row)
-                    value = _to_number(raw)
-                    samples.append(value)
-                    result["samples"] = list(samples)
-                    result["last_value"] = value
-                except Exception as exc:
-                    result["error"] = str(exc)
+            if now < next_sample:
+                time.sleep(min(next_sample - now, 0.01))
+                continue
 
-            time.sleep(0.1)
+            try:
+                raw = _read_source(row)
+                value = _to_number(raw)
+                samples.append(value)
+                result["samples"] = list(samples)
+                result["last_value"] = value
+            except Exception as exc:
+                result["error"] = str(exc)
+
+            next_sample += sample_interval
 
         if self.stop_event.is_set():
             result["status"] = "stopped"
@@ -549,24 +579,153 @@ class SpecificationRuntime:
         result["pass"] = passed
         result["fail"] = not passed
 
+    def _trigger_key(self, row):
+        return (
+            str(row.get("trigger_start") or "").strip(),
+            str(row.get("trigger_device") or "").strip(),
+            str(row.get("trigger_register_type") or "").strip(),
+            str(row.get("trigger_source") or "").strip(),
+        )
+
+    def _run_parallel_group(self, rows):
+        """
+        Continuously execute all rows sharing the same trigger.
+
+        Edge-triggered cycle for Internal/TCP triggers:
+            OFF -> wait ON -> sample -> PASS/FAIL -> wait OFF -> repeat
+
+        Realtime is intentionally continuous and starts another cycle as soon
+        as the previous sampling window is complete.
+        """
+        if not rows:
+            return
+
+        trigger_row = rows[0]
+        trigger_type = str(trigger_row.get("trigger_start") or "").strip()
+        completed_cycle = False
+
+        while not self.stop_event.is_set():
+            # First cycle may trigger from the current active level. After a
+            # cycle has consumed the trigger, require a real OFF state before
+            # accepting the next ON state.
+            if completed_cycle and trigger_type != "Realtime":
+                if not self._wait_trigger_off(trigger_row):
+                    break
+
+            if self.stop_event.is_set():
+                break
+
+            # Prepare a clean result state for this cycle.
+            for row in rows:
+                result = self.results[str(row["id"])]
+                result["status"] = "waiting_trigger"
+                result["result"] = None
+                result["pass"] = None
+                result["fail"] = None
+                result["samples"] = []
+                result["last_value"] = None
+                result["error"] = None
+
+            self.message = "Waiting for trigger..."
+
+            # Wait for the rising edge / active level.
+            if not self._wait_trigger_on(trigger_row):
+                break
+
+            if self.stop_event.is_set():
+                break
+
+            trigger_time = time.monotonic()
+            self.message = "Trigger detected"
+
+            for row in rows:
+                self.results[str(row["id"])] ["status"] = "running"
+
+            executor = ThreadPoolExecutor(
+                max_workers=max(1, len(rows)),
+                thread_name_prefix=f"Specification-{self.spec_id}-Group",
+            )
+            futures = []
+
+            try:
+                for row in rows:
+                    futures.append(
+                        executor.submit(
+                            self._run_row,
+                            row,
+                            trigger_time,
+                            False,
+                        )
+                    )
+
+                wait(futures)
+
+                for future in futures:
+                    future.result()
+            finally:
+                executor.shutdown(wait=True)
+
+            if self.stop_event.is_set():
+                break
+
+            self.cycle_count = getattr(self, "cycle_count", 0) + 1
+            completed_cycle = True
+            self.message = (
+                f"Test completed - cycle {self.cycle_count}; "
+                "waiting for trigger OFF"
+            )
+
+            # Loop back. The next iteration will require OFF before accepting
+            # another ON trigger, preventing a sustained HIGH from retriggering.
+
     def _run(self):
         try:
             rows = self.specification.get("rows", [])
 
+            groups = []
+            group_map = {}
+
             for row in rows:
+                key = self._trigger_key(row)
+                if key not in group_map:
+                    group_map[key] = []
+                    groups.append(group_map[key])
+                group_map[key].append(row)
+
+            # Every trigger group gets its own worker so different trigger
+            # configurations can operate independently.
+            group_threads = []
+
+            for index, group in enumerate(groups):
                 if self.stop_event.is_set():
                     break
 
-                self._run_row(row)
+                thread = threading.Thread(
+                    target=self._run_parallel_group,
+                    args=(group,),
+                    daemon=True,
+                    name=f"Specification-{self.spec_id}-TriggerGroup-{index}",
+                )
+                group_threads.append(thread)
+                thread.start()
 
-            if not self.stop_event.is_set():
-                self.message = "Test completed"
+            # Keep the SpecificationRuntime alive while trigger groups are
+            # waiting/running. This is what allows OFF -> ON -> OFF -> ON
+            # cycles without requiring the frontend to call /start again.
+            while not self.stop_event.is_set():
+                if not any(thread.is_alive() for thread in group_threads):
+                    break
+                time.sleep(0.1)
 
         except Exception as exc:
             self.message = str(exc)
 
         finally:
             self.running = False
+            if self.stop_event.is_set():
+                self.message = "Stopped"
+            elif not self.message:
+                self.message = "Test completed"
 
 
 def _load_spec(spec_id):
@@ -651,20 +810,246 @@ def runtime_status_route(specification_id):
 
 def runtime_status(runtime):
     with _state_lock:
+        results = runtime.results
+        completed = sum(
+            1
+            for item in results.values()
+            if str(item.get("status", "")).upper() in {"PASS", "FAIL"}
+        )
         return {
             "success": True,
             "running": runtime.running,
             "specification_id": runtime.spec_id,
             "message": runtime.message,
             "started_at": runtime.started_at,
-            "results": runtime.results,
+            "completed_count": completed,
+            "total_count": len(results),
+            "cycle_count": getattr(runtime, "cycle_count", 0),
+            "results": results,
         }
+
+
+_test_state_lock = threading.RLock()
+_test_sessions = {}
+
+
+def _test_status(session):
+    with _test_state_lock:
+        elapsed = 0.0
+        if session.trigger_at is not None:
+            elapsed = max(0.0, time.monotonic() - session.trigger_at)
+
+        return {
+            "success": True,
+            "test_id": session.test_id,
+            "parameter_test": session.row.get("parameter_test"),
+            "status": session.status,
+            "message": session.message,
+            "running": session.running,
+            "trigger_at": session.trigger_at,
+            "elapsed_seconds": elapsed if session.status in {
+                "running", "waiting_trigger"
+            } else session.elapsed_seconds,
+            "time_start": session.start,
+            "time_stop": session.stop,
+            "method": session.method,
+            "sample_interval_ms": 70,
+            "sample_count": len(session.samples),
+            "samples": list(session.samples),
+            "last_value": session.last_value,
+            "result": session.result,
+            "pass": session.passed,
+            "fail": session.failed,
+            "error": session.error,
+        }
+
+
+class SpecificationTestSession:
+    """
+    One row Test session.
+
+    Flow:
+        Test clicked
+          -> WAITING_TRIGGER
+          -> trigger becomes TRUE
+          -> wait Time Start
+          -> sample every 70 ms
+          -> Time Stop
+          -> Avg / Min / Max over ALL samples
+          -> PASS / FAIL
+    """
+
+    def __init__(self, test_id, row):
+        self.test_id = str(test_id)
+        self.row = dict(row)
+
+        self.running = True
+        self.status = "waiting_trigger"
+        self.message = "Waiting for trigger..."
+        self.error = None
+
+        self.start = float(row.get("time_start") or 0)
+        self.stop = float(row.get("time_stop") or 0)
+        self.method = str(row.get("method") or "Avg").strip()
+
+        self.samples = []
+        self.last_value = None
+        self.result = None
+        self.passed = None
+        self.failed = None
+
+        self.trigger_at = None
+        self.elapsed_seconds = 0.0
+
+        self.stop_event = threading.Event()
+        self.thread = None
+
+    def start_session(self):
+        self.thread = threading.Thread(
+            target=self._run,
+            daemon=True,
+            name=f"SpecificationTest-{self.test_id}",
+        )
+        self.thread.start()
+
+    def _wait_for_trigger(self):
+        while not self.stop_event.is_set():
+            try:
+                if _read_trigger(self.row):
+                    return True
+                self.error = None
+            except Exception as exc:
+                # A temporary communication error should not terminate
+                # the test. Keep the UI in Waiting for trigger.
+                self.error = str(exc)
+                self.message = f"Waiting for trigger... ({exc})"
+
+            time.sleep(0.1)
+
+        return False
+
+    def _run(self):
+        try:
+            if self.start < 0 or self.stop < 0:
+                raise ValueError("Time values cannot be negative")
+
+            if self.stop < self.start:
+                raise ValueError("Time Stop must be >= Time Start")
+
+            if self.method not in {"Avg", "Min", "Max"}:
+                raise ValueError(
+                    f"Unsupported method: {self.method}"
+                )
+
+            # IMPORTANT: Test waits for the configured trigger.
+            self.status = "waiting_trigger"
+            self.message = "Waiting for trigger..."
+
+            if not self._wait_for_trigger():
+                self.status = "stopped"
+                self.message = "Test stopped"
+                return
+
+            # Trigger has just become active. Time Start/Stop are
+            # measured relative to this trigger event.
+            self.trigger_at = time.monotonic()
+            sample_window_start = self.trigger_at + self.start
+            sample_window_stop = self.trigger_at + self.stop
+
+            self.status = "running"
+            self.message = "Trigger detected. Waiting for Time Start..."
+
+            next_sample = sample_window_start
+
+            while not self.stop_event.is_set():
+                now = time.monotonic()
+
+                if now < next_sample:
+                    self.elapsed_seconds = max(
+                        0.0, now - self.trigger_at
+                    )
+                    time.sleep(min(next_sample - now, 0.01))
+                    continue
+
+                # Time Stop reached. Do not take samples after it.
+                if now > sample_window_stop and self.samples:
+                    break
+
+                if now > sample_window_stop and not self.samples:
+                    break
+
+                self.message = "Sampling..."
+
+                try:
+                    raw = _read_source(self.row)
+                    value = _to_number(raw)
+
+                    self.samples.append(value)
+                    self.last_value = value
+                    self.error = None
+                except Exception as exc:
+                    # Keep testing even if one 70 ms read fails.
+                    self.error = str(exc)
+
+                self.elapsed_seconds = max(
+                    0.0, min(now - self.trigger_at, self.stop)
+                )
+
+                next_sample += 0.070
+
+                if next_sample > sample_window_stop:
+                    break
+
+            if self.stop_event.is_set():
+                self.status = "stopped"
+                self.message = "Test stopped"
+                return
+
+            if not self.samples:
+                raise ValueError(
+                    self.error
+                    or "No valid samples collected during test window"
+                )
+
+            self.result = _calculate(self.samples, self.method)
+            self.passed = _limit_result(
+                self.result,
+                self.row.get("lower_limit"),
+                self.row.get("upper_limit"),
+            )
+            self.failed = not self.passed
+
+            self.elapsed_seconds = self.stop
+            self.status = "PASS" if self.passed else "FAIL"
+            self.message = (
+                f"Test completed: {self.status}"
+            )
+
+        except Exception as exc:
+            self.status = "error"
+            self.error = str(exc)
+            self.message = str(exc)
+            self.passed = False
+            self.failed = True
+
+        finally:
+            self.running = False
+
+    def stop(self):
+        self.stop_event.set()
 
 
 @specification_runtime_bp.post(
     "/test-source"
 )
 def test_source():
+    """
+    Start a single-row asynchronous test.
+
+    Clicking Test immediately returns with status WAITING_TRIGGER.
+    The frontend polls /test-source/status/<test_id> so the UI can show
+    the trigger state and 70 ms samples in realtime.
+    """
     body = request.get_json(silent=True) or {}
     row = body.get("row") or {}
 
@@ -675,12 +1060,30 @@ def test_source():
         }), 400
 
     try:
-        result = _validate_source(row)
+        start = float(row.get("time_start") or 0)
+        stop = float(row.get("time_stop") or 0)
 
-        return jsonify({
-            "success": True,
-            **result,
-        })
+        if start < 0 or stop < 0:
+            raise ValueError("Time values cannot be negative")
+
+        if stop < start:
+            raise ValueError("Time Stop must be >= Time Start")
+
+        method = str(row.get("method") or "Avg").strip()
+        if method not in {"Avg", "Min", "Max"}:
+            raise ValueError(f"Unsupported method: {method}")
+
+        import uuid
+
+        test_id = uuid.uuid4().hex
+        session = SpecificationTestSession(test_id, row)
+
+        with _test_state_lock:
+            _test_sessions[test_id] = session
+
+        session.start_session()
+
+        return jsonify(_test_status(session))
 
     except Exception as exc:
         return jsonify({
@@ -688,6 +1091,21 @@ def test_source():
             "message": str(exc),
         }), 400
 
+
+@specification_runtime_bp.get(
+    "/test-source/status/<test_id>"
+)
+def test_source_status(test_id):
+    with _test_state_lock:
+        session = _test_sessions.get(str(test_id))
+
+    if not session:
+        return jsonify({
+            "success": False,
+            "message": "Test session not found",
+        }), 404
+
+    return jsonify(_test_status(session))
 
 @specification_runtime_bp.get("/devices")
 def runtime_devices():
@@ -722,4 +1140,4 @@ def runtime_devices():
         return jsonify({
             "success": False,
             "message": str(exc),
-        }), 500
+        }), 300

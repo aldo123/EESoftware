@@ -7,7 +7,8 @@
         "address": "5",
         "addressType": "holding_register",
         "backgroundColor": "var(--panel-canvas)",
-        "decimals": 1,
+        "dataSource": "internal",
+        "decimals": 2,
         "device": "PLC",
         "endAngle": 135,
         "gaugeType": "temp",
@@ -15,6 +16,7 @@
         "height": 190,
         "iconColor": "var(--accent-cyan)",
         "iconSize": 25,
+        "internalVariable": "Pressure",
         "labelColor": "var(--panel-line)",
         "max": 100,
         "min": 0,
@@ -85,12 +87,12 @@
         "showTimeAxis": true,
         "textColor": "#FFFFFF",
         "title": "PROCESS TREND",
-        "triggerAddress": "9",
+        "triggerAddress": "1",
         "triggerAddressType": "holding_register",
-        "triggerDataSource": "device",
+        "triggerDataSource": "internal",
         "triggerDevice": "PLC",
         "triggerEnabled": true,
-        "triggerInternalVariable": "step",
+        "triggerInternalVariable": "step1",
         "triggerStartValue": 1,
         "triggerStopValue": 0,
         "unit": "",
@@ -118,9 +120,10 @@
     {
       "id": "w1787050372491_1",
       "props": {
-        "address": "9",
+        "address": "1",
         "addressType": "holding_register",
         "builderState": 0,
+        "buttonType": "toggle",
         "device": "PLC",
         "fontSize": 18,
         "height": 60,
@@ -147,17 +150,17 @@
         "width": 180
       },
       "type": "button",
-      "x": 1175,
-      "y": 600,
+      "x": 1230,
+      "y": 660,
       "zIndex": 3
     },
     {
       "id": "w1787050495815_2",
       "props": {
-        "address": "9",
+        "address": "",
         "addressType": "holding_register",
         "builderState": 0,
-        "device": "PLC",
+        "device": "",
         "height": 60,
         "label": "STATUS",
         "offColor": "var(--border-soft)",
@@ -168,7 +171,7 @@
           "enabled": true,
           "mode": "manual"
         },
-        "variable": "Var_w1787050495815_2",
+        "variable": "step1",
         "visual": {
           "accentColor": "var(--accent-cyan)",
           "backgroundColor": "var(--panel-canvas)",
@@ -181,10 +184,11 @@
           "textColor": "#FFFFFF",
           "theme": "wik_cyan"
         },
-        "width": 120
+        "width": 120,
+        "readTarget": "internal"
       },
       "type": "light",
-      "x": 1350,
+      "x": 1260,
       "y": 595,
       "zIndex": 4
     },
@@ -257,10 +261,11 @@
         "secondaryTextColor": "#94A3B8",
         "showGrid": true,
         "showTitle": false,
+        "specificationVariable": "TABLE",
         "stickyHeader": true,
         "textColor": "#000000",
         "theme": "industrial",
-        "title": "TEST TABLE",
+        "title": "TESTING TABLE",
         "titleColor": "#000000",
         "titleFontSize": 11,
         "titleHeight": 38,
@@ -324,7 +329,7 @@
         "showTimeAxis": true,
         "textColor": "#FFFFFF",
         "title": "PROCESS TREND",
-        "triggerAddress": "9",
+        "triggerAddress": "1",
         "triggerAddressType": "holding_register",
         "triggerDevice": "PLC",
         "triggerEnabled": true,
@@ -349,7 +354,7 @@
       },
       "type": "linechart",
       "x": 0,
-      "y": 265,
+      "y": 268,
       "zIndex": 6
     },
     {
@@ -383,7 +388,7 @@
         "showTimeAxis": true,
         "textColor": "#FFFFFF",
         "title": "PROCESS TREND",
-        "triggerAddress": "9",
+        "triggerAddress": "1",
         "triggerAddressType": "holding_register",
         "triggerDevice": "PLC",
         "triggerEnabled": true,
@@ -408,13 +413,13 @@
       },
       "type": "linechart",
       "x": 0,
-      "y": 530,
+      "y": 537,
       "zIndex": 7
     },
     {
       "id": "w1787502969633_12",
       "props": {
-        "address": "5",
+        "address": "2",
         "addressType": "holding_register",
         "backgroundColor": "var(--panel-canvas)",
         "decimals": 2,
@@ -459,16 +464,16 @@
       },
       "type": "gauge",
       "x": 1455,
-      "y": 195,
+      "y": 198,
       "zIndex": 8
     },
     {
       "id": "w1787503005538_13",
       "props": {
-        "address": "5",
+        "address": "3",
         "addressType": "holding_register",
         "backgroundColor": "var(--panel-canvas)",
-        "dataSource": "internal",
+        "dataSource": "device",
         "decimals": 2,
         "device": "PLC",
         "endAngle": 135,
@@ -518,12 +523,12 @@
     {
       "id": "w1787503094111_15",
       "props": {
-        "autoStart": true,
+        "autoStart": false,
         "borderColor": "var(--panel-mid)",
         "borderWidth": 1,
         "cameraId": "1",
         "deviceIndex": 0,
-        "height": 200,
+        "height": 210,
         "ipAddress": "",
         "radius": 8,
         "sourceType": "webcam",
@@ -539,7 +544,7 @@
           "textColor": "#FFFFFF",
           "theme": "wik_cyan"
         },
-        "width": 320
+        "width": 330
       },
       "type": "camerafeed",
       "x": 520,
@@ -616,8 +621,8 @@
         "writeTrigger": "enter"
       },
       "type": "textbox",
-      "x": 1175,
-      "y": 690,
+      "x": 1210,
+      "y": 730,
       "zIndex": 11
     },
     {
@@ -745,6 +750,232 @@
       "x": 1455,
       "y": 720,
       "zIndex": 14
+    },
+    {
+      "id": "w1787945559593_168",
+      "props": {
+        "autoStart": false,
+        "borderColor": "var(--panel-mid)",
+        "borderWidth": 1,
+        "cameraId": "1",
+        "deviceIndex": 0,
+        "height": 210,
+        "ipAddress": "",
+        "radius": 8,
+        "sourceType": "webcam",
+        "visual": {
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "glow": true,
+          "glowIntensity": 18,
+          "secondaryTextColor": "var(--panel-line)",
+          "textColor": "#FFFFFF",
+          "theme": "wik_cyan"
+        },
+        "width": 330
+      },
+      "type": "camerafeed",
+      "x": 860,
+      "y": 590,
+      "zIndex": 15
+    },
+    {
+      "id": "w1788243905981_1",
+      "props": {
+        "action": "reset",
+        "address": "",
+        "addressType": "coil",
+        "builderState": 0,
+        "device": "",
+        "fontSize": 18,
+        "height": 60,
+        "labelOff": "BUTTON OFF",
+        "labelOn": "BUTTON ON",
+        "resetLabel": "RESET",
+        "resetTargets": [
+          {
+            "address": "1",
+            "addressType": "holding_register",
+            "device": "PLC",
+            "id": "reset_1788243919541_8sxl2",
+            "type": "tcp",
+            "variable": ""
+          },
+          {
+            "address": "0",
+            "addressType": "holding_register",
+            "device": "PLC",
+            "id": "reset_1788243930063_lix9d",
+            "type": "tcp",
+            "variable": ""
+          },
+          {
+            "address": "9",
+            "addressType": "holding_register",
+            "device": "PLC",
+            "id": "reset_1788243937824_5ktzy",
+            "type": "tcp",
+            "variable": ""
+          },
+          {
+            "address": "",
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788248944784_f7d3f",
+            "type": "internal",
+            "variable": "step1"
+          }
+        ],
+        "simulation": {
+          "enabled": true,
+          "mode": "manual"
+        },
+        "targetPage": "",
+        "valueOff": 0,
+        "valueOn": 1,
+        "variable": "Var_w1788243905981_1",
+        "variant": "neon",
+        "visual": {
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "glow": true,
+          "glowIntensity": 18,
+          "secondaryTextColor": "var(--panel-line)",
+          "textColor": "#FFFFFF",
+          "theme": "wik_cyan"
+        },
+        "width": 180
+      },
+      "type": "button",
+      "x": 1470,
+      "y": 805,
+      "zIndex": 16
+    },
+    {
+      "id": "w1788246160674_1",
+      "props": {
+        "address": "",
+        "addressType": "holding_register",
+        "backgroundColor": "transparent",
+        "borderColor": "transparent",
+        "borderWidth": 0,
+        "calculationFormula": "",
+        "calculationInputs": [],
+        "calculationResultVariable": "",
+        "cornerSize": 10,
+        "dataType": "number",
+        "decimalPlaces": 3,
+        "defaultText": "TEXT",
+        "device": "",
+        "fontSize": 18,
+        "fontWeight": "600",
+        "frameBackground": "rgba(3, 18, 30, 0.88)",
+        "frameBackgroundOpacity": 0.88,
+        "frameColor": "#00E5FF",
+        "frameGlow": false,
+        "frameOpacity": 1,
+        "framePreset": "cyan",
+        "frameStyle": "standard",
+        "frameWidth": 1.5,
+        "glowIntensity": 18,
+        "height": 60,
+        "icon": "",
+        "iconColor": "#FFFFFF",
+        "iconGap": 8,
+        "iconOffsetX": 0,
+        "iconOffsetY": 0,
+        "iconPosition": "left",
+        "iconSize": 20,
+        "iconVerticalAlign": "center",
+        "innerGlow": false,
+        "inputSource": "internal",
+        "inputType": "realtime",
+        "padding": 8,
+        "radius": 6,
+        "rotation": 0,
+        "scanEffect": false,
+        "scanSpeed": 2,
+        "showFrameAccent": true,
+        "showFrameDots": false,
+        "sourceDevice": "",
+        "text": "TEXT",
+        "textAlign": "center",
+        "textColor": "#FFFFFF",
+        "textMode": "write",
+        "textOffsetX": 0,
+        "textOffsetY": 0,
+        "variable": "step1",
+        "verticalAlign": "center",
+        "visual": {
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "glow": true,
+          "glowIntensity": 18,
+          "secondaryTextColor": "var(--panel-line)",
+          "textColor": "#FFFFFF",
+          "theme": "wik_cyan"
+        },
+        "width": 220,
+        "writeTrigger": "blur"
+      },
+      "type": "textbox",
+      "x": 1250,
+      "y": 830,
+      "zIndex": 17
+    },
+    {
+      "id": "w1788250384693_3",
+      "props": {
+        "action": "write",
+        "address": "",
+        "addressType": "coil",
+        "builderState": 0,
+        "buttonType": "momentary",
+        "device": "",
+        "fontSize": 18,
+        "height": 60,
+        "inputSource": "internal",
+        "labelOff": "BUTTON OFF",
+        "labelOn": "BUTTON ON",
+        "resetLabel": "RESET",
+        "resetTargets": [],
+        "simulation": {
+          "enabled": true,
+          "mode": "manual"
+        },
+        "targetPage": "",
+        "valueOff": 0,
+        "valueOn": 1,
+        "variable": "step1",
+        "variant": "neon",
+        "visual": {
+          "accentColor": "var(--accent-cyan)",
+          "backgroundColor": "var(--panel-canvas)",
+          "borderColor": "var(--panel-mid)",
+          "borderRadius": 12,
+          "borderWidth": 1,
+          "glow": true,
+          "glowIntensity": 18,
+          "secondaryTextColor": "var(--panel-line)",
+          "textColor": "#FFFFFF",
+          "theme": "wik_cyan"
+        },
+        "width": 180,
+        "writeTarget": "internal"
+      },
+      "type": "button",
+      "x": 950,
+      "y": 825,
+      "zIndex": 18
     }
   ],
   "pages": {
@@ -758,7 +989,8 @@
             "address": "5",
             "addressType": "holding_register",
             "backgroundColor": "var(--panel-canvas)",
-            "decimals": 1,
+            "dataSource": "internal",
+            "decimals": 2,
             "device": "PLC",
             "endAngle": 135,
             "gaugeType": "temp",
@@ -766,6 +998,7 @@
             "height": 190,
             "iconColor": "var(--accent-cyan)",
             "iconSize": 25,
+            "internalVariable": "Pressure",
             "labelColor": "var(--panel-line)",
             "max": 100,
             "min": 0,
@@ -836,12 +1069,12 @@
             "showTimeAxis": true,
             "textColor": "#FFFFFF",
             "title": "PROCESS TREND",
-            "triggerAddress": "9",
+            "triggerAddress": "1",
             "triggerAddressType": "holding_register",
-            "triggerDataSource": "device",
+            "triggerDataSource": "internal",
             "triggerDevice": "PLC",
             "triggerEnabled": true,
-            "triggerInternalVariable": "step",
+            "triggerInternalVariable": "step1",
             "triggerStartValue": 1,
             "triggerStopValue": 0,
             "unit": "",
@@ -869,9 +1102,10 @@
         {
           "id": "w1787050372491_1",
           "props": {
-            "address": "9",
+            "address": "1",
             "addressType": "holding_register",
             "builderState": 0,
+            "buttonType": "toggle",
             "device": "PLC",
             "fontSize": 18,
             "height": 60,
@@ -898,17 +1132,17 @@
             "width": 180
           },
           "type": "button",
-          "x": 1175,
-          "y": 600,
+          "x": 1230,
+          "y": 660,
           "zIndex": 3
         },
         {
           "id": "w1787050495815_2",
           "props": {
-            "address": "9",
+            "address": "",
             "addressType": "holding_register",
             "builderState": 0,
-            "device": "PLC",
+            "device": "",
             "height": 60,
             "label": "STATUS",
             "offColor": "var(--border-soft)",
@@ -919,7 +1153,7 @@
               "enabled": true,
               "mode": "manual"
             },
-            "variable": "Var_w1787050495815_2",
+            "variable": "step1",
             "visual": {
               "accentColor": "var(--accent-cyan)",
               "backgroundColor": "var(--panel-canvas)",
@@ -932,10 +1166,11 @@
               "textColor": "#FFFFFF",
               "theme": "wik_cyan"
             },
-            "width": 120
+            "width": 120,
+            "readTarget": "internal"
           },
           "type": "light",
-          "x": 1350,
+          "x": 1260,
           "y": 595,
           "zIndex": 4
         },
@@ -1008,10 +1243,11 @@
             "secondaryTextColor": "#94A3B8",
             "showGrid": true,
             "showTitle": false,
+            "specificationVariable": "TABLE",
             "stickyHeader": true,
             "textColor": "#000000",
             "theme": "industrial",
-            "title": "TEST TABLE",
+            "title": "TESTING TABLE",
             "titleColor": "#000000",
             "titleFontSize": 11,
             "titleHeight": 38,
@@ -1075,7 +1311,7 @@
             "showTimeAxis": true,
             "textColor": "#FFFFFF",
             "title": "PROCESS TREND",
-            "triggerAddress": "9",
+            "triggerAddress": "1",
             "triggerAddressType": "holding_register",
             "triggerDevice": "PLC",
             "triggerEnabled": true,
@@ -1100,7 +1336,7 @@
           },
           "type": "linechart",
           "x": 0,
-          "y": 265,
+          "y": 268,
           "zIndex": 6
         },
         {
@@ -1134,7 +1370,7 @@
             "showTimeAxis": true,
             "textColor": "#FFFFFF",
             "title": "PROCESS TREND",
-            "triggerAddress": "9",
+            "triggerAddress": "1",
             "triggerAddressType": "holding_register",
             "triggerDevice": "PLC",
             "triggerEnabled": true,
@@ -1159,13 +1395,13 @@
           },
           "type": "linechart",
           "x": 0,
-          "y": 530,
+          "y": 537,
           "zIndex": 7
         },
         {
           "id": "w1787502969633_12",
           "props": {
-            "address": "5",
+            "address": "2",
             "addressType": "holding_register",
             "backgroundColor": "var(--panel-canvas)",
             "decimals": 2,
@@ -1210,16 +1446,16 @@
           },
           "type": "gauge",
           "x": 1455,
-          "y": 195,
+          "y": 198,
           "zIndex": 8
         },
         {
           "id": "w1787503005538_13",
           "props": {
-            "address": "5",
+            "address": "3",
             "addressType": "holding_register",
             "backgroundColor": "var(--panel-canvas)",
-            "dataSource": "internal",
+            "dataSource": "device",
             "decimals": 2,
             "device": "PLC",
             "endAngle": 135,
@@ -1269,12 +1505,12 @@
         {
           "id": "w1787503094111_15",
           "props": {
-            "autoStart": true,
+            "autoStart": false,
             "borderColor": "var(--panel-mid)",
             "borderWidth": 1,
             "cameraId": "1",
             "deviceIndex": 0,
-            "height": 200,
+            "height": 210,
             "ipAddress": "",
             "radius": 8,
             "sourceType": "webcam",
@@ -1290,7 +1526,7 @@
               "textColor": "#FFFFFF",
               "theme": "wik_cyan"
             },
-            "width": 320
+            "width": 330
           },
           "type": "camerafeed",
           "x": 520,
@@ -1367,8 +1603,8 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 1175,
-          "y": 690,
+          "x": 1210,
+          "y": 730,
           "zIndex": 11
         },
         {
@@ -1496,6 +1732,232 @@
           "x": 1455,
           "y": 720,
           "zIndex": 14
+        },
+        {
+          "id": "w1787945559593_168",
+          "props": {
+            "autoStart": false,
+            "borderColor": "var(--panel-mid)",
+            "borderWidth": 1,
+            "cameraId": "1",
+            "deviceIndex": 0,
+            "height": 210,
+            "ipAddress": "",
+            "radius": 8,
+            "sourceType": "webcam",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 330
+          },
+          "type": "camerafeed",
+          "x": 860,
+          "y": 590,
+          "zIndex": 15
+        },
+        {
+          "id": "w1788243905981_1",
+          "props": {
+            "action": "reset",
+            "address": "",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "BUTTON OFF",
+            "labelOn": "BUTTON ON",
+            "resetLabel": "RESET",
+            "resetTargets": [
+              {
+                "address": "1",
+                "addressType": "holding_register",
+                "device": "PLC",
+                "id": "reset_1788243919541_8sxl2",
+                "type": "tcp",
+                "variable": ""
+              },
+              {
+                "address": "0",
+                "addressType": "holding_register",
+                "device": "PLC",
+                "id": "reset_1788243930063_lix9d",
+                "type": "tcp",
+                "variable": ""
+              },
+              {
+                "address": "9",
+                "addressType": "holding_register",
+                "device": "PLC",
+                "id": "reset_1788243937824_5ktzy",
+                "type": "tcp",
+                "variable": ""
+              },
+              {
+                "address": "",
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788248944784_f7d3f",
+                "type": "internal",
+                "variable": "step1"
+              }
+            ],
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "valueOff": 0,
+            "valueOn": 1,
+            "variable": "Var_w1788243905981_1",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1470,
+          "y": 805,
+          "zIndex": 16
+        },
+        {
+          "id": "w1788246160674_1",
+          "props": {
+            "address": "",
+            "addressType": "holding_register",
+            "backgroundColor": "transparent",
+            "borderColor": "transparent",
+            "borderWidth": 0,
+            "calculationFormula": "",
+            "calculationInputs": [],
+            "calculationResultVariable": "",
+            "cornerSize": 10,
+            "dataType": "number",
+            "decimalPlaces": 3,
+            "defaultText": "TEXT",
+            "device": "",
+            "fontSize": 18,
+            "fontWeight": "600",
+            "frameBackground": "rgba(3, 18, 30, 0.88)",
+            "frameBackgroundOpacity": 0.88,
+            "frameColor": "#00E5FF",
+            "frameGlow": false,
+            "frameOpacity": 1,
+            "framePreset": "cyan",
+            "frameStyle": "standard",
+            "frameWidth": 1.5,
+            "glowIntensity": 18,
+            "height": 60,
+            "icon": "",
+            "iconColor": "#FFFFFF",
+            "iconGap": 8,
+            "iconOffsetX": 0,
+            "iconOffsetY": 0,
+            "iconPosition": "left",
+            "iconSize": 20,
+            "iconVerticalAlign": "center",
+            "innerGlow": false,
+            "inputSource": "internal",
+            "inputType": "realtime",
+            "padding": 8,
+            "radius": 6,
+            "rotation": 0,
+            "scanEffect": false,
+            "scanSpeed": 2,
+            "showFrameAccent": true,
+            "showFrameDots": false,
+            "sourceDevice": "",
+            "text": "TEXT",
+            "textAlign": "center",
+            "textColor": "#FFFFFF",
+            "textMode": "write",
+            "textOffsetX": 0,
+            "textOffsetY": 0,
+            "variable": "step1",
+            "verticalAlign": "center",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 220,
+            "writeTrigger": "blur"
+          },
+          "type": "textbox",
+          "x": 1250,
+          "y": 830,
+          "zIndex": 17
+        },
+        {
+          "id": "w1788250384693_3",
+          "props": {
+            "action": "write",
+            "address": "",
+            "addressType": "coil",
+            "builderState": 0,
+            "buttonType": "momentary",
+            "device": "",
+            "fontSize": 18,
+            "height": 60,
+            "inputSource": "internal",
+            "labelOff": "BUTTON OFF",
+            "labelOn": "BUTTON ON",
+            "resetLabel": "RESET",
+            "resetTargets": [],
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "valueOff": 0,
+            "valueOn": 1,
+            "variable": "step1",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180,
+            "writeTarget": "internal"
+          },
+          "type": "button",
+          "x": 950,
+          "y": 825,
+          "zIndex": 18
         }
       ]
     },
@@ -1529,7 +1991,7 @@
           },
           "type": "shape",
           "x": 0,
-          "y": 20,
+          "y": 0,
           "zIndex": 1
         },
         {
@@ -1604,7 +2066,7 @@
           },
           "type": "textbox",
           "x": 0,
-          "y": 20,
+          "y": 0,
           "zIndex": 2
         },
         {
@@ -1646,7 +2108,7 @@
           },
           "type": "button",
           "x": 120,
-          "y": 25,
+          "y": 8,
           "zIndex": 3
         },
         {
@@ -1688,7 +2150,7 @@
           },
           "type": "button",
           "x": 205,
-          "y": 25,
+          "y": 8,
           "zIndex": 4
         },
         {
@@ -1730,7 +2192,7 @@
           },
           "type": "button",
           "x": 35,
-          "y": 25,
+          "y": 8,
           "zIndex": 5
         },
         {
@@ -1782,8 +2244,8 @@
             "width": 250
           },
           "type": "gauge",
-          "x": 45,
-          "y": 105,
+          "x": 35,
+          "y": 110,
           "zIndex": 6
         },
         {
@@ -1857,8 +2319,8 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 20,
-          "y": 310,
+          "x": 10,
+          "y": 315,
           "zIndex": 7
         },
         {
@@ -1932,8 +2394,8 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 20,
-          "y": 350,
+          "x": 10,
+          "y": 363,
           "zIndex": 8
         },
         {
@@ -2008,7 +2470,7 @@
           },
           "type": "textbox",
           "x": 125,
-          "y": 310,
+          "y": 318,
           "zIndex": 9
         },
         {
@@ -2064,7 +2526,7 @@
             "textMode": "write",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "PressureK_copy_4_10",
+            "variable": "PressureK",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2083,7 +2545,7 @@
           },
           "type": "textbox",
           "x": 125,
-          "y": 350,
+          "y": 366,
           "zIndex": 10
         },
         {
@@ -2157,8 +2619,8 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 20,
-          "y": 390,
+          "x": 10,
+          "y": 412,
           "zIndex": 11
         },
         {
@@ -2214,7 +2676,7 @@
             "textMode": "write",
             "textOffsetX": 0,
             "textOffsetY": 0,
-            "variable": "PressureB_copy_4_12",
+            "variable": "PressureB",
             "verticalAlign": "center",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -2233,7 +2695,7 @@
           },
           "type": "textbox",
           "x": 125,
-          "y": 390,
+          "y": 415,
           "zIndex": 12
         },
         {
@@ -2307,8 +2769,8 @@
             "writeTrigger": "enter"
           },
           "type": "textbox",
-          "x": 20,
-          "y": 430,
+          "x": 10,
+          "y": 460,
           "zIndex": 13
         },
         {
@@ -2411,7 +2873,7 @@
           },
           "type": "textbox",
           "x": 125,
-          "y": 430,
+          "y": 463,
           "zIndex": 14
         }
       ]
@@ -2446,7 +2908,7 @@
           },
           "type": "shape",
           "x": 0,
-          "y": 40,
+          "y": 0,
           "zIndex": 1
         },
         {
@@ -2521,7 +2983,7 @@
           },
           "type": "textbox",
           "x": 0,
-          "y": 40,
+          "y": 0,
           "zIndex": 2
         },
         {
@@ -2562,8 +3024,8 @@
             "width": 70
           },
           "type": "button",
-          "x": 140,
-          "y": 45,
+          "x": 125,
+          "y": 8,
           "zIndex": 3
         },
         {
@@ -2586,7 +3048,7 @@
               "enabled": true,
               "mode": "manual"
             },
-            "targetPage": "dynamic",
+            "targetPage": "page_mth1mbql_pfthx",
             "variable": "Var_w1787840053813_4_copy_34_9_copy_7_15_copy_7_21_copy_66_4_copy_6_18",
             "variant": "solid",
             "visual": {
@@ -2604,8 +3066,8 @@
             "width": 70
           },
           "type": "button",
-          "x": 225,
-          "y": 45,
+          "x": 210,
+          "y": 8,
           "zIndex": 4
         },
         {
@@ -2646,8 +3108,8 @@
             "width": 70
           },
           "type": "button",
-          "x": 55,
-          "y": 45,
+          "x": 40,
+          "y": 8,
           "zIndex": 5
         },
         {
@@ -2684,8 +3146,8 @@
             "width": 180
           },
           "type": "button",
-          "x": 55,
-          "y": 185,
+          "x": 70,
+          "y": 110,
           "zIndex": 6
         },
         {
@@ -2721,8 +3183,8 @@
             "width": 120
           },
           "type": "light",
-          "x": 60,
-          "y": 265,
+          "x": 70,
+          "y": 190,
           "zIndex": 7
         },
         {
@@ -2758,28 +3220,66 @@
             "width": 120
           },
           "type": "light",
-          "x": 60,
-          "y": 330,
+          "x": 70,
+          "y": 270,
           "zIndex": 8
         },
         {
-          "id": "w1787943710461_23",
+          "id": "w1787945205221_86",
           "props": {
-            "address": "",
+            "action": "write",
+            "address": "1",
             "addressType": "coil",
             "builderState": 0,
-            "device": "",
+            "device": "PLC",
+            "fontSize": 18,
             "height": 60,
-            "label": "STATUS",
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 70,
+          "y": 345,
+          "zIndex": 9
+        },
+        {
+          "id": "w1787945205221_87",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
             "offColor": "var(--border-soft)",
             "onColor": "var(--accent-cyan)",
-            "shape": "circle",
+            "shape": "square",
             "showLabel": true,
             "simulation": {
               "enabled": true,
               "mode": "manual"
             },
-            "variable": "Var_w1787943710461_23",
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87",
             "visual": {
               "accentColor": "var(--accent-cyan)",
               "backgroundColor": "var(--panel-canvas)",
@@ -2795,9 +3295,2958 @@
             "width": 120
           },
           "type": "light",
-          "x": 750,
-          "y": 210,
-          "zIndex": 9
+          "x": 70,
+          "y": 425,
+          "zIndex": 10
+        },
+        {
+          "id": "w1787945205221_88",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 70,
+          "y": 505,
+          "zIndex": 11
+        },
+        {
+          "id": "w1787945211207_89",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 70,
+          "y": 585,
+          "zIndex": 12
+        },
+        {
+          "id": "w1787945211207_90",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 70,
+          "y": 665,
+          "zIndex": 13
+        },
+        {
+          "id": "w1787945211207_91",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 70,
+          "y": 745,
+          "zIndex": 14
+        },
+        {
+          "id": "w1787945216281_92",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy_1_92",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 70,
+          "y": 820,
+          "zIndex": 15
+        },
+        {
+          "id": "w1787945216281_93",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy_1_93",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 70,
+          "y": 900,
+          "zIndex": 16
+        },
+        {
+          "id": "w1787945216281_94",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy_1_94",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 70,
+          "y": 980,
+          "zIndex": 17
+        },
+        {
+          "id": "w1787945244538_95",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_8_95",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 335,
+          "y": 110,
+          "zIndex": 18
+        },
+        {
+          "id": "w1787945244539_96",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_9_96",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 335,
+          "y": 190,
+          "zIndex": 19
+        },
+        {
+          "id": "w1787945244539_97",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_9_97",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 335,
+          "y": 270,
+          "zIndex": 20
+        },
+        {
+          "id": "w1787945244539_98",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_9_98",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 335,
+          "y": 345,
+          "zIndex": 21
+        },
+        {
+          "id": "w1787945244539_99",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_9_99",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 335,
+          "y": 425,
+          "zIndex": 22
+        },
+        {
+          "id": "w1787945244539_100",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy__100",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 335,
+          "y": 505,
+          "zIndex": 23
+        },
+        {
+          "id": "w1787945244539_101",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy__101",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 335,
+          "y": 585,
+          "zIndex": 24
+        },
+        {
+          "id": "w1787945244539_102",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy__102",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 335,
+          "y": 665,
+          "zIndex": 25
+        },
+        {
+          "id": "w1787945244539_103",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy__103",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 335,
+          "y": 745,
+          "zIndex": 26
+        },
+        {
+          "id": "w1787945244539_104",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy_1_92_copy__104",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 335,
+          "y": 820,
+          "zIndex": 27
+        },
+        {
+          "id": "w1787945244539_105",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy_1_93_copy__105",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 335,
+          "y": 900,
+          "zIndex": 28
+        },
+        {
+          "id": "w1787945244539_106",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy_1_94_copy__106",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 335,
+          "y": 980,
+          "zIndex": 29
+        },
+        {
+          "id": "w1787945251215_107",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy__107",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 605,
+          "y": 110,
+          "zIndex": 30
+        },
+        {
+          "id": "w1787945251215_108",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy__108",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 605,
+          "y": 190,
+          "zIndex": 31
+        },
+        {
+          "id": "w1787945251215_109",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy__109",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 605,
+          "y": 270,
+          "zIndex": 32
+        },
+        {
+          "id": "w1787945251215_110",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy__110",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 605,
+          "y": 345,
+          "zIndex": 33
+        },
+        {
+          "id": "w1787945251215_111",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy__111",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 605,
+          "y": 425,
+          "zIndex": 34
+        },
+        {
+          "id": "w1787945251215_112",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy__112",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 605,
+          "y": 505,
+          "zIndex": 35
+        },
+        {
+          "id": "w1787945251215_113",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy__113",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 605,
+          "y": 585,
+          "zIndex": 36
+        },
+        {
+          "id": "w1787945251215_114",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy__114",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 605,
+          "y": 665,
+          "zIndex": 37
+        },
+        {
+          "id": "w1787945251215_115",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy__115",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 605,
+          "y": 745,
+          "zIndex": 38
+        },
+        {
+          "id": "w1787945251215_116",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy_1_92_copy__116",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 605,
+          "y": 820,
+          "zIndex": 39
+        },
+        {
+          "id": "w1787945251215_117",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy_1_93_copy__117",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 605,
+          "y": 900,
+          "zIndex": 40
+        },
+        {
+          "id": "w1787945251215_118",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy_1_94_copy__118",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 605,
+          "y": 980,
+          "zIndex": 41
+        },
+        {
+          "id": "w1787945261917_119",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy__119",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 870,
+          "y": 110,
+          "zIndex": 42
+        },
+        {
+          "id": "w1787945261917_120",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy__120",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 870,
+          "y": 190,
+          "zIndex": 43
+        },
+        {
+          "id": "w1787945261917_121",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy__121",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 870,
+          "y": 270,
+          "zIndex": 44
+        },
+        {
+          "id": "w1787945261917_122",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy__122",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 870,
+          "y": 345,
+          "zIndex": 45
+        },
+        {
+          "id": "w1787945261917_123",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy__123",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 870,
+          "y": 425,
+          "zIndex": 46
+        },
+        {
+          "id": "w1787945261917_124",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy__124",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 870,
+          "y": 505,
+          "zIndex": 47
+        },
+        {
+          "id": "w1787945261917_125",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy__125",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 870,
+          "y": 585,
+          "zIndex": 48
+        },
+        {
+          "id": "w1787945261917_126",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy__126",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 870,
+          "y": 665,
+          "zIndex": 49
+        },
+        {
+          "id": "w1787945261917_127",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy__127",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 870,
+          "y": 745,
+          "zIndex": 50
+        },
+        {
+          "id": "w1787945261917_128",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy_1_92_copy__128",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 870,
+          "y": 820,
+          "zIndex": 51
+        },
+        {
+          "id": "w1787945261917_129",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy_1_93_copy__129",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 870,
+          "y": 900,
+          "zIndex": 52
+        },
+        {
+          "id": "w1787945261917_130",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy_1_94_copy__130",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 870,
+          "y": 980,
+          "zIndex": 53
+        },
+        {
+          "id": "w1787945261917_131",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_8_95_copy__131",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1135,
+          "y": 110,
+          "zIndex": 54
+        },
+        {
+          "id": "w1787945261917_132",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_9_96_copy__132",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1135,
+          "y": 190,
+          "zIndex": 55
+        },
+        {
+          "id": "w1787945261917_133",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_9_97_copy__133",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1135,
+          "y": 270,
+          "zIndex": 56
+        },
+        {
+          "id": "w1787945261917_134",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_9_98_copy__134",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1135,
+          "y": 345,
+          "zIndex": 57
+        },
+        {
+          "id": "w1787945261918_135",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_9_99_copy__135",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1135,
+          "y": 425,
+          "zIndex": 58
+        },
+        {
+          "id": "w1787945261918_136",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy__100_copy__136",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1135,
+          "y": 505,
+          "zIndex": 59
+        },
+        {
+          "id": "w1787945261918_137",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy__101_copy__137",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1135,
+          "y": 585,
+          "zIndex": 60
+        },
+        {
+          "id": "w1787945261918_138",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy__102_copy__138",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1135,
+          "y": 665,
+          "zIndex": 61
+        },
+        {
+          "id": "w1787945261918_139",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy__103_copy__139",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1135,
+          "y": 745,
+          "zIndex": 62
+        },
+        {
+          "id": "w1787945261918_140",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy_1_92_copy__104_copy__140",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1135,
+          "y": 820,
+          "zIndex": 63
+        },
+        {
+          "id": "w1787945261918_141",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy_1_93_copy__105_copy__141",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1135,
+          "y": 900,
+          "zIndex": 64
+        },
+        {
+          "id": "w1787945261918_142",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy_1_94_copy__106_copy__142",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1135,
+          "y": 980,
+          "zIndex": 65
+        },
+        {
+          "id": "w1787945261918_143",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy__107_copy__143",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1405,
+          "y": 110,
+          "zIndex": 66
+        },
+        {
+          "id": "w1787945261918_144",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy__108_copy__144",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1405,
+          "y": 190,
+          "zIndex": 67
+        },
+        {
+          "id": "w1787945261918_145",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy__109_copy__145",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1405,
+          "y": 270,
+          "zIndex": 68
+        },
+        {
+          "id": "w1787945261918_146",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy__110_copy__146",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1405,
+          "y": 345,
+          "zIndex": 69
+        },
+        {
+          "id": "w1787945261918_147",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy__111_copy__147",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1405,
+          "y": 425,
+          "zIndex": 70
+        },
+        {
+          "id": "w1787945261918_148",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy__112_copy__148",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1405,
+          "y": 505,
+          "zIndex": 71
+        },
+        {
+          "id": "w1787945261918_149",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy__113_copy__149",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1405,
+          "y": 585,
+          "zIndex": 72
+        },
+        {
+          "id": "w1787945261918_150",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy__114_copy__150",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1405,
+          "y": 665,
+          "zIndex": 73
+        },
+        {
+          "id": "w1787945261918_151",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy__115_copy__151",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1405,
+          "y": 745,
+          "zIndex": 74
+        },
+        {
+          "id": "w1787945261918_152",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy_1_92_copy__116_copy__152",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1405,
+          "y": 820,
+          "zIndex": 75
+        },
+        {
+          "id": "w1787945261918_153",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy_1_93_copy__117_copy__153",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1405,
+          "y": 900,
+          "zIndex": 76
+        },
+        {
+          "id": "w1787945261918_154",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy_1_94_copy__118_copy__154",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1405,
+          "y": 980,
+          "zIndex": 77
+        },
+        {
+          "id": "w1787945274345_155",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy__107_copy__143_copy__155",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1670,
+          "y": 110,
+          "zIndex": 78
+        },
+        {
+          "id": "w1787945274346_156",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy__108_copy__144_copy__156",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1670,
+          "y": 190,
+          "zIndex": 79
+        },
+        {
+          "id": "w1787945274346_157",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy__109_copy__145_copy__157",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1670,
+          "y": 270,
+          "zIndex": 80
+        },
+        {
+          "id": "w1787945274346_158",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy__110_copy__146_copy__158",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1670,
+          "y": 345,
+          "zIndex": 81
+        },
+        {
+          "id": "w1787945274346_159",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy__111_copy__147_copy__159",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1670,
+          "y": 425,
+          "zIndex": 82
+        },
+        {
+          "id": "w1787945274346_160",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy__112_copy__148_copy__160",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1670,
+          "y": 505,
+          "zIndex": 83
+        },
+        {
+          "id": "w1787945274346_161",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy__113_copy__149_copy__161",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1670,
+          "y": 585,
+          "zIndex": 84
+        },
+        {
+          "id": "w1787945274346_162",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy__114_copy__150_copy__162",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1670,
+          "y": 665,
+          "zIndex": 85
+        },
+        {
+          "id": "w1787945274346_163",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy__115_copy__151_copy__163",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1670,
+          "y": 745,
+          "zIndex": 86
+        },
+        {
+          "id": "w1787945274346_164",
+          "props": {
+            "action": "write",
+            "address": "1",
+            "addressType": "coil",
+            "builderState": 0,
+            "device": "PLC",
+            "fontSize": 18,
+            "height": 60,
+            "labelOff": "CY1 OFF",
+            "labelOn": "CY1 ON",
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "",
+            "variable": "CY1_copy_66_6_copy_6_20_copy_1_86_copy_7_89_copy_1_92_copy__116_copy__152_copy__164",
+            "variant": "neon",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 180
+          },
+          "type": "button",
+          "x": 1670,
+          "y": 820,
+          "zIndex": 87
+        },
+        {
+          "id": "w1787945274346_165",
+          "props": {
+            "address": "0",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 EXT",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 EXT_copy_66_7_copy_6_21_copy_1_87_copy_7_90_copy_1_93_copy__117_copy__153_copy__165",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1670,
+          "y": 900,
+          "zIndex": 88
+        },
+        {
+          "id": "w1787945274346_166",
+          "props": {
+            "address": "2",
+            "addressType": "discrete_input",
+            "builderState": 0,
+            "device": "PLC",
+            "height": 60,
+            "label": "CY1 RET",
+            "offColor": "var(--border-soft)",
+            "onColor": "var(--accent-cyan)",
+            "shape": "square",
+            "showLabel": true,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "variable": "CY1 RET_copy_66_8_copy_6_22_copy_1_88_copy_7_91_copy_1_94_copy__118_copy__154_copy__166",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 120
+          },
+          "type": "light",
+          "x": 1670,
+          "y": 980,
+          "zIndex": 89
         }
       ]
     }
