@@ -294,6 +294,10 @@ export const textboxDef = {
     writeTrigger: "enter",
     dataType: "number",
 
+    // HMI input method for Write mode.
+    // popup = touch-friendly HMI keypad/keyboard, native = browser input.
+    inputMethod: "popup",
+
     // Fixed numeric display precision.
     decimalPlaces: 3,
 
@@ -947,6 +951,20 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             <div className="text-[8px] text-[var(--text-dim)] mt-1">
               Write mode writes to the selected source. TCP/IP writes to Coil/Holding Register; Internal Variable writes by variable name.
             </div>
+
+            <PropInput
+              label="Input Method"
+              options={[
+                { value: "popup", label: "HMI Popup Keypad" },
+                { value: "native", label: "Native Keyboard" },
+              ]}
+              value={p.inputMethod || "popup"}
+              onChange={(v) => set("inputMethod", v)}
+            />
+
+            <div className="text-[8px] text-[var(--text-dim)] mt-1">
+              Popup mode opens a touch-friendly numeric keypad or character keyboard when the Text Box is tapped.
+            </div>
           </>
         )}
       </PropSection>
@@ -1578,8 +1596,474 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
 }
 
 // ────────────────────────────────────────────────────────────────
-// DYNAMIC CP PAGE — RUNTIME
+// HMI INPUT POPUP
+// Touch-friendly keypad / character keyboard used by RuntimeTextBox.
 // ────────────────────────────────────────────────────────────────
+
+function HMIInputPopup({
+  open,
+  dataType,
+  value,
+  cursorPosition,
+  onCursorChange,
+  onChange,
+  onCommit,
+  onCancel,
+}) {
+  const [shift, setShift] = React.useState(false);
+
+  if (!open) return null;
+
+  const isNumber = dataType === "number";
+  const isInteger = dataType === "integer";
+  const isBoolean = dataType === "boolean";
+  const isText = dataType === "text";
+
+  const append = (char) => {
+    const current = String(value ?? "");
+    const position = Math.max(0, Math.min(
+      Number(cursorPosition ?? current.length),
+      current.length
+    ));
+
+    if ((isNumber || isInteger) && char === ".") {
+      if (isInteger || current.includes(".")) return;
+    }
+
+    if ((isNumber || isInteger) && char === "-") {
+      if (current.includes("-")) return;
+      if (position !== 0) return;
+    }
+
+    // Avoid leading zero clutter for numeric values.
+    if ((isNumber || isInteger) && char >= "0" && char <= "9") {
+      if (position === 0 && current === "0") {
+        onCursorChange(1);
+        return;
+      }
+      if (position === 1 && current === "-0") {
+        const next = `-${char}${current.slice(position)}`;
+        onChange(next);
+        onCursorChange(2);
+        return;
+      }
+    }
+
+    const next = current.slice(0, position) + char + current.slice(position);
+    onChange(next);
+    onCursorChange(position + char.length);
+  };
+
+  const moveLeft = () => {
+    const current = String(value ?? "");
+    onCursorChange(Math.max(0, Number(cursorPosition ?? current.length) - 1));
+  };
+
+  const moveRight = () => {
+    const current = String(value ?? "");
+    onCursorChange(Math.min(current.length, Number(cursorPosition ?? current.length) + 1));
+  };
+
+  const backspace = () => {
+    const current = String(value ?? "");
+    const position = Number(cursorPosition ?? current.length);
+    if (position <= 0) return;
+
+    const next = current.slice(0, position - 1) + current.slice(position);
+    onChange(next);
+    onCursorChange(position - 1);
+  };
+
+  const clear = () => {
+    onChange("");
+    onCursorChange(0);
+  };
+
+  // Place the cursor by clicking/tapping directly on the displayed text.
+  // Uses a hidden measurement canvas so proportional/monospace fonts,
+  // zoom and different display widths remain accurate.
+  const placeCursorFromClick = (event) => {
+    const element = event.currentTarget;
+    const text = String(value ?? "");
+
+    if (!text.length) {
+      onCursorChange(0);
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    if (!rect.width) return;
+
+    const x = Math.max(
+      0,
+      Math.min(rect.width, event.clientX - rect.left)
+    );
+
+    const computed = window.getComputedStyle(element);
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+
+    if (!context) return;
+
+    context.font = [
+      computed.fontStyle,
+      computed.fontVariant,
+      computed.fontWeight,
+      computed.fontSize,
+      computed.fontFamily
+    ].join(" ");
+
+    // Text is centered in the display.
+    const totalWidth = context.measureText(text).width;
+    const startX = Math.max(0, (rect.width - totalWidth) / 2);
+    const textX = Math.max(0, Math.min(totalWidth, x - startX));
+
+    let bestIndex = 0;
+    let bestDistance = Infinity;
+
+    for (let i = 0; i <= text.length; i += 1) {
+      const before = text.slice(0, i);
+      const width = context.measureText(before).width;
+      const distance = Math.abs(width - textX);
+
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+
+    onCursorChange(bestIndex);
+  };
+
+  const keyBase =
+    "h-11 min-h-[44px] rounded border border-[rgba(0,229,255,0.28)] " +
+    "bg-[rgba(7,24,38,0.96)] text-white font-mono text-base font-semibold " +
+    "active:bg-[rgba(0,229,255,0.22)] active:border-[rgba(0,229,255,0.9)] " +
+    "transition-colors select-none touch-manipulation";
+
+  const arrowKey =
+    "h-11 min-h-[44px] rounded border border-[rgba(0,229,255,0.55)] " +
+    "bg-[rgba(0,229,255,0.16)] text-[#00E5FF] font-mono text-lg font-bold " +
+    "active:bg-[rgba(0,229,255,0.30)] active:border-[#00E5FF] " +
+    "transition-colors select-none touch-manipulation";
+
+  const actionKey =
+    "h-11 min-h-[44px] rounded border border-[rgba(0,229,255,0.42)] " +
+    "bg-[rgba(0,229,255,0.10)] text-[#00E5FF] font-mono text-xs font-bold " +
+    "active:bg-[rgba(0,229,255,0.24)] active:border-[#00E5FF] " +
+    "transition-colors select-none touch-manipulation";
+
+  const commitValue = (nextValue) => {
+    onChange(nextValue);
+    // Let React paint the last key before the async write begins.
+    setTimeout(() => onCommit(nextValue), 0);
+  };
+
+  const renderNumberPad = () => (
+    <div className="grid grid-cols-4 gap-2">
+      {["7", "8", "9", "⌫",
+        "4", "5", "6", "CLR",
+        "1", "2", "3", ...(isInteger ? ["−"] : ["."]),
+        "0", isInteger ? "−" : "00", "←", "→",
+        "CANCEL", "ENTER"
+      ].map((key, index) => {
+        const isEnter = key === "ENTER";
+        const isCancel = key === "CANCEL";
+        const isClear = key === "CLR";
+        const isBack = key === "⌫";
+        const isMinus = key === "−";
+        const isDot = key === ".";
+        const isZeroZero = key === "00";
+
+        return (
+          <button
+            key={`${key}-${index}`}
+            type="button"
+            className={
+              key === "←" || key === "→"
+                ? arrowKey
+                : isEnter || isCancel || isClear || isBack
+                  ? actionKey
+                  : keyBase
+            }
+            onClick={() => {
+              if (isEnter) return commitValue(String(value ?? ""));
+              if (isCancel) return onCancel();
+              if (isClear) return clear();
+              if (isBack) return backspace();
+              if (key === "←") return moveLeft();
+              if (key === "→") return moveRight();
+              if (isMinus) return append("-");
+              if (isDot) return append(".");
+              if (isZeroZero) return append("00");
+              append(key);
+            }}
+          >
+            {key}
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  const renderBooleanPad = () => (
+    <div className="grid grid-cols-2 gap-3">
+      <button
+        type="button"
+        className={keyBase}
+        onClick={() => commitValue("1")}
+      >
+        ON
+      </button>
+      <button
+        type="button"
+        className={keyBase}
+        onClick={() => commitValue("0")}
+      >
+        OFF
+      </button>
+      <button
+        type="button"
+        className={actionKey}
+        onClick={onCancel}
+      >
+        CANCEL
+      </button>
+    </div>
+  );
+
+  const alphaRows = [
+    ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+    ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+    ["Z", "X", "C", "V", "B", "N", "M"],
+  ];
+
+
+  const renderTextPad = () => (
+    <div className="space-y-2">
+      {alphaRows.map((row, rowIndex) => (
+        <div key={`alpha-${rowIndex}`} className="flex gap-1.5">
+          {row.map((key) => {
+            const displayedKey = shift ? key : key.toLowerCase();
+
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`${keyBase} flex-1 min-w-0`}
+                onClick={() => {
+                  // Shift/uppercase stays active until the SHIFT button
+                  // is pressed again. This is intentional for HMI use:
+                  // operator can type several uppercase characters in a row.
+                  append(displayedKey);
+                }}
+              >
+                {displayedKey}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+
+      <div className="grid grid-cols-7 gap-2">
+        <button
+          type="button"
+          className={shift ? arrowKey : actionKey}
+          onClick={() => setShift(v => !v)}
+          aria-label={shift ? "Switch to lowercase" : "Switch to uppercase"}
+          title={shift ? "UPPERCASE ON - press again for lowercase" : "UPPERCASE OFF - press for uppercase"}
+        >
+          {shift ? "⇧ ABC" : "⇧ abc"}
+        </button>
+
+        <button type="button" className={arrowKey} onClick={moveLeft}>
+          ←
+        </button>
+
+        <button type="button" className={arrowKey} onClick={moveRight}>
+          →
+        </button>
+
+        <button
+          type="button"
+          className={actionKey}
+          onClick={() => append(" ")}
+        >
+          SPACE
+        </button>
+
+        <button type="button" className={actionKey} onClick={backspace}>
+          ⌫
+        </button>
+
+        <button type="button" className={actionKey} onClick={clear}>
+          CLR
+        </button>
+
+        <button
+          type="button"
+          className={actionKey}
+          onClick={() => commitValue(String(value ?? ""))}
+        >
+          ENTER
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          className={actionKey}
+          onClick={() => append("0")}
+        >
+          0
+        </button>
+
+        <button type="button" className={actionKey} onClick={onCancel}>
+          CANCEL
+        </button>
+      </div>
+    </div>
+  );
+
+  const title = isBoolean
+    ? "SELECT STATE"
+    : isText
+      ? "ENTER TEXT"
+      : isInteger
+        ? "ENTER INTEGER"
+        : "ENTER VALUE";
+
+  return (
+    <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center p-3"
+      style={{
+        background: "rgba(0,0,0,0.68)",
+        backdropFilter: "blur(3px)",
+      }}
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onCancel();
+      }}
+    >
+      <div
+        className="w-full max-w-[520px] rounded-xl border border-[rgba(0,229,255,0.58)] bg-[#06131f] p-3 sm:p-4"
+        style={{
+          boxShadow:
+            "0 0 30px rgba(0,229,255,0.16), inset 0 0 28px rgba(0,229,255,0.035)",
+        }}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="text-[11px] font-bold tracking-[0.18em] text-[#00E5FF]">
+            {title}
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="w-9 h-9 rounded border border-[rgba(255,64,88,0.45)] text-[#FF4058] font-mono text-sm"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+
+        <div
+          className="mb-3 min-h-[54px] rounded-lg border border-[rgba(0,229,255,0.34)] bg-[#020a11] px-3 py-2 flex items-center justify-center"
+          style={{
+            boxShadow: "inset 0 0 18px rgba(0,229,255,0.055)",
+          }}
+        >
+          <div
+            className="w-full text-center text-2xl sm:text-3xl font-mono font-semibold text-white break-all"
+            onMouseDown={placeCursorFromClick}
+            onTouchStart={(event) => {
+              const touch = event.touches?.[0];
+              if (!touch) return;
+
+              placeCursorFromClick({
+                currentTarget: event.currentTarget,
+                clientX: touch.clientX,
+                clientY: touch.clientY,
+              });
+            }}
+            style={{
+              minHeight: "40px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              overflowWrap: "anywhere",
+            }}
+          >
+            {(() => {
+              const current = String(value ?? "");
+              const position = Math.max(
+                0,
+                Math.min(
+                  Number(cursorPosition ?? current.length),
+                  current.length
+                )
+              );
+
+              if (!current) {
+                return (
+                  <span className="inline-flex items-center text-white/30">
+                    <span>INPUT</span>
+                    <span
+                      className="ml-1 inline-block w-[2px] h-8 bg-[#00E5FF] animate-pulse"
+                      aria-hidden="true"
+                    />
+                  </span>
+                );
+              }
+
+              const before = current.slice(0, position);
+              const after = current.slice(position);
+
+              return (
+                <span
+                  className="inline-flex items-center max-w-full"
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    overflowWrap: "anywhere",
+                  }}
+                >
+                  <span>{before}</span>
+                  <span
+                    className="inline-block w-[2px] h-8 mx-[1px] bg-[#00E5FF] animate-pulse shrink-0"
+                    style={{
+                      boxShadow: "0 0 8px rgba(0,229,255,0.9)",
+                    }}
+                    aria-label={`Cursor position ${position + 1}`}
+                  />
+                  <span>{after}</span>
+                </span>
+              );
+            })()}
+          </div>
+        </div>
+
+        <div className="mb-2 text-center text-[8px] font-mono tracking-wider text-[#00E5FF]/70">
+          CURSOR&nbsp; {Math.min(
+            Number(cursorPosition ?? String(value ?? "").length) + 1,
+            String(value ?? "").length + 1
+          )}
+          &nbsp;/&nbsp; {String(value ?? "").length + 1}
+        </div>
+
+        {isBoolean
+          ? renderBooleanPad()
+          : isText
+            ? renderTextPad()
+            : renderNumberPad()}
+
+        <div className="mt-3 text-center text-[8px] font-mono tracking-wider text-white/35">
+          HMI TOUCH INPUT • {dataType.toUpperCase()}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function RuntimeTextBox({ widget, value, onWrite }) {
   const p = widget.props || {};
@@ -1603,19 +2087,35 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
 
   const [draft, setDraft] = React.useState(externalValue);
   const [focused, setFocused] = React.useState(false);
+  const [popupOpen, setPopupOpen] = React.useState(false);
+  const [cursorPosition, setCursorPosition] = React.useState(
+    String(externalValue ?? "").length
+  );
 
   // Static/read always follow the external value.
   // Write mode follows PLC read-back whenever the user is not editing.
   React.useEffect(() => {
-    if (!focused || mode !== "write") {
+    if ((!focused && !popupOpen) || mode !== "write") {
       setDraft(externalValue);
     }
-  }, [externalValue, focused, mode]);
+  }, [externalValue, focused, popupOpen, mode]);
 
-  const commit = React.useCallback(async () => {
-    if (mode !== "write" || !onWrite) return;
-    await onWrite(draft);
-  }, [draft, mode, onWrite]);
+  const commit = React.useCallback(
+    async (nextValue = draft) => {
+      if (mode !== "write" || !onWrite) return;
+      await onWrite(nextValue);
+    },
+    [draft, mode, onWrite]
+  );
+
+  const openPopup = React.useCallback(() => {
+    if (mode !== "write") return;
+    const next = String(externalValue ?? "");
+    setDraft(next);
+    setCursorPosition(next.length);
+    setFocused(true);
+    setPopupOpen(true);
+  }, [externalValue, mode]);
 
   const runtimeProps = {
     ...p,
@@ -1687,57 +2187,99 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
     );
   }
 
-  // WRITE mode: the actual input is layered over the same TextBox surface.
+  // WRITE mode: popup HMI keypad is the default touch interface.
+  // Native mode keeps the previous browser keyboard behavior.
   return (
-    <div
-      className="absolute"
-      style={{
-        left: widget.x,
-        top: widget.y,
-        width: p.width,
-        height: p.height,
-        overflow: "visible",
-      }}
-    >
-      <div style={{ position: "relative", width: "100%", height: "100%" }}>
-        <TextBoxSurface
-          p={runtimeProps}
-          textValue=""
-          preview={false}
-        />
-
-        <input
-          value={draft}
-          onFocus={() => setFocused(true)}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (p.writeTrigger !== "blur" && e.key === "Enter") {
-              e.preventDefault();
-              commit();
-              e.currentTarget.blur();
-            }
-          }}
-          onBlur={() => {
-            setFocused(false);
-            if (p.writeTrigger === "blur") commit();
-          }}
-          className="absolute inset-0 w-full h-full bg-transparent border-0 outline-none"
-          step={p.dataType === "number" ? "0.001" : undefined}
+    <>
+      <div
+        className="absolute"
+        style={{
+          left: widget.x,
+          top: widget.y,
+          width: p.width,
+          height: p.height,
+          overflow: "visible",
+        }}
+      >
+        <div
           style={{
-            color: p.textColor || "#FFFFFF",
-            fontSize: `${Number(p.fontSize ?? 18)}px`,
-            fontWeight: p.fontWeight || "600",
-            textAlign: p.textAlign || "center",
-            padding: `${Number(p.padding ?? 8)}px`,
-            boxSizing: "border-box",
+            position: "relative",
+            width: "100%",
+            height: "100%",
           }}
-          type={
-            p.dataType === "number" || p.dataType === "integer"
-              ? "number"
-              : "text"
-          }
-        />
+        >
+          <TextBoxSurface
+            p={runtimeProps}
+            textValue={p.inputMethod === "native" ? "" : draft}
+            preview={false}
+          />
+
+          {p.inputMethod === "native" ? (
+            <input
+              value={draft}
+              onFocus={() => setFocused(true)}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (p.writeTrigger !== "blur" && e.key === "Enter") {
+                  e.preventDefault();
+                  commit();
+                  e.currentTarget.blur();
+                }
+              }}
+              onBlur={() => {
+                setFocused(false);
+                if (p.writeTrigger === "blur") commit();
+              }}
+              className="absolute inset-0 w-full h-full bg-transparent border-0 outline-none"
+              step={p.dataType === "number" ? "0.001" : undefined}
+              style={{
+                color: p.textColor || "#FFFFFF",
+                fontSize: `${Number(p.fontSize ?? 18)}px`,
+                fontWeight: p.fontWeight || "600",
+                textAlign: p.textAlign || "center",
+                padding: `${Number(p.padding ?? 8)}px`,
+                boxSizing: "border-box",
+              }}
+              type={
+                p.dataType === "number" || p.dataType === "integer"
+                  ? "number"
+                  : "text"
+              }
+            />
+          ) : (
+            <button
+              type="button"
+              aria-label="Open HMI input keypad"
+              onClick={openPopup}
+              className="absolute inset-0 w-full h-full cursor-pointer bg-transparent border-0 outline-none"
+            />
+          )}
+        </div>
       </div>
-    </div>
-  );
+
+      {p.inputMethod !== "native" && (
+        <HMIInputPopup
+          open={popupOpen}
+          dataType={p.dataType || "number"}
+          value={draft}
+          cursorPosition={cursorPosition}
+          onCursorChange={setCursorPosition}
+          onChange={(nextValue) => {
+            setDraft(nextValue);
+          }}
+          onCommit={async (nextValue) => {
+            setPopupOpen(false);
+            setFocused(false);
+            await commit(nextValue);
+          }}
+          onCancel={() => {
+            setPopupOpen(false);
+            setFocused(false);
+            setDraft(externalValue);
+            setCursorPosition(String(externalValue ?? "").length);
+          }}
+        />
+      )}
+    </>
+  )
 }
