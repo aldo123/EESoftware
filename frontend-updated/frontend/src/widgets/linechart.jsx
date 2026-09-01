@@ -24,7 +24,7 @@ export const linechartDef = {
 
       // Trend history
       historySeconds: 60,
-      sampleInterval: 500,
+      sampleInterval: 50,
 
       // Trend trigger
       // When enabled: trigger = 1 starts recording, trigger = 0 stops recording.

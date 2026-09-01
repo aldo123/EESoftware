@@ -1486,24 +1486,34 @@ export default function DynamicCPPage({ cpNumber, user }) {
   ]);
 
   // ============================================================
-  // CAPTURE REALTIME LINE CHART HISTORY
+  // REALTIME LINE CHART SAMPLER
   //
-  // IMPORTANT: each trend starts at elapsed = 0 seconds.
-  // The PLC trigger controls START/STOP. Timestamp is only used
-  // internally to calculate elapsed seconds and is not displayed.
+  // Data acquisition and chart sampling are intentionally separated.
+  // PLC polling can run at 50 ms while each chart independently samples
+  // at its configured interval.
   // ============================================================
 
-  useEffect(() => {
-    if (!runtimeWidgets.length) return;
+  const chartWidgetsRef = useRef([]);
+  const chartTCPValuesRef = useRef({});
+  const chartInternalGetterRef = useRef(getInternalValue);
 
-    const chartWidgets = runtimeWidgets.filter(widget => widget?.type === "linechart");
+  chartWidgetsRef.current = runtimeWidgets;
+  chartTCPValuesRef.current = tcpValues;
+  chartInternalGetterRef.current = getInternalValue;
+
+  // ------------------------------------------------------------
+  // TRIGGER STATE
+  // ------------------------------------------------------------
+  useEffect(() => {
+    const chartWidgets = runtimeWidgets.filter(
+      widget => widget?.type === "linechart"
+    );
+
     if (!chartWidgets.length) return;
 
     const now = Date.now();
-    const nextPoints = {};
     const nextRunning = {};
     const chartsToClear = new Set();
-    let shouldUpdate = false;
 
     chartWidgets.forEach(widget => {
       const p = widget.props || {};
@@ -1527,195 +1537,277 @@ export default function DynamicCPPage({ cpNumber, user }) {
           )
         );
 
-      let running = true;
-      let startedNow = false;
-
       if (!triggerConfigured) {
-        // No trigger = trend starts automatically from 0 seconds.
-        running = true;
         if (!chartStartTimeRef.current[widget.id]) {
           chartStartTimeRef.current[widget.id] = now;
-          startedNow = true;
+          chartSampleRef.current[widget.id] = 0;
         }
 
         chartTriggerRef.current[widget.id] = {
           running: true,
           raw: undefined,
         };
-      } else {
-        const triggerBindingId = `${widget.id}:__trend_trigger__`;
-        const rawTrigger =
-          triggerSource === "internal"
-            ? getInternalValue(triggerVariableName)
-            : tcpValues[triggerBindingId];
-        const numericTrigger = Number(rawTrigger);
-        const startValue = Number(p.triggerStartValue ?? 1);
-        const stopValue = Number(p.triggerStopValue ?? 0);
-        const previous = chartTriggerRef.current[widget.id];
-        const previousRunning = previous?.running === true;
-        running = previousRunning;
 
-        if (Number.isFinite(numericTrigger)) {
-          if (numericTrigger === startValue) running = true;
-          else if (numericTrigger === stopValue) running = false;
-        }
-
-        // 0 -> 1 : new trend cycle. Start X-axis at exactly 0s.
-        if (running && !previousRunning) {
-          chartStartTimeRef.current[widget.id] = now;
-          startedNow = true;
-          chartsToClear.add(widget.id);
-        }
-
-        // If trigger is already ON when page first loads, start at 0s.
-        if (running && !chartStartTimeRef.current[widget.id]) {
-          chartStartTimeRef.current[widget.id] = now;
-          startedNow = true;
-          chartsToClear.add(widget.id);
-        }
-
-        // If stopped, preserve the last trend and do not add samples.
-        if (!running) {
-          chartTriggerRef.current[widget.id] = {
-            running: false,
-            raw: numericTrigger,
-          };
-          nextRunning[widget.id] = false;
-
-          if (
-            previous?.running !== false &&
-            Number.isFinite(numericTrigger)
-          ) {
-            console.log(
-              `[DynamicCPPage] Line chart trigger ${widget.id}: ${rawTrigger} -> STOPPED`
-            );
-          }
-          return;
-        }
-
-        chartTriggerRef.current[widget.id] = {
-          running: true,
-          raw: numericTrigger,
-        };
         nextRunning[widget.id] = true;
+        return;
+      }
 
-        if (
-          previous?.running !== true &&
-          Number.isFinite(numericTrigger)
-        ) {
-          console.log(
-            `[DynamicCPPage] Line chart trigger ${widget.id}: ${rawTrigger} -> RUNNING (elapsed reset to 0s)`
-          );
+      const triggerBindingId = `${widget.id}:__trend_trigger__`;
+      const rawTrigger =
+        triggerSource === "internal"
+          ? getInternalValue(triggerVariableName)
+          : tcpValues[triggerBindingId];
+
+      const numericTrigger = Number(rawTrigger);
+      const startValue = Number(p.triggerStartValue ?? 1);
+      const stopValue = Number(p.triggerStopValue ?? 0);
+
+      const previous = chartTriggerRef.current[widget.id];
+      const previousRunning = previous?.running === true;
+      let running = previousRunning;
+
+      if (Number.isFinite(numericTrigger)) {
+        if (numericTrigger === startValue) running = true;
+        else if (numericTrigger === stopValue) running = false;
+      }
+
+      // New START cycle.
+      if (running && !previousRunning) {
+        chartStartTimeRef.current[widget.id] = now;
+        chartSampleRef.current[widget.id] = 0;
+
+        if (p.clearHistoryOnStart !== false) {
+          chartsToClear.add(widget.id);
+        }
+
+        console.log(
+          `[DynamicCPPage] Line chart trigger ${widget.id}: ${rawTrigger} -> RUNNING`
+        );
+      }
+
+      // Trigger already ON when page/config is first loaded.
+      if (running && !chartStartTimeRef.current[widget.id]) {
+        chartStartTimeRef.current[widget.id] = now;
+        chartSampleRef.current[widget.id] = 0;
+
+        if (p.clearHistoryOnStart !== false) {
+          chartsToClear.add(widget.id);
         }
       }
 
-      nextRunning[widget.id] = running;
-
-      // Do not wait for the PLC value to change. A new sample is created
-      // every configured sample interval while the trend is running.
-      const interval = Math.max(100, Number(p.sampleInterval ?? 500));
-      const lastSample = Number(chartSampleRef.current[widget.id] || 0);
-
-      // Always allow the first point of a new trend immediately.
-      if (!startedNow && now - lastSample < interval) return;
-
-      chartSampleRef.current[widget.id] = now;
-
-      const series = Array.isArray(p.series)
-        ? p.series.filter(s => s && s.enabled !== false)
-        : [];
-
-      const startTime = Number(chartStartTimeRef.current[widget.id] || now);
-      const elapsedSeconds = Math.max(0, (now - startTime) / 1000);
-      const maxDuration = Math.max(1, Number(p.historySeconds ?? 60));
-
-      // Do not record beyond the configured maximum trend duration.
-      if (elapsedSeconds > maxDuration) return;
-
-      const point = {
-        elapsed: elapsedSeconds,
+      chartTriggerRef.current[widget.id] = {
+        running,
+        raw: numericTrigger,
       };
 
-      let hasValue = false;
+      nextRunning[widget.id] = running;
 
-      series.forEach((s, index) => {
-        const source = String(
-          s?.dataSource || (s?.fieldKey && !s?.device ? "internal" : "device")
-        ).trim().toLowerCase();
-        const variableName = String(
-          s?.internalVariable || s?.fieldKey || ""
-        ).trim();
-
-        const raw =
-          source === "internal"
-            ? getInternalValue(variableName)
-            : tcpValues[`${widget.id}:${s.id || `series_${index + 1}`}`];
-        const numeric = Number(raw);
-        if (Number.isFinite(numeric)) {
-          point[s.id || `series_${index + 1}`] = numeric;
-          hasValue = true;
-        }
-      });
-
-      if (hasValue) {
-        nextPoints[widget.id] = point;
-        shouldUpdate = true;
-
-        console.debug(
-          `[DynamicCPPage] Line chart sample ${widget.id}: ${elapsedSeconds.toFixed(2)}s`,
-          point
+      if (!running && previous?.running !== false) {
+        console.log(
+          `[DynamicCPPage] Line chart trigger ${widget.id}: ${rawTrigger} -> STOPPED`
         );
       }
     });
 
-    if (Object.keys(nextRunning).length) {
-      setChartRunning(previous => {
-        let changed = false;
-        const next = { ...previous };
-        Object.entries(nextRunning).forEach(([id, running]) => {
-          if (next[id] !== running) {
-            next[id] = running;
-            changed = true;
-          }
-        });
-        return changed ? next : previous;
-      });
-    }
-
-    if (!shouldUpdate && !chartsToClear.size) return;
-
-    setChartHistory(previous => {
+    setChartRunning(previous => {
+      let changed = false;
       const next = { ...previous };
 
-      chartWidgets.forEach(widget => {
-        const point = nextPoints[widget.id];
-        const p = widget.props || {};
+      Object.entries(nextRunning).forEach(([id, running]) => {
+        if (next[id] !== running) {
+          next[id] = running;
+          changed = true;
+        }
+      });
 
-        if (!point) {
-          if (chartsToClear.has(widget.id)) {
-            next[widget.id] = [];
-          }
+      return changed ? next : previous;
+    });
+
+    if (chartsToClear.size) {
+      setChartHistory(previous => {
+        const next = { ...previous };
+        chartsToClear.forEach(id => {
+          next[id] = [];
+        });
+        return next;
+      });
+    }
+  }, [runtimeWidgets, tcpValues, getInternalValue]);
+
+  // ------------------------------------------------------------
+  // DEDICATED CHART SAMPLER
+  //
+  // The scheduler wakes every 10 ms and samples each chart only when
+  // its own configured interval is due. This supports 50/100/200/500/
+  // 1000 ms and other settings independently.
+  //
+  // TCP/PLC data itself is acquired by useTCPPLC at 50 ms, so a PLC
+  // chart cannot contain genuinely new PLC samples faster than 50 ms.
+  // ------------------------------------------------------------
+  useEffect(() => {
+    let cancelled = false;
+
+    const scheduler = setInterval(() => {
+      if (cancelled) return;
+
+      const chartWidgets = chartWidgetsRef.current.filter(
+        widget => widget?.type === "linechart"
+      );
+
+      if (!chartWidgets.length) return;
+
+      const now = Date.now();
+      const samples = [];
+
+      chartWidgets.forEach(widget => {
+        const p = widget.props || {};
+        const trigger = chartTriggerRef.current[widget.id];
+
+        const triggerSource = String(
+          p.triggerDataSource || "device"
+        ).trim().toLowerCase();
+        const triggerVariableName = String(
+          p.triggerInternalVariable || ""
+        ).trim();
+
+        const triggerConfigured =
+          p.triggerEnabled === true &&
+          (
+            (triggerSource === "internal" && !!triggerVariableName) ||
+            (
+              triggerSource !== "internal" &&
+              p.triggerDevice &&
+              p.triggerAddress !== undefined &&
+              p.triggerAddress !== null &&
+              String(p.triggerAddress).trim() !== ""
+            )
+          );
+
+        if (triggerConfigured && trigger?.running !== true) return;
+
+        if (!chartStartTimeRef.current[widget.id]) {
+          chartStartTimeRef.current[widget.id] = now;
+        }
+
+        const rawInterval = Number(p.sampleInterval);
+        const interval = Number.isFinite(rawInterval)
+          ? Math.max(10, Math.round(rawInterval))
+          : 50;
+
+        const lastSample = Number(
+          chartSampleRef.current[widget.id] || 0
+        );
+
+        if (lastSample !== 0 && now - lastSample < interval) {
           return;
         }
 
-        const interval = Math.max(100, Number(p.sampleInterval ?? 500));
-        const maxPoints = Math.min(5000, Math.max(10, Math.ceil((Number(p.historySeconds ?? 60) * 1000) / interval) + 1));
-        const history = chartsToClear.has(widget.id)
-          ? []
-          : (Array.isArray(previous[widget.id]) ? previous[widget.id] : []);
+        const startTime = Number(
+          chartStartTimeRef.current[widget.id] || now
+        );
 
-        // Keep only points from the current START cycle and max duration.
-        const maxDuration = Math.max(1, Number(p.historySeconds ?? 60));
-        const merged = [...history, point]
-          .filter(item => Number(item?.elapsed) >= 0 && Number(item?.elapsed) <= maxDuration)
-          .slice(-maxPoints);
+        const elapsedSeconds = Math.max(
+          0,
+          (now - startTime) / 1000
+        );
 
-        next[widget.id] = merged;
+        const maxDuration = Math.max(
+          1,
+          Number(p.historySeconds ?? 60)
+        );
+
+        if (elapsedSeconds > maxDuration) return;
+
+        const series = Array.isArray(p.series)
+          ? p.series.filter(s => s && s.enabled !== false)
+          : [];
+
+        const tcpValuesLatest = chartTCPValuesRef.current;
+        const getInternalLatest = chartInternalGetterRef.current;
+
+        const point = {
+          elapsed: elapsedSeconds,
+        };
+
+        let hasValue = false;
+
+        series.forEach((seriesItem, index) => {
+          const source = String(
+            seriesItem?.dataSource ||
+              (seriesItem?.fieldKey && !seriesItem?.device
+                ? "internal"
+                : "device")
+          ).trim().toLowerCase();
+
+          const variableName = String(
+            seriesItem?.internalVariable ||
+              seriesItem?.fieldKey ||
+              ""
+          ).trim();
+
+          const raw =
+            source === "internal"
+              ? getInternalLatest(variableName)
+              : tcpValuesLatest[
+                  `${widget.id}:${seriesItem.id || `series_${index + 1}`}`
+                ];
+
+          const numeric = Number(raw);
+
+          if (Number.isFinite(numeric)) {
+            point[
+              seriesItem.id || `series_${index + 1}`
+            ] = numeric;
+            hasValue = true;
+          }
+        });
+
+        if (hasValue) {
+          chartSampleRef.current[widget.id] = now;
+          samples.push({
+            widget,
+            point,
+            interval,
+          });
+        }
       });
 
-      return next;
-    });
-  }, [runtimeWidgets, tcpValues, fieldValues, getInternalValue]);
+      if (!samples.length) return;
+
+      setChartHistory(previous => {
+        const next = { ...previous };
+
+        samples.forEach(({ widget, point, interval }) => {
+          const p = widget.props || {};
+          const maxPoints = Math.min(
+            5000,
+            Math.max(
+              10,
+              Math.ceil(
+                (Number(p.historySeconds ?? 60) * 1000) /
+                  interval
+              ) + 1
+            )
+          );
+
+          const history = Array.isArray(previous[widget.id])
+            ? previous[widget.id]
+            : [];
+
+          // Bounded append. Avoid filtering the whole history on
+          // every 50 ms update.
+          next[widget.id] = [...history, point].slice(-maxPoints);
+        });
+
+        return next;
+      });
+    }, 10);
+
+    return () => {
+      cancelled = true;
+      clearInterval(scheduler);
+    };
+  }, []);
 
   // ============================================================
   // RUNTIME DISPLAY RESOLUTION
