@@ -13,6 +13,9 @@ import { linechartDef, LineChartPreview, LineChartPropertyPanel, RuntimeLineChar
 import { cameraFeedDef, CameraFeedPreview, CameraFeedPropertyPanel, RuntimeCameraFeed } from "./camerafeed";
 import { testtableDef, TestTablePreview, TestTablePropertyPanel, RuntimeTestTable } from "./testtable";
 import { imageDef, ImagePreview, ImagePropertyPanel, RuntimeImage } from "./image";
+import { alarmBannerDef, AlarmBannerPreview, AlarmBannerPropertyPanel, RuntimeAlarmBanner } from "./alarmbanner";
+import { progressBarDef, ProgressBarPreview, ProgressBarPropertyPanel, RuntimeProgressBar } from "./progressbar";
+import { selectorSwitchDef, SelectorSwitchPreview, SelectorSwitchPropertyPanel, RuntimeSelectorSwitch } from "./selectorswitch";
 
 
 
@@ -29,6 +32,9 @@ export const COMPONENT_TYPES = [
   cameraFeedDef,
   testtableDef,
   imageDef,
+  alarmBannerDef,
+  progressBarDef,
+  selectorSwitchDef,
 ];
 
 // type -> canvas preview component (Page Builder, design-time)
@@ -42,6 +48,9 @@ export const WIDGET_PREVIEWS = {
   camerafeed: CameraFeedPreview,
   testtable: TestTablePreview,
   image: ImagePreview,
+  alarmbanner: AlarmBannerPreview,
+  progressbar: ProgressBarPreview,
+  selectorswitch: SelectorSwitchPreview,
 };
 
 // type -> property panel component (Page Builder, right sidebar)
@@ -55,6 +64,9 @@ export const WIDGET_PROPERTY_PANELS = {
   camerafeed: CameraFeedPropertyPanel,
   testtable: TestTablePropertyPanel,
   image: ImagePropertyPanel,
+  alarmbanner: AlarmBannerPropertyPanel,
+  progressbar: ProgressBarPropertyPanel,
+  selectorswitch: SelectorSwitchPropertyPanel,
 };
 
 // type -> runtime component (Dynamic CP Page, live/production)
@@ -68,6 +80,9 @@ export const WIDGET_RUNTIME = {
   camerafeed: RuntimeCameraFeed,
   testtable: RuntimeTestTable,
   image: RuntimeImage,
+  alarmbanner: RuntimeAlarmBanner,
+  progressbar: RuntimeProgressBar,
+  selectorswitch: RuntimeSelectorSwitch,
 };
 
 // Also re-export each runtime component by name, since DynamicCPPage.jsx
@@ -83,6 +98,9 @@ export {
   RuntimeCameraFeed,
   RuntimeTestTable,
   RuntimeImage,
+  RuntimeAlarmBanner,
+  RuntimeProgressBar,
+  RuntimeSelectorSwitch,
 };
 
 export * from "./shared";

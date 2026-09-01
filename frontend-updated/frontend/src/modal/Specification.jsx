@@ -162,8 +162,8 @@ export default function Specification({ onClose }) {
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [running, setRunning] = useState(false);
-  const [runtime, setRuntime] = useState(null);
+  const [testRunning, setTestRunning] = useState({});
+  const [testResults, setTestResults] = useState({});
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -230,35 +230,6 @@ export default function Specification({ onClose }) {
     loadSpecifications(null);
     loadDevices();
   }, [loadSpecifications, loadDevices]);
-
-  useEffect(() => {
-    if (!running || !current?.id) return undefined;
-
-    let cancelled = false;
-
-    const poll = async () => {
-      try {
-        const data = await jsonRequest(
-          `${API}/api/specifications/runtime/status/${current.id}`
-        );
-
-        if (!cancelled) {
-          setRuntime(data);
-          setRunning(Boolean(data?.running));
-        }
-      } catch {
-        // Do not replace a useful runtime result with a transient polling error.
-      }
-    };
-
-    poll();
-    const timer = window.setInterval(poll, 500);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [running, current?.id]);
 
   function updateCurrent(patch) {
     setCurrent((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -440,69 +411,143 @@ export default function Specification({ onClose }) {
     }
   }
 
-  async function startRuntime() {
-    if (!current) return;
-
-    setError("");
-    setMessage("");
-
-    try {
-      const data = await jsonRequest(
-        `${API}/api/specifications/runtime/start/${current.id}`,
-        { method: "POST" }
-      );
-
-      setRuntime(data);
-      setRunning(true);
-      setMessage("Specification runtime started.");
-    } catch (err) {
-      setError(err.message || "Failed to start specification");
-    }
-  }
-
-  async function stopRuntime() {
-    if (!current) return;
-
-    try {
-      const data = await jsonRequest(
-        `${API}/api/specifications/runtime/stop/${current.id}`,
-        { method: "POST" }
-      );
-
-      setRuntime(data);
-      setRunning(false);
-      setMessage("Specification runtime stopped.");
-    } catch (err) {
-      setError(err.message || "Failed to stop specification");
-    }
-  }
-
   async function testRow(row) {
     if (!current) return;
 
+    const rowId = String(row.id);
+
     setError("");
     setMessage("");
+    setTestRunning((prev) => ({
+      ...prev,
+      [rowId]: true,
+    }));
+
+    setTestResults((prev) => ({
+      ...prev,
+      [rowId]: {
+        parameter_test: row.parameter_test,
+        status: "waiting_trigger",
+        result: null,
+        samples: [],
+        sample_count: 0,
+        time_start: Number(row.time_start) || 0,
+        time_stop: Number(row.time_stop) || 0,
+        method: row.method || "Avg",
+      },
+    }));
 
     try {
+      // Test is now asynchronous:
+      // click Test -> Waiting Trigger -> Sampling -> PASS/FAIL.
       const data = await jsonRequest(
         `${API}/api/specifications/runtime/test-source`,
         {
           method: "POST",
-          body: JSON.stringify({
-            row,
-          }),
+          body: JSON.stringify({ row }),
         }
       );
 
-      setMessage(
-        `${row.parameter_test}: source OK → ${JSON.stringify(
-          data.value
-        )}`
-      );
+      if (!data?.test_id) {
+        throw new Error(data?.message || "Test session was not created");
+      }
+
+      setMessage(`${row.parameter_test}: Waiting for trigger...`);
+
+      let cancelled = false;
+
+      const poll = async () => {
+        if (cancelled) return;
+
+        try {
+          const status = await jsonRequest(
+            `${API}/api/specifications/runtime/test-source/status/${encodeURIComponent(data.test_id)}`
+          );
+
+          if (cancelled) return;
+
+          setTestResults((prev) => ({
+            ...prev,
+            [rowId]: status,
+          }));
+
+          const statusText = String(status?.status || "").toLowerCase();
+
+          if (statusText === "waiting_trigger") {
+            setMessage(`${row.parameter_test}: Waiting for trigger...`);
+          } else if (statusText === "running") {
+            const count = Number(status?.sample_count || 0);
+            const elapsed = Number(status?.elapsed_seconds || 0).toFixed(2);
+            setMessage(
+              `${row.parameter_test}: Sampling... ${elapsed}s · ${count} samples @ 70 ms`
+            );
+          } else if (
+            statusText === "pass" ||
+            statusText === "fail" ||
+            statusText === "error" ||
+            statusText === "stopped"
+          ) {
+            setTestRunning((prev) => ({
+              ...prev,
+              [rowId]: false,
+            }));
+
+            if (statusText === "pass" || statusText === "fail") {
+              const resultText =
+                status.result == null
+                  ? "-"
+                  : Number(status.result).toFixed(3);
+
+              setMessage(
+                `${row.parameter_test}: ${status.status} → ${resultText} ` +
+                `(${status.sample_count || 0} samples @ 70 ms)`
+              );
+            } else if (statusText === "error") {
+              setError(
+                `${row.parameter_test}: ${status.error || "Test failed"}`
+              );
+            }
+
+            return;
+          }
+
+          window.setTimeout(poll, 100);
+        } catch (err) {
+          if (cancelled) return;
+
+          setTestRunning((prev) => ({
+            ...prev,
+            [rowId]: false,
+          }));
+
+          setTestResults((prev) => ({
+            ...prev,
+            [rowId]: {
+              status: "ERROR",
+              error: err.message || "Test failed",
+            },
+          }));
+
+          setError(`${row.parameter_test}: ${err.message || "Test failed"}`);
+        }
+      };
+
+      poll();
     } catch (err) {
-      setError(
-        `${row.parameter_test}: ${err.message || "Source test failed"}`
-      );
+      setTestRunning((prev) => ({
+        ...prev,
+        [rowId]: false,
+      }));
+
+      setTestResults((prev) => ({
+        ...prev,
+        [rowId]: {
+          status: "ERROR",
+          error: err.message || "Test failed",
+        },
+      }));
+
+      setError(`${row.parameter_test}: ${err.message || "Test failed"}`);
     }
   }
 
@@ -705,26 +750,9 @@ export default function Specification({ onClose }) {
                     {saving ? "Saving..." : "Save"}
                   </button>
 
-                  {!running ? (
-                    <button
-                      onClick={startRuntime}
-                      className="h-8 px-4 rounded-md bg-[#2563EB] text-white text-[10px] font-bold"
-                    >
-                      Run Test
-                    </button>
-                  ) : (
-                    <button
-                      onClick={stopRuntime}
-                      className="h-8 px-4 rounded-md bg-[#DC2626] text-white text-[10px] font-bold"
-                    >
-                      Stop
-                    </button>
-                  )}
-
                   <button
                     onClick={deleteSpecification}
-                    disabled={running}
-                    className="h-8 px-3 rounded-md border border-[#EF4444]/40 text-[#FCA5A5] text-[10px] disabled:opacity-40"
+                    className="h-8 px-3 rounded-md border border-[#EF4444]/40 text-[#FCA5A5] text-[10px]"
                   >
                     Delete
                   </button>
@@ -733,7 +761,7 @@ export default function Specification({ onClose }) {
 
               <div className="flex-1 min-h-0 overflow-auto">
                 <table className="border-collapse text-[10px] min-w-[2200px]">
-                  <thead className="sticky top-0 z-20 bg-[var(--bg-surface)]">
+                  <thead className="sticky top-0 z-20 bg-[#1F2937] text-white">
                     <tr>
                       <th className="border border-[var(--border)] p-2 min-w-[150px] text-left">
                         Parameter Test
@@ -777,7 +805,7 @@ export default function Specification({ onClose }) {
                       <th className="border border-[var(--border)] p-2 min-w-[180px] text-left">
                         Source
                       </th>
-                      <th className="border border-[var(--border)] p-2 min-w-[70px]">
+                      <th className="border border-[var(--border)] p-2 min-w-[70px] text-white font-bold">
                         Test
                       </th>
                     </tr>
@@ -1080,13 +1108,133 @@ export default function Specification({ onClose }) {
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
-                            <div className="flex flex-col gap-1">
+                            <div className="flex flex-col gap-1 min-w-[120px]">
                               <button
                                 onClick={() => testRow(row)}
-                                className="h-8 px-2 rounded-md border border-[#22C55E]/50 text-[#22C55E] text-[9px]"
+                                disabled={Boolean(testRunning[String(row.id)])}
+                                className="h-8 px-2 rounded-md border border-[#22C55E]/50 text-[#22C55E] text-[9px] disabled:opacity-50"
                               >
-                                Test
+                                {testRunning[String(row.id)] ? "Testing..." : "Test"}
                               </button>
+
+                              {testResults[String(row.id)] && (
+                                <div
+                                  className={
+                                    ["PASS"].includes(
+                                      String(testResults[String(row.id)]?.status || "").toUpperCase()
+                                    )
+                                      ? "rounded-md border border-[#22C55E]/30 bg-[#14532D]/20 px-2 py-1 text-[9px] text-[#86EFAC]"
+                                      : ["FAIL", "ERROR", "error"].includes(
+                                          String(testResults[String(row.id)]?.status || "")
+                                        )
+                                      ? "rounded-md border border-[#EF4444]/30 bg-[#7F1D1D]/20 px-2 py-1 text-[9px] text-[#FCA5A5]"
+                                      : "rounded-md border border-[#FACC15]/30 bg-[#713F12]/20 px-2 py-1 text-[9px] text-[#FDE68A]"
+                                  }
+                                >
+                                  {(() => {
+                                    const result = testResults[String(row.id)];
+                                    const status = String(
+                                      result?.status || ""
+                                    ).toUpperCase();
+
+                                    if (status === "WAITING_TRIGGER") {
+                                      return (
+                                        <>
+                                          <div className="font-bold">
+                                            WAITING TRIGGER
+                                          </div>
+                                          <div>
+                                            Waiting for trigger...
+                                          </div>
+                                        </>
+                                      );
+                                    }
+
+                                    if (status === "RUNNING") {
+                                      return (
+                                        <>
+                                          <div className="font-bold">
+                                            SAMPLING
+                                          </div>
+                                          <div>
+                                            t ={" "}
+                                            {Number(
+                                              result?.elapsed_seconds || 0
+                                            ).toFixed(2)}
+                                            s /{" "}
+                                            {Number(
+                                              result?.time_stop ??
+                                                row.time_stop ??
+                                                0
+                                            ).toFixed(2)}
+                                            s
+                                          </div>
+                                          <div>
+                                            {result?.sample_count || 0} samples @ 70 ms
+                                          </div>
+                                          {result?.last_value != null && (
+                                            <div className="font-bold">
+                                              Current:{" "}
+                                              {Number(
+                                                result.last_value
+                                              ).toFixed(3)}
+                                            </div>
+                                          )}
+                                        </>
+                                      );
+                                    }
+
+                                    if (status === "ERROR") {
+                                      return (
+                                        <div className="truncate">
+                                          ERROR: {result?.error || "Test failed"}
+                                        </div>
+                                      );
+                                    }
+
+                                    if (status === "STOPPED") {
+                                      return (
+                                        <>
+                                          <div className="font-bold">
+                                            STOPPED
+                                          </div>
+                                          <div>
+                                            {result?.sample_count || 0} samples
+                                          </div>
+                                        </>
+                                      );
+                                    }
+
+                                    return (
+                                      <>
+                                        <div className="font-bold">
+                                          {status || "IDLE"}
+                                          {result?.result != null &&
+                                            ` → ${Number(result.result).toFixed(3)}`}
+                                        </div>
+                                        <div>
+                                          {result?.method || row.method} ·{" "}
+                                          {result?.sample_count || 0} samples
+                                        </div>
+                                        <div>
+                                          {Number(
+                                            result?.time_start ??
+                                              row.time_start ??
+                                              0
+                                          ).toFixed(2)}
+                                          s →{" "}
+                                          {Number(
+                                            result?.time_stop ??
+                                              row.time_stop ??
+                                              0
+                                          ).toFixed(2)}
+                                          s
+                                        </div>
+                                      </>
+                                    );
+                                  })()}
+                                </div>
+                              )}
 
                               <button
                                 onClick={() =>
@@ -1120,49 +1268,104 @@ export default function Specification({ onClose }) {
                 </table>
               </div>
 
-              {/* RUNTIME */}
+              {/* LIVE TESTING */}
               <div className="shrink-0 border-t border-[var(--border)] bg-[var(--bg-elevated)] p-3">
-                <div className="flex items-center gap-4 text-[10px]">
-                  <span className="font-bold text-[var(--text-primary)]">
-                    Runtime:
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="font-bold text-[var(--text-primary)] text-[10px]">
+                    Live Testing
                   </span>
-
-                  <span
-                    className={
-                      running
-                        ? "text-[#22C55E] font-bold"
-                        : "text-[var(--text-muted)]"
-                    }
-                  >
-                    {running ? "RUNNING" : "IDLE"}
+                  <span className="text-[9px] text-[var(--text-muted)]">
+                    Test → Waiting Trigger → Time Start → Sampling every 70 ms → Time Stop
                   </span>
+                </div>
 
-                  {runtime?.message && (
-                    <span className="text-[var(--text-secondary)]">
-                      {runtime.message}
-                    </span>
-                  )}
+                <div className="flex flex-col gap-1 max-h-28 overflow-auto">
+                  {current.rows.map((row) => {
+                    const result = testResults[String(row.id)];
+                    if (!result) return null;
 
-                  {runtime?.results &&
-                    Object.entries(runtime.results).map(
-                      ([key, value]) => (
+                    const status = String(result.status || "").toUpperCase();
+                    const isWaiting = status === "WAITING_TRIGGER";
+                    const isRunning = status === "RUNNING";
+                    const isPass = status === "PASS";
+                    const isFail = status === "FAIL";
+                    const isError = status === "ERROR";
+
+                    return (
+                      <div
+                        key={`live-${row.id}`}
+                        className="flex items-center gap-3 rounded-md border border-[var(--border)] bg-[var(--bg-input)] px-2 py-1 text-[9px]"
+                      >
+                        <span className="font-bold text-[var(--text-primary)] min-w-[110px]">
+                          {row.parameter_test || "Parameter"}
+                        </span>
+
                         <span
-                          key={key}
                           className={
-                            value?.pass
-                              ? "text-[#22C55E]"
-                              : value?.fail
-                              ? "text-[#EF4444]"
-                              : "text-[var(--text-secondary)]"
+                            isPass
+                              ? "font-bold text-[#22C55E]"
+                              : isFail || isError
+                              ? "font-bold text-[#EF4444]"
+                              : "font-bold text-[#FACC15]"
                           }
                         >
-                          {key}:{" "}
-                          {value?.result ??
-                            value?.status ??
-                            "waiting"}
+                          {status || "IDLE"}
                         </span>
-                      )
-                    )}
+
+                        {isWaiting && (
+                          <span className="text-[#FACC15]">
+                            Waiting for trigger...
+                          </span>
+                        )}
+
+                        {isRunning && (
+                          <>
+                            <span className="text-[var(--text-secondary)]">
+                              t = {Number(result.elapsed_seconds || 0).toFixed(2)}s
+                              {" / "}
+                              {Number(row.time_stop || 0).toFixed(2)}s
+                            </span>
+                            <span className="text-[var(--text-secondary)]">
+                              Samples: {result.sample_count || 0}
+                            </span>
+                            {result.last_value != null && (
+                              <span className="text-[#60A5FA] font-bold">
+                                Current: {Number(result.last_value).toFixed(3)}
+                              </span>
+                            )}
+                          </>
+                        )}
+
+                        {(isPass || isFail) && (
+                          <>
+                            <span className="text-[var(--text-secondary)]">
+                              {row.method}:{" "}
+                              {result.result == null
+                                ? "-"
+                                : Number(result.result).toFixed(3)}
+                            </span>
+                            <span className="text-[var(--text-secondary)]">
+                              {result.sample_count || 0} samples
+                            </span>
+                          </>
+                        )}
+
+                        {isError && (
+                          <span className="text-[#FCA5A5] truncate">
+                            {result.error || "Test failed"}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {!current.rows.some(
+                    (row) => testResults[String(row.id)]
+                  ) && (
+                    <div className="text-[9px] text-[var(--text-muted)]">
+                      No test running. Click <b>Test</b> on a parameter to start.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

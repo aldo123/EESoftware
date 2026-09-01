@@ -13,6 +13,9 @@ import {
   RuntimeCameraFeed,
   RuntimeTestTable,
   RuntimeImage,
+  RuntimeAlarmBanner,
+  RuntimeProgressBar,
+  RuntimeSelectorSwitch,
 } from "../widgets";
 
 // ──────────────────────────────────────────────────────────────────
@@ -73,7 +76,17 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const chartStartTimeRef = useRef({});
 
   const containerRef = useRef(null);
-  const [viewportScale, setViewportScale] = useState(1);
+  // Independent X/Y scale factors — NOT a single uniform scale. A uniform
+  // scale (Math.min(sx, sy)) preserves the 16:9 aspect ratio but always
+  // leaves unused space on one side (right or bottom) whenever the actual
+  // browser viewport's aspect ratio isn't exactly 1920:1080, since the
+  // canvas is pinned top-left rather than centered. That meant a widget
+  // placed flush against the right/bottom edge in Page Builder would show
+  // a gap at runtime. Scaling X and Y independently instead always fills
+  // the full available width AND height exactly, so an edge in the design
+  // is always the edge on screen too.
+  const [viewportScaleX, setViewportScaleX] = useState(1);
+  const [viewportScaleY, setViewportScaleY] = useState(1);
   const [viewportOffsetX, setViewportOffsetX] = useState(0);
 
   // Source/design resolution loaded from Page Builder.
@@ -105,12 +118,12 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       const availableWidth = Math.max(1, rect.width - 8);
       const availableHeight = Math.max(1, rect.height - 8);
-      const sx = availableWidth / runtimeResolution.width;
-      const sy = availableHeight / runtimeResolution.height;
-      const nextScale = Math.min(1, sx, sy);
+      const nextScaleX = availableWidth / runtimeResolution.width;
+      const nextScaleY = availableHeight / runtimeResolution.height;
 
       setViewportOffsetX(prev => (prev === 0 ? prev : 0));
-      setViewportScale(prev => Math.abs(prev - nextScale) < 0.001 ? prev : nextScale);
+      setViewportScaleX(prev => Math.abs(prev - nextScaleX) < 0.001 ? prev : nextScaleX);
+      setViewportScaleY(prev => Math.abs(prev - nextScaleY) < 0.001 ? prev : nextScaleY);
     };
 
     updateViewportScale();
@@ -241,6 +254,23 @@ export default function DynamicCPPage({ cpNumber, user }) {
     }
 
     if (widgetType === "gauge") {
+      return type === "holding_register";
+    }
+
+    if (widgetType === "alarmbanner") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
+    if (widgetType === "progressbar") {
+      return type === "holding_register";
+    }
+
+    if (widgetType === "selectorswitch") {
       return type === "holding_register";
     }
 
@@ -696,6 +726,23 @@ export default function DynamicCPPage({ cpNumber, user }) {
           return internalValue !== undefined && internalValue !== null
             ? internalValue
             : (p.simulationValue ?? 0);
+        }
+      }
+
+      // ----------------------------------------------------------
+      // ALARM BANNER / PROGRESS BAR INTERNAL VARIABLE
+      // ----------------------------------------------------------
+      if (
+        widget?.type === "alarmbanner" ||
+        widget?.type === "progressbar" ||
+        widget?.type === "selectorswitch"
+      ) {
+        const source = String(p.dataSource || "device").trim().toLowerCase();
+
+        if (source === "internal") {
+          const variableName = String(p.internalVariable || "").trim();
+          if (!variableName) return undefined;
+          return getInternalValue(variableName);
         }
       }
 
@@ -1362,7 +1409,17 @@ export default function DynamicCPPage({ cpNumber, user }) {
       } else if (
         type !== "button" &&
         type !== "light" &&
-        type !== "gauge"
+        type !== "gauge" &&
+        type !== "alarmbanner" &&
+        type !== "progressbar" &&
+        type !== "selectorswitch"
+      ) {
+        return;
+      }
+
+      if (
+        (type === "alarmbanner" || type === "progressbar" || type === "selectorswitch") &&
+        String(p.dataSource || "device").trim().toLowerCase() === "internal"
       ) {
         return;
       }
@@ -2054,6 +2111,60 @@ export default function DynamicCPPage({ cpNumber, user }) {
     );
 
   // ============================================================
+  // SELECTOR SWITCH WRITE
+  //
+  // Reads and writes the SAME Holding Register (or Internal Variable) —
+  // same pattern as Text Box's Write mode. Position changes are picked
+  // from a fixed list, not typed, so there's no validation to do here
+  // beyond routing to the right sink.
+  // ============================================================
+  const handleSelectorSwitchChange = useCallback(
+    async (widget, value) => {
+      const p = widget?.props || {};
+      const source = String(p.dataSource || "device").trim().toLowerCase();
+
+      if (source === "internal") {
+        const variableName = String(p.internalVariable || "").trim();
+        if (!variableName) {
+          addLog("Selector Switch internal variable name is empty", "var(--accent-red)");
+          return;
+        }
+        try {
+          await setInternalValue(variableName, value);
+        } catch (err) {
+          addLog(`Selector Switch internal write failed: ${err.message}`, "var(--accent-red)");
+        }
+        return;
+      }
+
+      const device = getTCPDevice(p.device);
+      const addressType = normalizeType(p.addressType);
+
+      if (!device || !addressType) {
+        addLog("Selector Switch has no device/address configured", "var(--accent-red)");
+        return;
+      }
+
+      try {
+        const result = await writeTCPValue({
+          widgetId: widget.id,
+          device,
+          addressType,
+          address: p.address,
+          value,
+        });
+
+        if (result && result.success === false) {
+          throw new Error(result.message || "PLC write failed");
+        }
+      } catch (err) {
+        addLog(`Selector Switch write failed: ${err.message}`, "var(--accent-red)");
+      }
+    },
+    [addLog, getTCPDevice, normalizeType, setInternalValue, writeTCPValue]
+  );
+
+  // ============================================================
   // TEXTBOX TCP/IP WRITE
   // ============================================================
   const handleTextBoxWrite = useCallback(
@@ -2259,11 +2370,14 @@ export default function DynamicCPPage({ cpNumber, user }) {
     if (type === "testtable") return <RuntimeTestTable key={id} widget={widget} getValue={getTestTableValue} />;
     if (type === "camerafeed") return <RuntimeCameraFeed key={id} widget={widget} cpNumber={cpNumber} />;
     if (type === "image") return <RuntimeImage key={id} widget={widget} />;
+    if (type === "alarmbanner") return <RuntimeAlarmBanner key={id} widget={widget} value={runtimeValue} />;
+    if (type === "progressbar") return <RuntimeProgressBar key={id} widget={widget} value={runtimeValue} />;
+    if (type === "selectorswitch") return <RuntimeSelectorSwitch key={id} widget={widget} value={runtimeValue} onChange={(value) => handleSelectorSwitchChange(widget, value)} />;
 
     // Manual / Calibration / Timing Limit are no longer special widgets.
     // They are now normal custom pages created through Page Builder.
     return null;
-  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage, navigateToPage]);
+  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, handleSelectorSwitchChange, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage, navigateToPage]);
 
   // ============================================================
   // RENDER STATES
@@ -2356,7 +2470,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
           left: `${viewportOffsetX}px`,
           top: 0,
           margin: 0,
-          transform: `scale(${viewportScale})`,
+          transform: `scale(${viewportScaleX}, ${viewportScaleY})`,
           transformOrigin: "top left",
           flex: "0 0 auto",
         }}
