@@ -22,6 +22,26 @@ import {
   DEFAULT_VISUAL,
 } from "./shared";
 
+// Automatically discover every image in src/assets/button-images.
+// No individual image import is required.
+const BUTTON_ASSETS = import.meta.glob(
+  "../assets/button-images/*.{png,jpg,jpeg,webp,gif,svg}",
+  {
+    eager: true,
+    query: "?url",
+    import: "default",
+  }
+);
+
+const getButtonAssets = () =>
+  Object.entries(BUTTON_ASSETS)
+    .map(([filePath, url]) => ({
+      filePath,
+      url,
+      name: filePath.split("/").pop() || filePath,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
 const RESET_TCP_ADDRESS_TYPES = [
   { value: "coil", label: "Coil" },
   { value: "holding_register", label: "Holding Register" },
@@ -71,6 +91,35 @@ const isTcpDevice = (device) => {
 const toTcpWriteValue = (addressType) =>
   String(addressType || "").toLowerCase() === "coil" ? false : 0;
 
+const resolveButtonAsset = (storedValue) => {
+  if (!storedValue) return "";
+  const value = String(storedValue);
+
+  if (
+    value.startsWith("data:") ||
+    value.startsWith("blob:") ||
+    value.startsWith("http://") ||
+    value.startsWith("https://")
+  ) {
+    return value;
+  }
+
+  const normalized = value.replace(/^\.?\/?assets\//, "").replace(/^\//, "");
+  const assets = getButtonAssets();
+
+  const match = assets.find((asset) => {
+    const path = asset.filePath.replace(/^\.\.?\//, "");
+    return (
+      asset.name === value ||
+      asset.name === normalized.split("/").pop() ||
+      path === normalized ||
+      path.endsWith(normalized)
+    );
+  });
+
+  return match?.url || value;
+};
+
 // ────────────────────────────────────────────────────────────────
 // PALETTE DEFINITION
 // ────────────────────────────────────────────────────────────────
@@ -112,6 +161,15 @@ export const buttonDef = {
     fontSize: 18,
     width: 180,
     height: 60,
+
+    // Custom state images.
+    // When configured, these images replace the normal ON/OFF button
+    // appearance in both Builder preview and Runtime.
+    onImage: "",
+    offImage: "",
+    imageFit: "cover",
+    imageOverlay: true,
+
     visual: { ...DEFAULT_VISUAL },
 
     // Simulation System
@@ -186,7 +244,27 @@ export function ButtonPreview({ widget }) {
           borderRadius: 12,
         }}
       >
-        {btnStyle.showLed && (
+        {(isOn ? p.onImage : p.offImage) && p.imageOverlay !== false ? (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ background: "rgba(0,0,0,0.12)", zIndex: 2 }}
+          />
+        ) : null}
+
+        {(isOn ? p.onImage : p.offImage) ? (
+          <img
+            src={resolveButtonAsset(isOn ? p.onImage : p.offImage)}
+            alt=""
+            draggable={false}
+            className="absolute inset-0 w-full h-full pointer-events-none select-none"
+            style={{
+              objectFit: p.imageFit || "cover",
+              zIndex: 1,
+            }}
+          />
+        ) : null}
+
+        {btnStyle.showLed && !(isOn ? p.onImage : p.offImage) && (
           <div
             className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full transition-all duration-300"
             style={{
@@ -700,6 +778,110 @@ export function ButtonPropertyPanel({
         />
       </PropSection>
 
+      <PropSection title="Custom State Images">
+        <div className="text-[8px] text-[var(--text-dim)] mb-2">
+          Images are loaded automatically from <b>src/assets/button-images</b>.
+          No individual import is required.
+        </div>
+
+        {(() => {
+          const assets = getButtonAssets();
+
+          return (
+            <div className="space-y-3">
+              {[
+                { key: "onImage", label: "ON Image", accent: "var(--accent-green)" },
+                { key: "offImage", label: "OFF Image", accent: "var(--border)" },
+              ].map(({ key, label, accent }) => {
+                const selected = String(p[key] || "");
+                const selectedName = selected.split("/").pop() || "";
+                const selectedUrl = resolveButtonAsset(selected);
+
+                return (
+                  <div
+                    key={key}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--bg-surface)] p-2"
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-[9px] font-bold text-[var(--text-primary)]">
+                        {label}
+                      </div>
+                      {selected && (
+                        <button
+                          type="button"
+                          onClick={() => set(key, "")}
+                          className="px-2 py-1 rounded border border-[var(--accent-red)] text-[8px] text-[var(--accent-red)]"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+
+                    <select
+                      value={selectedName}
+                      onChange={(e) =>
+                        set(
+                          key,
+                          e.target.value
+                            ? `button-images/${e.target.value}`
+                            : ""
+                        )
+                      }
+                      className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[9px] font-mono text-[var(--text-primary)] outline-none"
+                    >
+                      <option value="">
+                        {assets.length ? "No custom image" : "No images found"}
+                      </option>
+                      {assets.map((asset) => (
+                        <option key={asset.filePath} value={asset.name}>
+                          {asset.name}
+                        </option>
+                      ))}
+                    </select>
+
+                    {selected && selectedUrl && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <img
+                          src={selectedUrl}
+                          alt={`${label} preview`}
+                          className="w-20 h-12 rounded border object-cover bg-[var(--bg-canvas)]"
+                          style={{ borderColor: accent }}
+                        />
+                        <div className="min-w-0 text-[8px] text-[var(--text-dim)] truncate">
+                          {selected}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              <PropInput
+                label="Image Fit"
+                options={[
+                  { value: "cover", label: "Cover" },
+                  { value: "contain", label: "Contain" },
+                  { value: "fill", label: "Fill" },
+                  { value: "none", label: "Original Size" },
+                ]}
+                value={p.imageFit || "cover"}
+                onChange={(v) => set("imageFit", v)}
+              />
+
+              <PropInput
+                label="Text Overlay"
+                options={[
+                  { value: true, label: "On" },
+                  { value: false, label: "Off" },
+                ]}
+                value={p.imageOverlay !== false}
+                onChange={(v) => set("imageOverlay", v === true || v === "true")}
+              />
+            </div>
+          );
+        })()}
+      </PropSection>
+
       <PropSection title="ON State Appearance">
         <PropInput
           label="Background"
@@ -1038,7 +1220,30 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
           touchAction: "none",
         }}
       >
-        {btnStyle.showLed && (
+        {(isOn ? p.onImage : p.offImage) && p.imageOverlay !== false ? (
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              background: "rgba(0,0,0,0.12)",
+              zIndex: 2,
+            }}
+          />
+        ) : null}
+
+        {(isOn ? p.onImage : p.offImage) ? (
+          <img
+            src={resolveButtonAsset(isOn ? p.onImage : p.offImage)}
+            alt=""
+            draggable={false}
+            className="absolute inset-0 w-full h-full pointer-events-none select-none"
+            style={{
+              objectFit: p.imageFit || "cover",
+              zIndex: 1,
+            }}
+          />
+        ) : null}
+
+        {btnStyle.showLed && !(isOn ? p.onImage : p.offImage) && (
           <div
             className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full transition-all duration-300"
             style={{
