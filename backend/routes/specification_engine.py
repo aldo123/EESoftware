@@ -39,6 +39,12 @@ API_BASE = os.environ.get(
 _state_lock = threading.RLock()
 _runtimes = {}
 
+# Short runtime cache to collapse duplicate reads from multiple specification rows.
+_RUNTIME_CACHE_TTL = 0.040
+_runtime_cache_lock = threading.RLock()
+_runtime_cache = {}
+_runtime_inflight = {}
+
 
 def _http_json(method, path, payload=None, timeout=2.0):
     url = f"{API_BASE}{path}"
@@ -201,55 +207,79 @@ def _address(value):
     return address
 
 
-def _get_internal_variables():
-    data = _http_json(
-        "GET",
-        "/api/internal-variables",
-    )
+def _cached_read(key, loader, ttl=_RUNTIME_CACHE_TTL):
+    now = time.monotonic()
+    with _runtime_cache_lock:
+        cached = _runtime_cache.get(key)
+        if cached and now - cached[0] < ttl:
+            return cached[1]
+        event = _runtime_inflight.get(key)
+        if event is None:
+            event = threading.Event()
+            _runtime_inflight[key] = event
+            owner = True
+        else:
+            owner = False
 
-    return data.get("variables", [])
+    if not owner:
+        event.wait(timeout=0.25)
+        with _runtime_cache_lock:
+            cached = _runtime_cache.get(key)
+            if cached:
+                return cached[1]
+        return loader()
+
+    try:
+        value = loader()
+        with _runtime_cache_lock:
+            _runtime_cache[key] = (time.monotonic(), value)
+        return value
+    finally:
+        with _runtime_cache_lock:
+            event = _runtime_inflight.pop(key, None)
+            if event is not None:
+                event.set()
+
+
+def _get_internal_variables():
+    return _cached_read(
+        "internal:variables",
+        lambda: _http_json("GET", "/api/internal-variables").get("variables", []),
+    )
 
 
 def _get_internal_value(name):
-    variables = _get_internal_variables()
-
-    for variable in variables:
-        if str(variable.get("name")) == str(name):
+    wanted = str(name)
+    for variable in _get_internal_variables():
+        if str(variable.get("name")) == wanted:
             return variable.get("value")
-
-    raise ValueError(
-        f"Internal variable '{name}' not found"
-    )
+    raise ValueError(f"Internal variable '{name}' not found")
 
 
 def _read_tcp(device_name, register_type, source):
     if not device_name:
         raise ValueError("TCP Device Source is required")
 
-    address_type = _normalize_register_type(
-        register_type
-    )
-
+    address_type = _normalize_register_type(register_type)
     address = _address(source)
+    key = f"tcp:{device_name}:{address_type}:{address}"
 
-    data = _http_json(
-        "POST",
-        "/api/tcp/read",
-        {
-            "device_name": device_name,
-            "address_type": address_type,
-            "address": address,
-            "count": 1,
-        },
-    )
-
-    if not data.get("success", False):
-        raise RuntimeError(
-            data.get("message")
-            or "TCP read failed"
+    def loader():
+        data = _http_json(
+            "POST",
+            "/api/tcp/read",
+            {
+                "device_name": device_name,
+                "address_type": address_type,
+                "address": address,
+                "count": 1,
+            },
         )
+        if not data.get("success", False):
+            raise RuntimeError(data.get("message") or "TCP read failed")
+        return data.get("value")
 
-    return data.get("value")
+    return _cached_read(key, loader)
 
 
 def _get_rs232_devices():
@@ -476,7 +506,7 @@ class SpecificationRuntime:
                 self.results[key]["status"] = "trigger_error"
                 self.results[key]["error"] = str(exc)
 
-            time.sleep(0.1)
+            time.sleep(0.05)
 
         return False
 
@@ -498,7 +528,7 @@ class SpecificationRuntime:
                 self.results[key]["status"] = "trigger_error"
                 self.results[key]["error"] = str(exc)
 
-            time.sleep(0.1)
+            time.sleep(0.05)
 
         return False
 
@@ -924,7 +954,7 @@ class SpecificationTestSession:
                 self.error = str(exc)
                 self.message = f"Waiting for trigger... ({exc})"
 
-            time.sleep(0.1)
+            time.sleep(0.05)
 
         return False
 

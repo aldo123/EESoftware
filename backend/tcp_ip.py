@@ -248,6 +248,13 @@ class ModbusTCPClient:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+                # Reduce delayed ACK latency on Linux when the platform exposes it.
+                # Safe fallback on Windows/other platforms.
+                try:
+                    if hasattr(socket, "TCP_QUICKACK"):
+                        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_QUICKACK, 1)
+                except OSError:
+                    pass
                 s.settimeout(self.timeout)
 
                 print(
