@@ -170,7 +170,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
   } = useTCPPLC({
     devices: tcpDevices,
     enabled: Boolean(cpNumber),
-    pollInterval: 300,
+    pollInterval: 50,
   });
 
   // ============================================================

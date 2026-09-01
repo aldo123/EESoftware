@@ -1309,7 +1309,7 @@ export function RuntimeTestTable({ widget, getValue }) {
         };
 
         await poll();
-        if (!cancelled) timer = window.setInterval(poll, 200);
+        if (!cancelled) timer = window.setInterval(poll, 50);
       } catch (err) {
         if (cancelled) return;
 
