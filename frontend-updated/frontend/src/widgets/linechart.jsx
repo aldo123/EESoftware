@@ -7,6 +7,7 @@
 //   - RuntimeLineChart        how it looks/behaves on the live Dynamic CP Page
 //
 import { useInternalVariables } from "../hooks/useInternalVariables";
+import { useMemo, useState } from "react";
 import { LINECHART_ADDRESS_TYPES, LINECHART_SERIES_COLORS, PropInput, PropSection, createLineChartSeries, DEFAULT_VISUAL } from "./shared";
 
 // ────────────────────────────────────────────────────────────────
@@ -1029,6 +1030,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
 
 export function RuntimeLineChart({ widget, history = [], running = true }) {
   const p = widget.props || {};
+  const [hover, setHover] = useState(null);
 
   // Page Builder starts with ONE realtime series.
   // Additional series created with "Add Series" remain fully supported.
@@ -1115,6 +1117,93 @@ export function RuntimeLineChart({ widget, history = [], running = true }) {
 
     return points.join(" ");
   };
+
+  const getPointIndexFromPointer = event => {
+    const svg = event.currentTarget.ownerSVGElement;
+    if (!svg || !history.length) return null;
+
+    // Use the SVG's actual coordinate transform. This is important because
+    // the chart uses viewBox + preserveAspectRatio="none" and the widget can
+    // be resized/scaled by CSS. Bounding-rect arithmetic alone can produce
+    // an X offset.
+    let svgX;
+
+    try {
+      const ctm = svg.getScreenCTM();
+
+      if (ctm && typeof DOMPoint !== "undefined") {
+        const point = new DOMPoint(
+          event.clientX,
+          event.clientY
+        ).matrixTransform(ctm.inverse());
+
+        svgX = point.x;
+      }
+    } catch {
+      svgX = undefined;
+    }
+
+    // Fallback for browsers/environments without a usable SVG matrix.
+    if (!Number.isFinite(svgX)) {
+      const rect = svg.getBoundingClientRect();
+
+      if (!rect.width) return null;
+
+      svgX =
+        ((event.clientX - rect.left) / rect.width) * W;
+    }
+
+    const clampedX = Math.max(
+      left,
+      Math.min(chartRight, svgX)
+    );
+
+    // Find the actual recorded sample whose X coordinate is closest
+    // to the cursor.
+    let nearestIndex = null;
+    let nearestDistance = Infinity;
+
+    history.forEach((point, index) => {
+      const elapsed = Number(point?.elapsed);
+      if (!Number.isFinite(elapsed)) return;
+
+      const pointX = xForElapsed(elapsed);
+      const distance = Math.abs(pointX - clampedX);
+
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+
+    return nearestIndex;
+  };
+
+  const getHoverData = index => {
+    if (index === null || index === undefined) return null;
+
+    const point = history[index];
+    if (!point) return null;
+
+    const elapsed = Number(point.elapsed);
+
+    return {
+      index,
+      elapsed: Number.isFinite(elapsed) ? elapsed : 0,
+      values: series.map((s, seriesIndex) => {
+        const value = Number(point?.[s.id]);
+
+        return {
+          id: s.id || `series_${seriesIndex + 1}`,
+          label: s.label || `SERIES ${seriesIndex + 1}`,
+          color: getColor(s, seriesIndex),
+          value: Number.isFinite(value) ? value : null,
+        };
+      }),
+    };
+  };
+
+  const hoverData = getHoverData(hover?.index);
 
   const getLatestValue = s => {
     for (let i = history.length - 1; i >= 0; i -= 1) {
@@ -1574,6 +1663,134 @@ export function RuntimeLineChart({ widget, history = [], running = true }) {
               {maxDuration}s
             </text>
           </>
+        )}
+
+        {/* ========================================================
+            HOVER INSPECTION
+            Move the cursor over the trend to inspect the nearest
+            recorded sample: elapsed time + every series value.
+            This is UI-only and does not affect the 50 ms sampler.
+            ======================================================== */}
+        {hoverData && (
+          <g pointerEvents="none">
+            <line
+              x1={xForElapsed(hoverData.elapsed)}
+              y1={top}
+              x2={xForElapsed(hoverData.elapsed)}
+              y2={top + chartH}
+              stroke="var(--text-soft)"
+              strokeWidth="0.8"
+              strokeDasharray="3 3"
+              opacity="0.75"
+            />
+
+            {hoverData.values.map((item, index) => {
+              if (item.value === null) return null;
+
+              return (
+                <circle
+                  key={`hover-point-${item.id || index}`}
+                  cx={xForElapsed(hoverData.elapsed)}
+                  cy={yFor(item.value)}
+                  r="3.5"
+                  fill={item.color}
+                  stroke="#FFFFFF"
+                  strokeWidth="1"
+                />
+              );
+            })}
+          </g>
+        )}
+
+        {/* Transparent interaction layer */}
+        <rect
+          x={left}
+          y={top}
+          width={chartW}
+          height={chartH}
+          fill="transparent"
+          pointerEvents="all"
+          style={{ cursor: "crosshair" }}
+          onMouseMove={event => {
+            const index = getPointIndexFromPointer(event);
+            if (index !== null) {
+              setHover({ index });
+            }
+          }}
+          onMouseLeave={() => setHover(null)}
+        />
+
+        {/* Hover tooltip */}
+        {hoverData && (
+          <foreignObject
+            x={Math.min(
+              chartRight - 168,
+              Math.max(left + 6, xForElapsed(hoverData.elapsed) + 10)
+            )}
+            y={Math.max(8, top + 6)}
+            width="160"
+            height={Math.min(
+              150,
+              52 + hoverData.values.length * 23
+            )}
+            pointerEvents="none"
+          >
+            <div
+              xmlns="http://www.w3.org/1999/xhtml"
+              style={{
+                width: "160px",
+                boxSizing: "border-box",
+                padding: "8px 9px",
+                borderRadius: "7px",
+                background: "rgba(10, 16, 24, 0.94)",
+                border: "1px solid var(--panel-line)",
+                boxShadow: "0 6px 18px rgba(0,0,0,0.35)",
+                color: "#FFFFFF",
+                fontFamily: "sans-serif",
+                fontSize: "9px",
+                lineHeight: "1.35",
+              }}
+            >
+              <div style={{
+                fontWeight: 700,
+                marginBottom: "5px",
+                color: "var(--text-primary)"
+              }}>
+                TIME&nbsp;&nbsp;{hoverData.elapsed.toFixed(3)} s
+              </div>
+
+              {hoverData.values.map(item => (
+                <div
+                  key={`tooltip-${item.id}`}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: "8px",
+                    marginTop: "2px"
+                  }}
+                >
+                  <span style={{
+                    color: item.color,
+                    fontWeight: 600,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap"
+                  }}>
+                    {item.label}
+                  </span>
+                  <span style={{
+                    color: "#FFFFFF",
+                    fontWeight: 700
+                  }}>
+                    {item.value === null
+                      ? "--"
+                      : item.value.toFixed(decimals)}
+                    {unit ? ` ${unit}` : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </foreignObject>
         )}
 
         {/* Bottom-right status accent */}
