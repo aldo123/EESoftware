@@ -5,7 +5,7 @@ import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { API } from "../service/api";
 
 const API_BASE = `${API}/api/internal-variables`;
-const POLL_INTERVAL = 100;
+const POLL_INTERVAL = 50;
 const WRITE_DEBOUNCE_MS = 5;
 
 let state = { variables: [], byName: {}, byId: {}, loading: false, initialized: false, error: "" };
