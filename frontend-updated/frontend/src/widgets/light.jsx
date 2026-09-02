@@ -43,11 +43,40 @@ export const lightDef = {
     valueOn: 1,
     valueOff: 0,
 
-    shape: "circle",
-    showLabel: true,
+    
+
+    // State-specific text
+    onLabel: "ON",
+    offLabel: "OFF",
+    labelFontSize: 8,
+    labelFontWeight: 800,
+    labelCase: "uppercase",
+    onFontColor: "#FFFFFF",
+    offFontColor: "#FFFFFF",
+    labelAlign: "center",
+
+    // Futuristic appearance
+    lightSize: 44,
+    glowEnabled: true,
+    glowIntensity: 1,
+    glowSize: 24,
+    pulseEnabled: false,
+    pulseSpeed: 1.5,
+    flashEnabled: false,
+    flashSpeed: 2,
+    innerGlow: true,
+    highlightEnabled: true,
+    ringEnabled: true,
+    ringWidth: 1,
+    ringColor: "",
+    pillRadius: 999,
+    badgeBorderWidth: 1,
+    backgroundOpacity: 1,
 
     onColor: "var(--accent-cyan)",
     offColor: "var(--border-soft)",
+    offGlowEnabled: false,
+    offGlowIntensity: 0.25,
 
     width: 120,
     height: 60,
@@ -91,58 +120,219 @@ const isTcpDevice = (device) => {
 // PAGE BUILDER — CANVAS PREVIEW
 // ────────────────────────────────────────────────────────────────
 
-export function LightPreview({ widget }) {
-  const p = widget.props || {};
+const LIGHT_ANIMATION_STYLE = `
+@keyframes lightFuturisticPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.055); }
+}
+@keyframes lightFuturisticFlash {
+  0%, 44%, 100% { opacity: 1; }
+  50%, 54% { opacity: .2; }
+}
+`;
 
-  const isOn = p.builderState === 1;
-  const shape = p.shape || "circle";
+const getLightDisplayMode = (p) => {
+  const mode = String(p.displayMode ?? "").toLowerCase();
+  if (mode === "text") return "text";
+  if (mode === "pill") return "pill";
+  if (mode === "badge") return "badge";
+  if (mode === "square") return "square";
+  return "led";
+};
+
+const getLightStateText = (p, isOn) => {
+  const raw = isOn
+    ? (p.onLabel ?? p.label ?? "ON")
+    : (p.offLabel ?? p.label ?? "OFF");
+
+  const value = String(raw);
+  const casing = String(p.labelCase ?? "uppercase").toLowerCase();
+
+  if (casing === "lowercase") return value.toLowerCase();
+  if (casing === "capitalize") {
+    return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+  }
+  if (casing === "normal") return value;
+  return value.toUpperCase();
+};
+
+const LightVisual = ({ p, isOn, preview = false }) => {
+  const mode = getLightDisplayMode(p);
 
   const onColor = p.onColor || "var(--accent-cyan)";
   const offColor = p.offColor || "var(--border-soft)";
-  const currentColor = isOn ? onColor : offColor;
+  const stateColor = isOn ? onColor : offColor;
 
-  const label = p.label || "STATUS";
-  const showLabel = p.showLabel !== false;
+  const fontColor = isOn
+    ? (p.onFontColor || "#FFFFFF")
+    : (p.offFontColor || "#FFFFFF");
+
+  const text = getLightStateText(p, isOn);
+  const fontSize = Math.max(5, Number(p.labelFontSize ?? 8));
+  const fontWeight = Number(p.labelFontWeight ?? 800);
+
+  const glowSize = Math.max(0, Number(p.glowSize ?? 24));
+  const glowIntensity = Math.max(0, Number(p.glowIntensity ?? 1));
+  const offIntensity = Math.max(0, Number(p.offGlowIntensity ?? 0.25));
+
+  const shouldGlow =
+    p.glowEnabled !== false &&
+    (isOn || p.offGlowEnabled === true);
+
+  const animation = [
+    p.pulseEnabled && isOn
+      ? `lightFuturisticPulse ${Math.max(0.2, Number(p.pulseSpeed ?? 1.5))}s ease-in-out infinite`
+      : "",
+    p.flashEnabled && isOn
+      ? `lightFuturisticFlash ${Math.max(0.2, Number(p.flashSpeed ?? 2))}s linear infinite`
+      : "",
+  ].filter(Boolean).join(", ") || "none";
+
+  const commonTextStyle = {
+    color: fontColor,
+    fontSize: `${fontSize}px`,
+    fontWeight,
+    lineHeight: 1,
+    letterSpacing: p.labelCase === "normal" ? "0.01em" : "0.06em",
+    textAlign: p.labelAlign || "center",
+    textShadow: isOn
+      ? `0 0 7px ${onColor}, 0 1px 2px rgba(0,0,0,.9)`
+      : "0 1px 2px rgba(0,0,0,.9)",
+    whiteSpace: "nowrap",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+  };
+
+  if (mode === "text") {
+    return (
+      <div
+        className="flex items-center justify-center w-full h-full"
+        style={{
+          animation,
+          opacity: Number(p.backgroundOpacity ?? 1),
+        }}
+      >
+        <span style={commonTextStyle}>{text}</span>
+      </div>
+    );
+  }
+
+  const isPill = mode === "pill";
+  const isBadge = mode === "badge";
+  const isSquare = mode === "square";
+
+  // IMPORTANT:
+  // The widget itself is resizable by Page Builder through p.width/p.height.
+  // Do not keep the visual locked to a small fixed lightSize, otherwise
+  // the selection box grows while the actual Light stays small.
+  const widgetWidth = Math.max(20, Number(p.width ?? 120));
+  const widgetHeight = Math.max(20, Number(p.height ?? 60));
+  const configuredSize = Math.max(20, Number(p.lightSize ?? 44));
+
+  // For LED / Square, fill the available widget area while preserving
+  // the configured light size as a minimum/reference.
+  const baseSize = Math.max(
+    configuredSize,
+    Math.min(widgetWidth, widgetHeight)
+  );
+
+  const width = isPill
+    ? Math.max(64, widgetWidth)
+    : isBadge
+      ? Math.max(70, widgetWidth)
+      : Math.max(20, Math.min(widgetWidth, widgetHeight, baseSize));
+
+  const height = isPill || isBadge
+    ? Math.max(28, widgetHeight)
+    : Math.max(20, Math.min(widgetWidth, widgetHeight, baseSize));
+
+  const borderRadius = isPill
+    ? `${Number(p.pillRadius ?? 999)}px`
+    : isBadge
+      ? "7px"
+      : isSquare
+        ? "7px"
+        : "50%";
+
+  const gradient = isOn
+    ? `radial-gradient(circle at 32% 28%, #FFFFFF 0%, ${onColor} 20%, ${onColor} 62%, color-mix(in srgb, ${onColor} 55%, #000) 100%)`
+    : `radial-gradient(circle at 35% 30%, ${offColor}, color-mix(in srgb, ${offColor} 62%, #000) 100%)`;
+
+  const boxShadow = shouldGlow
+    ? `0 0 ${glowSize}px rgba(0,229,255,${Math.min(1, glowIntensity * (isOn ? .9 : offIntensity))})${p.innerGlow !== false ? ", inset 0 0 10px rgba(255,255,255,.22)" : ""}`
+    : p.innerGlow !== false
+      ? "inset 0 2px 7px rgba(0,0,0,.6)"
+      : "none";
 
   return (
     <div
-      className={`w-full h-full flex items-center justify-center ${
-        showLabel ? "gap-4" : ""
-      }`}
+      className="relative flex items-center justify-center"
+      style={{
+        width,
+        height,
+        borderRadius,
+        background: isPill || isBadge
+          ? `linear-gradient(180deg, color-mix(in srgb, ${stateColor} 25%, #0A1018), color-mix(in srgb, ${stateColor} 12%, #05090D))`
+          : gradient,
+        border: `${Math.max(0, Number(p.ringWidth ?? 1))}px solid ${
+          p.ringEnabled !== false
+            ? (p.ringColor || stateColor)
+            : "transparent"
+        }`,
+        boxShadow,
+        animation,
+        opacity: Number(p.backgroundOpacity ?? 1),
+        overflow: "hidden",
+      }}
     >
-      <div
-        className={`transition-all duration-300 ${
-          shape === "circle" ? "rounded-full" : "rounded-md"
-        }`}
-        style={{
-          width: 36,
-          height: 36,
-          background: `radial-gradient(circle at 35% 35%, ${
-            isOn ? onColor : "var(--panel-line)"
-          }, ${currentColor})`,
-          boxShadow: isOn
-            ? `0 0 24px ${onColor}, inset 0 -2px 4px rgba(0,0,0,0.4)`
-            : "inset 0 2px 6px rgba(0,0,0,0.6)",
-          border: `1px solid ${
-            isOn ? onColor : "var(--border-soft)"
-          }`,
-        }}
-      />
-
-      {showLabel && (
-        <span
-          className="font-bold uppercase tracking-widest text-sm"
+      {p.highlightEnabled !== false && (
+        <div
+          className="absolute pointer-events-none"
           style={{
-            color: isOn ? onColor : "var(--text-dim)",
-            textShadow: isOn
-              ? `0 0 12px ${onColor}`
-              : "none",
+            left: "12%",
+            top: "8%",
+            width: "38%",
+            height: "22%",
+            borderRadius: "50%",
+            background: "rgba(255,255,255,.72)",
+            filter: "blur(2px)",
+            opacity: isOn ? 1 : .18,
+            transform: "rotate(-25deg)",
           }}
+        />
+      )}
+
+      {p.showLabel !== false && (
+        <span
+          className="absolute inset-0 flex items-center justify-center px-2 pointer-events-none"
+          style={commonTextStyle}
         >
-          {label}
+          {text}
         </span>
       )}
     </div>
+  );
+};
+
+export function LightPreview({ widget }) {
+  const p = widget.props || {};
+  const isOn = p.builderState === 1;
+
+  return (
+    <>
+      <style>{LIGHT_ANIMATION_STYLE}</style>
+      <div
+        className="w-full h-full flex items-center justify-center"
+        style={{
+          width: "100%",
+          height: "100%",
+          minWidth: 0,
+          minHeight: 0,
+        }}
+      >
+        <LightVisual p={p} isOn={isOn} preview />
+      </div>
+    </>
   );
 }
 
@@ -378,31 +568,208 @@ export function LightPropertyPanel({
         </div>
       </PropSection>
 
-      <PropSection title="Light">
+
+      <PropSection title="Display / State Text">
         <PropInput
-          label="Shape"
+          label="Display Mode"
           options={[
-            { value: "circle", label: "Circle" },
+            { value: "led", label: "LED / Circle" },
             { value: "square", label: "Square" },
+            { value: "pill", label: "Pill" },
+            { value: "badge", label: "Badge" },
+            { value: "text", label: "Text Only" },
           ]}
-          value={p.shape ?? "circle"}
-          onChange={(v) => set("shape", v)}
+          value={p.displayMode ?? "led"}
+          onChange={(v) => set("displayMode", v)}
         />
 
         <PropInput
-          label="Show Label"
+          label="Show Text"
           type="checkbox"
           value={p.showLabel !== false}
           onChange={(v) => set("showLabel", v)}
         />
 
         {p.showLabel !== false && (
-          <PropInput
-            label="Label"
-            value={p.label ?? "STATUS"}
-            onChange={(v) => set("label", v)}
-          />
+          <>
+            <PropInput
+              label="ON Label"
+              value={p.onLabel ?? "ON"}
+              onChange={(v) => set("onLabel", v)}
+              placeholder="RUNNING / READY / ACTIVE"
+            />
+
+            <PropInput
+              label="OFF Label"
+              value={p.offLabel ?? "OFF"}
+              onChange={(v) => set("offLabel", v)}
+              placeholder="STOP / IDLE / ERROR"
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              <PropInput
+                label="Font Size"
+                type="number"
+                min={5}
+                max={80}
+                value={p.labelFontSize ?? 8}
+                onChange={(v) => set("labelFontSize", v === "" ? "" : Number(v))}
+              />
+
+              <PropInput
+                label="Font Weight"
+                type="number"
+                min={100}
+                max={900}
+                step={100}
+                value={p.labelFontWeight ?? 800}
+                onChange={(v) => set("labelFontWeight", v === "" ? "" : Number(v))}
+              />
+            </div>
+
+            <PropInput
+              label="Text Case"
+              options={[
+                { value: "uppercase", label: "UPPERCASE" },
+                { value: "lowercase", label: "lowercase" },
+                { value: "capitalize", label: "Capitalize" },
+                { value: "normal", label: "Normal" },
+              ]}
+              value={p.labelCase ?? "uppercase"}
+              onChange={(v) => set("labelCase", v)}
+            />
+
+            <PropInput
+              label="ON Font Color"
+              type="color"
+              value={p.onFontColor ?? "#FFFFFF"}
+              onChange={(v) => set("onFontColor", v)}
+            />
+
+            <PropInput
+              label="OFF Font Color"
+              type="color"
+              value={p.offFontColor ?? "#FFFFFF"}
+              onChange={(v) => set("offFontColor", v)}
+            />
+          </>
         )}
+      </PropSection>
+
+      <PropSection title="Futuristic Appearance">
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Light Size"
+            type="number"
+            min={20}
+            max={300}
+            value={p.lightSize ?? 44}
+            onChange={(v) => set("lightSize", v === "" ? "" : Number(v))}
+          />
+
+          <PropInput
+            label="Background Opacity"
+            type="number"
+            min={0}
+            max={1}
+            step={0.05}
+            value={p.backgroundOpacity ?? 1}
+            onChange={(v) => set("backgroundOpacity", v === "" ? "" : Number(v))}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Glow"
+            type="checkbox"
+            value={p.glowEnabled !== false}
+            onChange={(v) => set("glowEnabled", v)}
+          />
+          <PropInput
+            label="Inner Glow"
+            type="checkbox"
+            value={p.innerGlow !== false}
+            onChange={(v) => set("innerGlow", v)}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Glow Size"
+            type="number"
+            min={0}
+            max={120}
+            value={p.glowSize ?? 24}
+            onChange={(v) => set("glowSize", v === "" ? "" : Number(v))}
+          />
+          <PropInput
+            label="Glow Intensity"
+            type="number"
+            min={0}
+            max={2}
+            step={0.05}
+            value={p.glowIntensity ?? 1}
+            onChange={(v) => set("glowIntensity", v === "" ? "" : Number(v))}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Pulse"
+            type="checkbox"
+            value={p.pulseEnabled === true}
+            onChange={(v) => set("pulseEnabled", v)}
+          />
+          <PropInput
+            label="Flash"
+            type="checkbox"
+            value={p.flashEnabled === true}
+            onChange={(v) => set("flashEnabled", v)}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Pulse Speed"
+            type="number"
+            min={0.2}
+            max={10}
+            step={0.1}
+            value={p.pulseSpeed ?? 1.5}
+            onChange={(v) => set("pulseSpeed", v === "" ? "" : Number(v))}
+          />
+          <PropInput
+            label="Flash Speed"
+            type="number"
+            min={0.2}
+            max={10}
+            step={0.1}
+            value={p.flashSpeed ?? 2}
+            onChange={(v) => set("flashSpeed", v === "" ? "" : Number(v))}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <PropInput
+            label="Highlight"
+            type="checkbox"
+            value={p.highlightEnabled !== false}
+            onChange={(v) => set("highlightEnabled", v)}
+          />
+          <PropInput
+            label="Outer Ring"
+            type="checkbox"
+            value={p.ringEnabled !== false}
+            onChange={(v) => set("ringEnabled", v)}
+          />
+        </div>
+
+        <PropInput
+          label="Ring Color"
+          type="color"
+          value={p.ringColor || p.onColor || "#00E5FF"}
+          onChange={(v) => set("ringColor", v)}
+        />
       </PropSection>
 
       <PropSection title="ON State Appearance">
@@ -434,28 +801,14 @@ export function RuntimeLight({ widget, value }) {
   const p = widget.props || {};
   const v = getVisual(p);
 
-  const {
-    getValue: getInternalValue,
-  } = useInternalVariables();
+  const { getValue: getInternalValue } = useInternalVariables();
 
-  const readTarget =
-    p.readTarget === "internal"
-      ? "internal"
-      : "tcp";
+  const readTarget = p.readTarget === "internal" ? "internal" : "tcp";
+  const variableName = String(p.variable || "").trim();
 
-  const variableName = String(
-    p.variable || ""
-  ).trim();
-
-  // IMPORTANT:
-  // Internal Variable mode does NOT use the PLC `value` prop.
-  // It reads directly from the shared internal-variable cache.
   const runtimeValue =
     readTarget === "internal"
-      ? getInternalValue(
-          variableName,
-          p.valueOff ?? 0
-        )
+      ? getInternalValue(variableName, p.valueOff ?? 0)
       : value;
 
   const valueOn = p.valueOn ?? 1;
@@ -466,65 +819,22 @@ export function RuntimeLight({ widget, value }) {
     String(runtimeValue).toLowerCase() === "true" ||
     String(runtimeValue).toLowerCase() === "on";
 
-  const onColor =
-    p.onColor ||
-    v.accentColor ||
-    "var(--accent-cyan)";
-
-  const offColor =
-    p.offColor ||
-    "var(--border-soft)";
-
-  const showLabel = p.showLabel !== false;
-
   return (
-    <div
-      className="absolute flex items-center justify-center"
-      style={{
-        left: widget.x,
-        top: widget.y,
-        width: p.width,
-        height: p.height,
-      }}
-    >
+    <>
+      <style>{LIGHT_ANIMATION_STYLE}</style>
       <div
-        className="transition-all duration-300"
+        className="absolute flex items-center justify-center"
         style={{
-          width: 36,
-          height: 36,
-          borderRadius:
-            p.shape === "square" ? 6 : "50%",
-
-          background: isOn
-            ? `radial-gradient(circle at 35% 35%, #FFFFFF, ${onColor} 42%, ${onColor})`
-            : offColor,
-
-          border: `1px solid ${
-            isOn ? onColor : v.borderColor
-          }`,
-
-          boxShadow: isOn
-            ? `0 0 24px ${onColor}, inset 0 -2px 4px rgba(0,0,0,0.4)`
-            : "inset 0 2px 6px rgba(0,0,0,0.6)",
+          left: widget.x,
+          top: widget.y,
+          width: Number(p.width ?? 120),
+          height: Number(p.height ?? 60),
+          minWidth: 0,
+          minHeight: 0,
         }}
-      />
-
-      {showLabel && (
-        <span
-          className="ml-4 font-bold uppercase tracking-widest text-sm"
-          style={{
-            color: isOn
-              ? onColor
-              : v.secondaryTextColor,
-
-            textShadow: isOn
-              ? `0 0 12px ${onColor}`
-              : "none",
-          }}
-        >
-          {p.label || "STATUS"}
-        </span>
-      )}
-    </div>
+      >
+        <LightVisual p={p} isOn={isOn} />
+      </div>
+    </>
   );
 }
