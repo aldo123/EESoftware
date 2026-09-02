@@ -47,6 +47,8 @@ export const gaugeDef = {
 
       // Visual behavior
       showValue: true,
+      // Shared font size for the Gauge Value + Unit.
+      valueUnitFontSize: 20,
       showScale: true,
       showMinMax: true,
       showIcon: true,
@@ -345,7 +347,7 @@ export function GaugePreview({ widget }) {
             y="132"
             textAnchor="middle"
             fill={textColor}
-            fontSize="20"
+            fontSize={Number(p.valueUnitFontSize ?? 20)}
             fontWeight="700"
             letterSpacing="-0.4"
           >
@@ -356,10 +358,10 @@ export function GaugePreview({ widget }) {
         {/* Unit - same size as title */}
         <text
           x={cx}
-          y="145"
+          y="155"
           textAnchor="middle"
           fill={p.unitColor || accent}
-          fontSize={Number(p.titleSize ?? 8)}
+          fontSize={Number(p.valueUnitFontSize ?? 20)}
           fontWeight="600"
           letterSpacing="1.1"
         >
@@ -544,6 +546,15 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
       <div className="text-[8px] text-[var(--text-dim)] -mt-1">
         Suggested: {GAUGE_TYPES.find(g => g.value === (p.gaugeType || "temp"))?.unit || ""}
       </div>
+
+      <PropInput
+        label="Value + Unit Font Size"
+        type="number"
+        min={8}
+        max={48}
+        value={p.valueUnitFontSize ?? 20}
+        onChange={v => set("valueUnitFontSize", v === "" ? "" : Number(v))}
+      />
 
       <div className="grid grid-cols-2 gap-2">
         <PropInput
@@ -996,7 +1007,7 @@ export function RuntimeGauge({ widget, value }) {
               y="132"
               textAnchor="middle"
               fill={textColor}
-              fontSize="20"
+              fontSize={Number(p.valueUnitFontSize ?? 20)}
               fontWeight="700"
               letterSpacing="-0.4"
             >
@@ -1004,13 +1015,13 @@ export function RuntimeGauge({ widget, value }) {
             </text>
           )}
 
-          {/* Unit - same size as title */}
+          {/* Unit - same font size as Value, with deliberate vertical spacing */}
           <text
             x={cx}
-            y="145"
+            y="155"
             textAnchor="middle"
             fill={p.unitColor || accent}
-            fontSize={Number(p.titleSize ?? 8)}
+            fontSize={Number(p.valueUnitFontSize ?? 20)}
             fontWeight="600"
             letterSpacing="1.1"
           >

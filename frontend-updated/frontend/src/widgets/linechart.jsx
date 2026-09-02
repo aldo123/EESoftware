@@ -49,6 +49,8 @@ export const linechartDef = {
       showGrid: true,
       showLegend: true,
       showCurrentValue: true,
+      // Shared font size for realtime Value + Unit.
+      valueUnitFontSize: 20,
       showTimeAxis: true,
 
       // Appearance
@@ -537,7 +539,7 @@ export function LineChartPreview({ widget }) {
                   x={separatorX + 20}
                   y={y + 5}
                   fill={color}
-                  fontSize="20"
+                  fontSize={Number(p.valueUnitFontSize ?? 20)}
                   fontWeight="500"
                   letterSpacing="-0.4"
                 >
@@ -549,7 +551,7 @@ export function LineChartPreview({ widget }) {
                     x={separatorX + 92}
                     y={y + 4}
                     fill={color}
-                    fontSize="8"
+                    fontSize={Number(p.valueUnitFontSize ?? 20)}
                     fontWeight="600"
                   >
                     {unit}
@@ -637,6 +639,14 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
         max={4}
         value={p.decimals ?? 1}
         onChange={v => set("decimals", v === "" ? "" : Number(v))}
+      />
+      <PropInput
+        label="Value + Unit Font Size"
+        type="number"
+        min={8}
+        max={48}
+        value={p.valueUnitFontSize ?? 20}
+        onChange={v => set("valueUnitFontSize", v === "" ? "" : Number(v))}
       />
     </PropSection>
 
@@ -1432,7 +1442,7 @@ export function RuntimeLineChart({ widget, history = [], running = true }) {
                     x={chartRight + 18}
                     y={rowTop + 29}
                     fill={color}
-                    fontSize="20"
+                    fontSize={Number(p.valueUnitFontSize ?? 20)}
                     fontWeight="500"
                     letterSpacing="-0.3"
                   >
@@ -1448,7 +1458,7 @@ export function RuntimeLineChart({ widget, history = [], running = true }) {
                       x={chartRight + 104}
                       y={rowTop + 29}
                       fill={color}
-                      fontSize="9"
+                      fontSize={Number(p.valueUnitFontSize ?? 20)}
                       fontWeight="600"
                     >
                       {unit}

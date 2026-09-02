@@ -1079,12 +1079,67 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
           )}
 
           {String(p.inputSource || "").toLowerCase() === "com" && (
-            <PropInput
-              label="Source Device"
-              value={p.sourceDevice || ""}
-              onChange={(v) => set("sourceDevice", v)}
-              placeholder="Scanner / COM source"
-            />
+            <div>
+              <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                COM / RS232 Device
+              </label>
+              <select
+                value={p.sourceDevice || ""}
+                onChange={(e) => set("sourceDevice", e.target.value)}
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+              >
+                <option value="">Select COM / RS232 device...</option>
+                {availableDevices
+                  .filter((dev) => {
+                    const type = String(
+                      dev?.type ??
+                      dev?.Type ??
+                      ""
+                    ).trim().toUpperCase();
+
+                    return (
+                      type === "COM" ||
+                      type === "RS232" ||
+                      type === "SERIAL" ||
+                      type === "MODBUS_RTU"
+                    );
+                  })
+                  .map((dev) => (
+                    <option
+                      key={`${dev.type || dev.Type || "RS232"}-${dev.name || dev["Device Name"] || dev.port || dev["COM Port"]}`}
+                      value={dev.name || dev["Device Name"] || dev.device_name || dev.port || dev["COM Port"] || ""}
+                    >
+                      {(dev.name ||
+                        dev["Device Name"] ||
+                        dev.device_name ||
+                        dev.port ||
+                        dev["COM Port"] ||
+                        "RS232")}
+                      {dev.connection ? ` — ${dev.connection}` : ""}
+                      {dev.connected === false ? " — Disconnected" : ""}
+                    </option>
+                  ))}
+              </select>
+
+              {availableDevices.filter((dev) => {
+                const type = String(
+                  dev?.type ??
+                  dev?.Type ??
+                  ""
+                ).trim().toUpperCase();
+
+                return (
+                  type === "COM" ||
+                  type === "RS232" ||
+                  type === "SERIAL" ||
+                  type === "MODBUS_RTU"
+                );
+              }).length === 0 && (
+                <div className="text-[8px] text-[var(--accent-amber)] mt-1">
+                  No COM / RS232 device configured.
+                </div>
+              )}
+            </div>
           )}
 
           {p.textMode === "write" && String(p.inputSource || "tcp").toLowerCase() === "com" && (

@@ -372,7 +372,9 @@ function TableView({ widget, getValue, rowsOverride, resultMap = {} }) {
 
           <thead
             className={p.stickyHeader !== false ? "sticky top-0 z-10" : ""}
-            style={{ background: p.headerGradient || p.headerColor }}
+            style={{
+              background: p.headerColor || "#162238"
+            }}
           >
             <tr style={{ height: Number(p.headerHeight) || 34 }}>
               {headers.map((h, i) => (
@@ -711,9 +713,8 @@ function TestItemsSettings({ rows, onSave, onClose, availableDevices = [] }) {
           </span>
           {message && (
             <span
-              className={`text-[10px] font-bold ml-auto ${
-                message.startsWith("✓") ? "text-[#22C55E]" : "text-[#EF4444]"
-              }`}
+              className={`text-[10px] font-bold ml-auto ${message.startsWith("✓") ? "text-[#22C55E]" : "text-[#EF4444]"
+                }`}
             >
               {message}
             </span>
@@ -1049,15 +1050,15 @@ export function TestTablePropertyPanel({ p, set, setProps, availableDevices = []
         </div>
 
         <div className="text-[8px] uppercase tracking-wider text-[var(--text-muted)] mt-3 mb-1">Colors</div>
-        {[["Table Background","backgroundColor"],["Header Background","headerColor"],["Alternate Row","rowAltColor"],["Hover Row","hoverColor"],["Border","borderColor"],["Grid","gridColor"],["Title Text","titleColor"],["Header Text","headerTextColor"],["Text","textColor"],["Secondary Text","secondaryTextColor"],["Testing Value","valueColor"],["PASS Text","passColor"],["PASS Background","passBgColor"],["FAIL Text","failColor"],["FAIL Background","failBgColor"],["WAITING Text","waitingColor"],["WAITING Background","waitingBgColor"]].map(([l,k]) => color(l,k))}
+        {[["Table Background", "backgroundColor"], ["Header Background", "headerColor"], ["Alternate Row", "rowAltColor"], ["Hover Row", "hoverColor"], ["Border", "borderColor"], ["Grid", "gridColor"], ["Title Text", "titleColor"], ["Header Text", "headerTextColor"], ["Text", "textColor"], ["Secondary Text", "secondaryTextColor"], ["Testing Value", "valueColor"], ["PASS Text", "passColor"], ["PASS Background", "passBgColor"], ["FAIL Text", "failColor"], ["FAIL Background", "failBgColor"], ["WAITING Text", "waitingColor"], ["WAITING Background", "waitingBgColor"]].map(([l, k]) => color(l, k))}
 
         <div className="text-[8px] uppercase tracking-wider text-[var(--text-muted)] mt-3 mb-1">Typography & Layout</div>
-        {[["Title Size","titleFontSize",8,28],["Header Size","headerFontSize",7,24],["Row Size","rowFontSize",7,24],["Value Size","valueFontSize",7,28],["Result Size","resultFontSize",7,24],["Title Height","titleHeight",20,80],["Header Height","headerHeight",20,80],["Row Height","rowHeight",20,100],["Cell Padding","cellPadding",0,24],["Border Radius","borderRadius",0,24],["Border Width","borderWidth",0,5],["Grid Width","gridWidth",0,5]].map(([l,k,min,max]) => number(l,k,min,max))}
+        {[["Title Size", "titleFontSize", 8, 28], ["Header Size", "headerFontSize", 7, 24], ["Row Size", "rowFontSize", 7, 24], ["Value Size", "valueFontSize", 7, 28], ["Result Size", "resultFontSize", 7, 24], ["Title Height", "titleHeight", 20, 80], ["Header Height", "headerHeight", 20, 80], ["Row Height", "rowHeight", 20, 100], ["Cell Padding", "cellPadding", 0, 24], ["Border Radius", "borderRadius", 0, 24], ["Border Width", "borderWidth", 0, 5], ["Grid Width", "gridWidth", 0, 5]].map(([l, k, min, max]) => number(l, k, min, max))}
 
         <div className="text-[8px] uppercase tracking-wider text-[var(--text-muted)] mt-3 mb-1">Behavior</div>
-        {[["Show Title","showTitle"],["Show Grid","showGrid"],["Zebra Rows","zebraRows"],["Hover Rows","hoverRows"],["Sticky Header","stickyHeader"],["Uppercase Header","uppercaseHeader"],["Result Icon","resultIcon"],["Blink FAIL","blinkFail"],["Blink PASS","blinkPass"]].map(([l,k]) => toggle(l,k))}
+        {[["Show Title", "showTitle"], ["Show Grid", "showGrid"], ["Zebra Rows", "zebraRows"], ["Hover Rows", "hoverRows"], ["Sticky Header", "stickyHeader"], ["Uppercase Header", "uppercaseHeader"], ["Result Icon", "resultIcon"], ["Blink FAIL", "blinkFail"], ["Blink PASS", "blinkPass"]].map(([l, k]) => toggle(l, k))}
         <label className="block text-[9px] text-[var(--text-secondary)] mt-1">Result Style<select value={ap.resultStyle} onChange={(e) => setAppearance("resultStyle", e.target.value)} className="mt-1 w-full h-8 rounded-lg bg-[var(--bg-surface)] border border-[var(--border)] px-2 text-[var(--text-primary)]"><option value="badge">Badge</option><option value="text">Text</option></select></label>
-        {number("Decimal Digits","valueDecimals",0,8)}
+        {number("Decimal Digits", "valueDecimals", 0, 8)}
         <PropInput label="Value Prefix" value={ap.valuePrefix || ""} onChange={(v) => setAppearance("valuePrefix", v)} />
         <PropInput label="Value Suffix" value={ap.valueSuffix || ""} onChange={(v) => setAppearance("valueSuffix", v)} />
       </PropSection>
@@ -1225,9 +1226,9 @@ export function RuntimeTestTable({ widget, getValue }) {
         const spec = detailData?.specification ?? detailData;
         const rows = Array.isArray(spec?.rows)
           ? spec.rows.map((row, index) => ({
-              ...row,
-              id: row?.id ?? `spec_${found.id}_${index}`,
-            }))
+            ...row,
+            id: row?.id ?? `spec_${found.id}_${index}`,
+          }))
           : [];
 
         if (cancelled) return;
@@ -1342,7 +1343,7 @@ export function RuntimeTestTable({ widget, getValue }) {
         fetch(`${API}/api/specifications/runtime/stop/${encodeURIComponent(id)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-        }).catch(() => {});
+        }).catch(() => { });
       }
     };
   }, []);
