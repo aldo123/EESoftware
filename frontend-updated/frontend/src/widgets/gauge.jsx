@@ -416,7 +416,7 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
           { label: "TCP/IP Device", value: "device" },
           { label: "Internal Variable", value: "internal" }
         ]}
-        value={p.dataSource || "device"}
+        value={p.dataSource ?? "device"}
         onChange={(v) => set("dataSource", v)}
       />
 
@@ -425,13 +425,13 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
           <PropInput
             label="Address Type"
             options={GAUGE_ADDRESS_TYPES}
-            value={p.addressType || "holding_register"}
+            value={p.addressType ?? "holding_register"}
             onChange={(v) => set("addressType", v)}
           />
 
           <PropInput
             label="Address"
-            value={p.address || ""}
+            value={p.address ?? ""}
             onChange={(v) => set("address", v)}
             placeholder="D100 / M100"
           />
@@ -450,7 +450,7 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
             </label>
 
             <select
-              value={p.internalVariable || ""}
+              value={p.internalVariable ?? ""}
               onChange={(e) => set("internalVariable", e.target.value)}
               className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
             >
@@ -532,13 +532,13 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
 
       <PropInput
         label="Title"
-        value={p.title || "VALUE"}
+        value={p.title ?? "VALUE"}
         onChange={v => set("title", v)}
       />
 
       <PropInput
         label="Unit"
-        value={p.unit || ""}
+        value={p.unit ?? ""}
         onChange={v => set("unit", v)}
       />
       <div className="text-[8px] text-[var(--text-dim)] -mt-1">
@@ -552,7 +552,7 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
           min={12}
           max={48}
           value={p.iconSize ?? 25}
-          onChange={v => set("iconSize", Number(v))}
+          onChange={v => set("iconSize", v === "" ? "" : Number(v))}
         />
 
         <PropInput
@@ -561,7 +561,7 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
           min={7}
           max={24}
           value={p.titleSize ?? 10}
-          onChange={v => set("titleSize", Number(v))}
+          onChange={v => set("titleSize", v === "" ? "" : Number(v))}
         />
       </div>
 
@@ -588,14 +588,14 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
           label="Min"
           type="number"
           value={p.min ?? 0}
-          onChange={v => set("min", Number(v))}
+          onChange={v => set("min", v === "" ? "" : Number(v))}
         />
 
         <PropInput
           label="Max"
           type="number"
           value={p.max ?? 100}
-          onChange={v => set("max", Number(v))}
+          onChange={v => set("max", v === "" ? "" : Number(v))}
         />
       </div>
 
@@ -605,7 +605,7 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
         min={0}
         max={4}
         value={p.decimals ?? 1}
-        onChange={v => set("decimals", Number(v))}
+        onChange={v => set("decimals", v === "" ? "" : Number(v))}
       />
     </PropSection>
 
@@ -616,7 +616,7 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
         value={p.simulationValue ?? p.min ?? 0}
         min={Number(p.min ?? 0)}
         max={Number(p.max ?? 100)}
-        onChange={v => set("simulationValue", Number(v))}
+        onChange={v => set("simulationValue", v === "" ? "" : Number(v))}
       />
 
       <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
@@ -658,35 +658,35 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
       <PropInput
         label="Gauge Background"
         type="color"
-        value={p.backgroundColor || "var(--panel-canvas)"}
+        value={p.backgroundColor ?? "var(--panel-canvas)"}
         onChange={v => set("backgroundColor", v)}
       />
 
       <PropInput
         label="Gauge Border"
         type="color"
-        value={p.borderColor || "var(--panel-mid)"}
+        value={p.borderColor ?? "var(--panel-mid)"}
         onChange={v => set("borderColor", v)}
       />
 
       <PropInput
         label="Progress Color"
         type="color"
-        value={p.progressColor || "var(--accent-cyan)"}
+        value={p.progressColor ?? "var(--accent-cyan)"}
         onChange={v => set("progressColor", v)}
       />
 
       <PropInput
         label="Track Color"
         type="color"
-        value={p.trackColor || "var(--panel-mid)"}
+        value={p.trackColor ?? "var(--panel-mid)"}
         onChange={v => set("trackColor", v)}
       />
 
       <PropInput
         label="Text / Value Color"
         type="color"
-        value={p.textColor || "#FFFFFF"}
+        value={p.textColor ?? "#FFFFFF"}
         onChange={v => set("textColor", v)}
       />
 
@@ -707,7 +707,7 @@ export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
       <PropInput
         label="Tick / Scale Color"
         type="color"
-        value={p.labelColor || "var(--panel-line)"}
+        value={p.labelColor ?? "var(--panel-line)"}
         onChange={v => set("labelColor", v)}
       />
     </PropSection>

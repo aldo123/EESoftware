@@ -297,10 +297,10 @@ export function IconDupe() { return (<svg width="12" height="12" viewBox="0 0 24
 
 export function PropInput({ label, value, onChange, type = "text", options, min, max }) {
   return (<div className="flex flex-col gap-0.5"><span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">{label}</span>
-    {options ? (<select value={value} onChange={e => onChange(e.target.value)} className="bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[var(--accent-green)]/60">{options.map(o => (<option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>))}</select>) :
+    {options ? (<select value={value ?? ""} onChange={e => onChange(e.target.value)} className="bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[var(--accent-green)]/60">{options.map(o => (<option key={o.value ?? o} value={o.value ?? o}>{o.label ?? o}</option>))}</select>) :
       type === "checkbox" ? (<label className="flex items-center gap-1.5 cursor-pointer"><input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} className="accent-[var(--accent-green)]" /><span className="text-[10px] text-[var(--text-primary)]">{label}</span></label>) :
-        type === "color" ? (<div className="flex items-center gap-2"><input type="color" value={value} onChange={e => onChange(e.target.value)} className="w-7 h-7 rounded cursor-pointer bg-transparent border border-[var(--border)]" /><input type="text" value={value} onChange={e => onChange(e.target.value)} className="flex-1 bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none font-mono" /></div>) :
-          (<input type={type} value={value} min={min} max={max} onChange={e => onChange(type === "number" ? Number(e.target.value) : e.target.value)} className="bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[var(--accent-green)]/60" />)}
+        type === "color" ? (<div className="flex items-center gap-2"><input type="color" value={value || "#000000"} onChange={e => onChange(e.target.value)} className="w-7 h-7 rounded cursor-pointer bg-transparent border border-[var(--border)]" /><input type="text" value={value ?? ""} onChange={e => onChange(e.target.value)} className="flex-1 bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none font-mono" /></div>) :
+          (<input type={type} value={value} min={min} max={max} onChange={e => onChange(type === "number" ? (e.target.value === "" ? "" : Number(e.target.value)) : e.target.value)} className="bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[var(--accent-green)]/60" />)}
   </div>);
 }
 
@@ -451,7 +451,7 @@ export function ParamFieldsEditor({ fields, onChange, availableDevices = [] }) {
               </button>
             </div>
 
-            <PropInput label="Label" value={field.label || ""} onChange={v => updateField(idx, "label", v)} />
+            <PropInput label="Label" value={field.label ?? ""} onChange={v => updateField(idx, "label", v)} />
             <PropInput label="Kind" options={PARAM_KIND_OPTIONS} value={field.kind || "value"} onChange={v => updateField(idx, "kind", v)} />
 
             <div>
@@ -492,11 +492,11 @@ export function ParamFieldsEditor({ fields, onChange, availableDevices = [] }) {
             {field.kind === "value" && (
               <>
                 <div className="grid grid-cols-3 gap-2">
-                  <PropInput label="Min" type="number" value={field.min ?? 0} onChange={v => updateField(idx, "min", Number(v))} />
-                  <PropInput label="Max" type="number" value={field.max ?? 100} onChange={v => updateField(idx, "max", Number(v))} />
-                  <PropInput label="Step" type="number" value={field.step ?? 1} onChange={v => updateField(idx, "step", Number(v))} />
+                  <PropInput label="Min" type="number" value={field.min ?? 0} onChange={v => updateField(idx, "min", v === "" ? "" : Number(v))} />
+                  <PropInput label="Max" type="number" value={field.max ?? 100} onChange={v => updateField(idx, "max", v === "" ? "" : Number(v))} />
+                  <PropInput label="Step" type="number" value={field.step ?? 1} onChange={v => updateField(idx, "step", v === "" ? "" : Number(v))} />
                 </div>
-                <PropInput label="Unit" value={field.unit || ""} onChange={v => updateField(idx, "unit", v)} />
+                <PropInput label="Unit" value={field.unit ?? ""} onChange={v => updateField(idx, "unit", v)} />
               </>
             )}
           </div>

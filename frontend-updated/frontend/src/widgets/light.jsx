@@ -177,7 +177,7 @@ export function LightPropertyPanel({
             { value: "tcp", label: "TCP / PLC" },
             { value: "internal", label: "Internal Variable" },
           ]}
-          value={p.readTarget || "tcp"}
+          value={p.readTarget ?? "tcp"}
           onChange={(v) => {
             set("readTarget", v);
 
@@ -210,7 +210,7 @@ export function LightPropertyPanel({
                 }`,
               })),
             ]}
-            value={p.variable || ""}
+            value={p.variable ?? ""}
             onChange={(v) => set("variable", v)}
           />
 
@@ -224,14 +224,14 @@ export function LightPropertyPanel({
               label="Value ON"
               type="number"
               value={p.valueOn ?? 1}
-              onChange={(v) => set("valueOn", Number(v))}
+              onChange={(v) => set("valueOn", v === "" ? "" : Number(v))}
             />
 
             <PropInput
               label="Value OFF"
               type="number"
               value={p.valueOff ?? 0}
-              onChange={(v) => set("valueOff", Number(v))}
+              onChange={(v) => set("valueOff", v === "" ? "" : Number(v))}
             />
           </div>
         </PropSection>
@@ -245,7 +245,7 @@ export function LightPropertyPanel({
                 </label>
 
                 <select
-                  value={p.device || ""}
+                  value={p.device ?? ""}
                   onChange={(e) =>
                     set("device", e.target.value)
                   }
@@ -277,7 +277,7 @@ export function LightPropertyPanel({
 
               <PropInput
                 label="Address"
-                value={p.address || ""}
+                value={p.address ?? ""}
                 onChange={(v) => set("address", v)}
                 placeholder="D100 / M100"
               />
@@ -288,7 +288,7 @@ export function LightPropertyPanel({
             <PropInput
               label="Address Type"
               options={LIGHT_ADDRESS_TYPES}
-              value={p.addressType || "coil"}
+              value={p.addressType ?? "coil"}
               onChange={(v) => set("addressType", v)}
             />
           </PropSection>
@@ -296,7 +296,7 @@ export function LightPropertyPanel({
           <PropSection title="Data Binding">
             <PropInput
               label="Variable"
-              value={p.variable || ""}
+              value={p.variable ?? ""}
               onChange={(v) => set("variable", v)}
             />
 
@@ -311,7 +311,7 @@ export function LightPropertyPanel({
                 type="number"
                 value={p.valueOn ?? 1}
                 onChange={(v) =>
-                  set("valueOn", Number(v))
+                  set("valueOn", v === "" ? "" : Number(v))
                 }
               />
 
@@ -320,7 +320,7 @@ export function LightPropertyPanel({
                 type="number"
                 value={p.valueOff ?? 0}
                 onChange={(v) =>
-                  set("valueOff", Number(v))
+                  set("valueOff", v === "" ? "" : Number(v))
                 }
               />
             </div>
@@ -385,7 +385,7 @@ export function LightPropertyPanel({
             { value: "circle", label: "Circle" },
             { value: "square", label: "Square" },
           ]}
-          value={p.shape || "circle"}
+          value={p.shape ?? "circle"}
           onChange={(v) => set("shape", v)}
         />
 
@@ -399,7 +399,7 @@ export function LightPropertyPanel({
         {p.showLabel !== false && (
           <PropInput
             label="Label"
-            value={p.label || "STATUS"}
+            value={p.label ?? "STATUS"}
             onChange={(v) => set("label", v)}
           />
         )}
@@ -409,7 +409,7 @@ export function LightPropertyPanel({
         <PropInput
           label="Color ON"
           type="color"
-          value={p.onColor || "var(--accent-cyan)"}
+          value={p.onColor ?? "var(--accent-cyan)"}
           onChange={(v) => set("onColor", v)}
         />
       </PropSection>
@@ -418,7 +418,7 @@ export function LightPropertyPanel({
         <PropInput
           label="Color OFF"
           type="color"
-          value={p.offColor || "var(--border-soft)"}
+          value={p.offColor ?? "var(--border-soft)"}
           onChange={(v) => set("offColor", v)}
         />
       </PropSection>

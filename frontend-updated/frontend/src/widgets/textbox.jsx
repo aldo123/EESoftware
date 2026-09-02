@@ -726,18 +726,23 @@ function TextBoxSurface({ p, textValue, preview = false }) {
           The dark/background fill is clipped to the capsule itself.
           The rectangular area outside the capsule stays fully transparent. */}
       {frameStyle === "capsule" && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            borderRadius: "999px",
-            background:
-              p.frameBackground || "rgba(3, 18, 30, 0.88)",
-            boxSizing: "border-box",
-            zIndex: 0,
-            pointerEvents: "none",
-          }}
-        >
+        <>
+          {/* Background opacity affects ONLY the capsule background. */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              borderRadius: "999px",
+              background:
+                p.frameBackground || "rgba(3, 18, 30, 0.88)",
+              opacity: clamp(p.frameBackgroundOpacity ?? 0.88, 0, 1),
+              boxSizing: "border-box",
+              zIndex: 0,
+              pointerEvents: "none",
+            }}
+          />
+
+          {/* Frame opacity affects ONLY the capsule frame. */}
           <div
             style={{
               position: "absolute",
@@ -751,9 +756,11 @@ function TextBoxSurface({ p, textValue, preview = false }) {
                     Math.max(4, glowIntensity * 0.4)
                   }px ${frameColor}18`
                 : "none",
+              zIndex: 2,
+              pointerEvents: "none",
             }}
           />
-        </div>
+        </>
       )}
 
       {/* Title-frame micro bar */}
@@ -917,7 +924,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
 
         <PropInput
           label="Default Text"
-          value={p.defaultText ?? p.text ?? "TEXT"}
+          value={p.defaultText ?? ""}
           onChange={(v) => set("defaultText", v)}
           placeholder="Shown when no runtime value is available"
         />
@@ -1298,7 +1305,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             min={8}
             max={80}
             value={p.iconSize ?? 20}
-            onChange={(v) => set("iconSize", Number(v))}
+            onChange={(v) => set("iconSize", (v === "" ? "" : Number(v)))}
           />
 
           <PropInput
@@ -1307,7 +1314,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             min={0}
             max={40}
             value={p.iconGap ?? 8}
-            onChange={(v) => set("iconGap", Number(v))}
+            onChange={(v) => set("iconGap", (v === "" ? "" : Number(v)))}
           />
         </div>
 
@@ -1318,7 +1325,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             min={-500}
             max={500}
             value={p.iconOffsetX ?? 0}
-            onChange={(v) => set("iconOffsetX", Number(v))}
+            onChange={(v) => set("iconOffsetX", (v === "" ? "" : Number(v)))}
           />
 
           <PropInput
@@ -1327,7 +1334,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             min={-500}
             max={500}
             value={p.iconOffsetY ?? 0}
-            onChange={(v) => set("iconOffsetY", Number(v))}
+            onChange={(v) => set("iconOffsetY", (v === "" ? "" : Number(v)))}
           />
         </div>
       </PropSection>
@@ -1340,7 +1347,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             min={8}
             max={100}
             value={p.fontSize ?? 18}
-            onChange={(v) => set("fontSize", Number(v))}
+            onChange={(v) => set("fontSize", (v === "" ? "" : Number(v)))}
           />
 
           <PropInput
@@ -1414,7 +1421,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
                 max={8}
                 step={0.5}
                 value={p.frameWidth ?? 1.5}
-                onChange={(v) => set("frameWidth", Number(v))}
+                onChange={(v) => set("frameWidth", (v === "" ? "" : Number(v)))}
               />
 
               <PropInput
@@ -1423,7 +1430,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
                 min={4}
                 max={24}
                 value={p.cornerSize ?? 10}
-                onChange={(v) => set("cornerSize", Number(v))}
+                onChange={(v) => set("cornerSize", (v === "" ? "" : Number(v)))}
               />
             </div>
 
@@ -1441,7 +1448,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
               max={1}
               step={0.05}
               value={p.frameBackgroundOpacity ?? 0.88}
-              onChange={(v) => set("frameBackgroundOpacity", Number(v))}
+              onChange={(v) => set("frameBackgroundOpacity", (v === "" ? "" : Number(v)))}
             />
 
             <PropInput
@@ -1451,7 +1458,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
               max={1}
               step={0.05}
               value={p.frameOpacity ?? 1}
-              onChange={(v) => set("frameOpacity", Number(v))}
+              onChange={(v) => set("frameOpacity", (v === "" ? "" : Number(v)))}
             />
           </>
         )}
@@ -1486,7 +1493,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
           min={0}
           max={60}
           value={p.glowIntensity ?? 18}
-          onChange={(v) => set("glowIntensity", Number(v))}
+          onChange={(v) => set("glowIntensity", (v === "" ? "" : Number(v)))}
         />
 
         <div className="grid grid-cols-2 gap-2">
@@ -1529,7 +1536,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             max={10}
             step={0.5}
             value={p.scanSpeed ?? 2}
-            onChange={(v) => set("scanSpeed", Number(v))}
+            onChange={(v) => set("scanSpeed", (v === "" ? "" : Number(v)))}
           />
         )}
       </PropSection>
@@ -1541,7 +1548,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
           min={0}
           max={60}
           value={p.padding ?? 8}
-          onChange={(v) => set("padding", Number(v))}
+          onChange={(v) => set("padding", (v === "" ? "" : Number(v)))}
         />
 
         {(!p.frameStyle || p.frameStyle === "standard") && (
@@ -1567,7 +1574,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
                 min={0}
                 max={20}
                 value={p.borderWidth ?? 0}
-                onChange={(v) => set("borderWidth", Number(v))}
+                onChange={(v) => set("borderWidth", (v === "" ? "" : Number(v)))}
               />
 
               <PropInput
@@ -1576,7 +1583,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
                 min={0}
                 max={50}
                 value={p.radius ?? 6}
-                onChange={(v) => set("radius", Number(v))}
+                onChange={(v) => set("radius", (v === "" ? "" : Number(v)))}
               />
             </div>
           </>
@@ -1588,7 +1595,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
           min={-360}
           max={360}
           value={p.rotation ?? 0}
-          onChange={(v) => set("rotation", Number(v))}
+          onChange={(v) => set("rotation", (v === "" ? "" : Number(v)))}
         />
       </PropSection>
     </>

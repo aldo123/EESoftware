@@ -11,7 +11,7 @@
 //   navigate = go to another page
 //   reset    = set multiple selected Internal Variables and/or TCP addresses to 0
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useInternalVariables } from "../hooks/useInternalVariables";
 import { API } from "../service/api";
 import {
@@ -41,6 +41,197 @@ const getButtonAssets = () =>
       name: filePath.split("/").pop() || filePath,
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
+
+const BUTTON_IMAGE_CACHE = new Map();
+
+const preloadButtonImage = (url) => {
+  if (!url || typeof Image === "undefined") return Promise.resolve();
+
+  const cached = BUTTON_IMAGE_CACHE.get(url);
+  if (cached) return cached;
+
+  const promise = new Promise((resolve) => {
+    const img = new Image();
+    let done = false;
+
+    const finish = () => {
+      if (done) return;
+      done = true;
+      resolve(img);
+    };
+
+    img.onload = finish;
+    img.onerror = finish;
+    img.src = url;
+
+    if (typeof img.decode === "function") {
+      img.decode().then(finish).catch(() => {});
+    }
+  });
+
+  BUTTON_IMAGE_CACHE.set(url, promise);
+  return promise;
+};
+
+// -----------------------------------------------------------------------------
+// Custom button-image fitting
+//
+// Many small PNG button icons contain transparent padding. For example, a
+// 32x32 image may contain the actual toggle graphic only in rows 8..24.
+// width/height: 100% alone cannot remove that transparent padding, so the
+// visible graphic appears smaller than the Button widget.
+//
+// We automatically trim transparent pixels from PNG/SVG/WebP/etc. images,
+// cache the result, and then stretch the trimmed image to the complete Button
+// Width x Height. Opaque images are left unchanged.
+// -----------------------------------------------------------------------------
+const BUTTON_FITTED_IMAGE_CACHE = new Map();
+
+const cropTransparentImage = (url) => {
+  if (!url || typeof Image === "undefined") return Promise.resolve(url);
+
+  const cached = BUTTON_FITTED_IMAGE_CACHE.get(url);
+  if (cached) return cached;
+
+  const promise = new Promise((resolve) => {
+    const img = new Image();
+    let finished = false;
+
+    const done = (result) => {
+      if (finished) return;
+      finished = true;
+      resolve(result || url);
+    };
+
+    img.onload = () => {
+      try {
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
+
+        if (!width || !height) {
+          done(url);
+          return;
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        if (!ctx) {
+          done(url);
+          return;
+        }
+
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const pixels = ctx.getImageData(0, 0, width, height);
+        const data = pixels.data;
+
+        let minX = width;
+        let minY = height;
+        let maxX = -1;
+        let maxY = -1;
+
+        // Detect visible pixels by alpha. A tiny threshold avoids treating
+        // almost-invisible anti-aliasing noise as a real image boundary.
+        for (let y = 0; y < height; y += 1) {
+          for (let x = 0; x < width; x += 1) {
+            const alpha = data[(y * width + x) * 4 + 3];
+
+            if (alpha > 8) {
+              if (x < minX) minX = x;
+              if (y < minY) minY = y;
+              if (x > maxX) maxX = x;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+
+        // Fully transparent image or already-tight image.
+        if (maxX < 0 || maxY < 0) {
+          done(url);
+          return;
+        }
+
+        const cropWidth = maxX - minX + 1;
+        const cropHeight = maxY - minY + 1;
+
+        if (minX === 0 && minY === 0 && cropWidth === width && cropHeight === height) {
+          done(url);
+          return;
+        }
+
+        const cropped = document.createElement("canvas");
+        cropped.width = cropWidth;
+        cropped.height = cropHeight;
+
+        const croppedCtx = cropped.getContext("2d");
+        if (!croppedCtx) {
+          done(url);
+          return;
+        }
+
+        croppedCtx.clearRect(0, 0, cropWidth, cropHeight);
+        croppedCtx.drawImage(
+          canvas,
+          minX,
+          minY,
+          cropWidth,
+          cropHeight,
+          0,
+          0,
+          cropWidth,
+          cropHeight
+        );
+
+        done(cropped.toDataURL("image/png"));
+      } catch (error) {
+        console.warn("[Button] Unable to auto-fit custom image:", error);
+        done(url);
+      }
+    };
+
+    img.onerror = () => done(url);
+    img.src = url;
+  });
+
+  BUTTON_FITTED_IMAGE_CACHE.set(url, promise);
+  return promise;
+};
+
+const useFittedButtonImage = (storedValue) => {
+  const sourceUrl = resolveButtonAsset(storedValue);
+  const [fittedUrl, setFittedUrl] = useState(sourceUrl);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!sourceUrl) {
+      setFittedUrl("");
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    // Show the original immediately, then replace it with the auto-cropped
+    // version as soon as the cached/processed image is ready.
+    setFittedUrl(sourceUrl);
+
+    cropTransparentImage(sourceUrl).then((result) => {
+      if (!cancelled && result) {
+        setFittedUrl(result);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceUrl]);
+
+  return fittedUrl;
+};
 
 const RESET_TCP_ADDRESS_TYPES = [
   { value: "coil", label: "Coil" },
@@ -120,6 +311,24 @@ const resolveButtonAsset = (storedValue) => {
   return match?.url || value;
 };
 
+// Shared button background opacity.
+// Supports values 0..1 and also percentage-like values 0..100.
+const getBackgroundOpacity = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 1;
+  if (n > 1) return Math.max(0, Math.min(100, n)) / 100;
+  return Math.max(0, Math.min(1, n));
+};
+
+const withAlpha = (color, opacity) => {
+  const c = String(color || "").trim();
+  const a = getBackgroundOpacity(opacity);
+
+  // CSS variables cannot reliably be converted to rgba().
+  // color-mix() works with CSS variables and normal CSS colors.
+  return `color-mix(in srgb, ${c} ${Math.round(a * 100)}%, transparent)`;
+};
+
 // ────────────────────────────────────────────────────────────────
 // PALETTE DEFINITION
 // ────────────────────────────────────────────────────────────────
@@ -135,6 +344,10 @@ export const buttonDef = {
     address: "",
     labelOn: "BUTTON ON",
     labelOff: "BUTTON OFF",
+    showLabel: true,
+    // One shared background transparency for both ON and OFF states.
+    // 0 = fully transparent, 1 = fully opaque.
+    backgroundOpacity: 1,
     variable: "Button1",
 
     // Button behavior: write | navigate | reset
@@ -167,7 +380,7 @@ export const buttonDef = {
     // appearance in both Builder preview and Runtime.
     onImage: "",
     offImage: "",
-    imageFit: "cover",
+    imageFit: "fill",
     imageOverlay: true,
 
     visual: { ...DEFAULT_VISUAL },
@@ -190,21 +403,30 @@ export const buttonDef = {
 export function ButtonPreview({ widget }) {
   const p = widget.props || {};
 
+  preloadButtonImage(resolveButtonAsset(p.onImage));
+  preloadButtonImage(resolveButtonAsset(p.offImage));
+
+  const currentImage = p.builderState === 1 ? p.onImage : p.offImage;
+  const fittedImage = useFittedButtonImage(currentImage);
+
   const isReset = p.action === "reset";
   const isOn = !isReset && p.builderState === 1;
   const variant = p.variant || "neon";
 
+  const backgroundOpacity = getBackgroundOpacity(p.backgroundOpacity ?? 1);
   const currentBg = isReset
     ? p.offBackground || "var(--bg-canvas)"
     : isOn
       ? p.onBackground || "var(--accent-cyan)"
       : p.offBackground || "var(--bg-canvas)";
+  const currentBgTransparent = withAlpha(currentBg, backgroundOpacity);
 
   const currentBorder = isReset
     ? p.offBorder || "var(--panel-mid)"
     : isOn
       ? p.onBorder || "var(--accent-cyan)"
       : p.offBorder || "var(--panel-mid)";
+  const currentBorderTransparent = withAlpha(currentBorder, backgroundOpacity);
 
   const currentText = isReset
     ? p.offTextColor || "var(--panel-line)"
@@ -221,16 +443,16 @@ export function ButtonPreview({ widget }) {
   const fontSize = p.fontSize || 18;
 
   let btnStyle = {
-    background: currentBg,
-    border: `${1}px solid ${currentBorder}`,
-    boxShadow: isOn ? `0 0 18px ${currentBg}` : "none",
+    background: currentBgTransparent,
+    border: `${1}px solid ${currentBorderTransparent}`,
+    boxShadow: isOn ? `0 0 18px ${currentBgTransparent}` : "none",
     textColor: currentText,
     showLed: variant === "neon" && !isReset,
   };
 
   if (variant === "neon") {
-    btnStyle.background = `linear-gradient(135deg, var(--panel-canvas), ${currentBorder})`;
-    btnStyle.boxShadow = isOn ? `0 0 18px ${currentBg}` : "none";
+    btnStyle.background = `linear-gradient(135deg, color-mix(in srgb, var(--panel-canvas) ${Math.round((1 - backgroundOpacity) * 100)}%, transparent), ${currentBgTransparent})`;
+    btnStyle.boxShadow = isOn ? `0 0 18px ${currentBgTransparent}` : "none";
   }
 
   return (
@@ -244,21 +466,34 @@ export function ButtonPreview({ widget }) {
           borderRadius: 12,
         }}
       >
-        {(isOn ? p.onImage : p.offImage) && p.imageOverlay !== false ? (
+        {fittedImage && p.imageOverlay !== false ? (
           <div
             className="absolute inset-0 pointer-events-none"
             style={{ background: "rgba(0,0,0,0.12)", zIndex: 2 }}
           />
         ) : null}
 
-        {(isOn ? p.onImage : p.offImage) ? (
+        {fittedImage ? (
           <img
-            src={resolveButtonAsset(isOn ? p.onImage : p.offImage)}
+            src={fittedImage}
             alt=""
             draggable={false}
-            className="absolute inset-0 w-full h-full pointer-events-none select-none"
+            className="absolute pointer-events-none select-none block"
             style={{
-              objectFit: p.imageFit || "cover",
+              left: 0,
+              top: 0,
+              width: "100%",
+              height: "100%",
+              minWidth: "100%",
+              minHeight: "100%",
+              maxWidth: "100%",
+              maxHeight: "100%",
+              objectFit: p.imageFit || "fill",
+              objectPosition: "center center",
+              display: "block",
+              margin: 0,
+              padding: 0,
+              flexShrink: 0,
               zIndex: 1,
             }}
           />
@@ -268,22 +503,26 @@ export function ButtonPreview({ widget }) {
           <div
             className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full transition-all duration-300"
             style={{
-              background: isOn ? currentBg : "var(--bg-canvas)",
-              boxShadow: isOn ? `0 0 8px ${currentBg}` : "none",
+              background: isOn ? currentBgTransparent : "var(--bg-canvas)",
+              boxShadow: isOn ? `0 0 8px ${currentBgTransparent}` : "none",
             }}
           />
         )}
 
-        <span
-          className="font-bold uppercase tracking-widest"
-          style={{
-            color: btnStyle.textColor,
-            fontSize,
-            textShadow: isOn ? `0 0 12px ${currentBg}` : "none",
-          }}
-        >
-          {currentLabel}
-        </span>
+        {p.showLabel !== false && (
+          <span
+            className="font-bold uppercase tracking-widest"
+            style={{
+              color: btnStyle.textColor,
+              fontSize,
+              textShadow: isOn
+                ? `0 0 12px ${currentBgTransparent}`
+                : "none",
+            }}
+          >
+            {currentLabel}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -404,7 +643,7 @@ export function ButtonPropertyPanel({
                       }`,
                     })),
                   ]}
-                  value={p.variable || ""}
+                  value={p.variable ?? ""}
                   onChange={(v) => set("variable", v)}
                 />
 
@@ -413,13 +652,13 @@ export function ButtonPropertyPanel({
                     label="Value ON"
                     type="number"
                     value={p.valueOn ?? 1}
-                    onChange={(v) => set("valueOn", Number(v))}
+                    onChange={(v) => set("valueOn", v === "" ? "" : Number(v))}
                   />
                   <PropInput
                     label="Value OFF"
                     type="number"
                     value={p.valueOff ?? 0}
-                    onChange={(v) => set("valueOff", Number(v))}
+                    onChange={(v) => set("valueOff", v === "" ? "" : Number(v))}
                   />
                 </div>
 
@@ -460,7 +699,7 @@ export function ButtonPropertyPanel({
 
                     <PropInput
                       label="Address"
-                      value={p.address || ""}
+                      value={p.address ?? ""}
                       onChange={(v) => set("address", v)}
                       placeholder="D100 / M100"
                     />
@@ -479,7 +718,7 @@ export function ButtonPropertyPanel({
                 <PropSection title="Data Binding">
                   <PropInput
                     label="Variable"
-                    value={p.variable || ""}
+                    value={p.variable ?? ""}
                     onChange={(v) => set("variable", v)}
                   />
 
@@ -492,13 +731,13 @@ export function ButtonPropertyPanel({
                       label="Value ON"
                       type="number"
                       value={p.valueOn ?? 1}
-                      onChange={(v) => set("valueOn", Number(v))}
+                      onChange={(v) => set("valueOn", v === "" ? "" : Number(v))}
                     />
                     <PropInput
                       label="Value OFF"
                       type="number"
                       value={p.valueOff ?? 0}
-                      onChange={(v) => set("valueOff", Number(v))}
+                      onChange={(v) => set("valueOff", v === "" ? "" : Number(v))}
                     />
                   </div>
                 </PropSection>
@@ -517,7 +756,7 @@ export function ButtonPropertyPanel({
                 label: page.name || page.id,
               })),
             ]}
-            value={p.targetPage || ""}
+            value={p.targetPage ?? ""}
             onChange={(v) => set("targetPage", v)}
           />
         )}
@@ -675,7 +914,7 @@ export function ButtonPropertyPanel({
 
           <PropInput
             label="Reset Label"
-            value={p.resetLabel || "RESET"}
+            value={p.resetLabel ?? "RESET"}
             onChange={(v) => set("resetLabel", v)}
           />
 
@@ -747,16 +986,23 @@ export function ButtonPropertyPanel({
         <div className="grid grid-cols-2 gap-2">
           <PropInput
             label="Label ON"
-            value={p.labelOn || "BUTTON ON"}
+            value={p.labelOn ?? "BUTTON ON"}
             onChange={(v) => set("labelOn", v)}
           />
 
           <PropInput
             label="Label OFF"
-            value={p.labelOff || "BUTTON OFF"}
+            value={p.labelOff ?? "BUTTON OFF"}
             onChange={(v) => set("labelOff", v)}
           />
         </div>
+
+        <PropInput
+          label="Show Label"
+          type="checkbox"
+          value={p.showLabel !== false}
+          onChange={(v) => set("showLabel", v === true || v === "true")}
+        />
 
         <PropInput
           label="Variant"
@@ -769,12 +1015,25 @@ export function ButtonPropertyPanel({
         />
 
         <PropInput
+          label="Background Transparency"
+          type="range"
+          min={0}
+          max={100}
+          step={1}
+          value={Math.round(getBackgroundOpacity(p.backgroundOpacity ?? 1) * 100)}
+          onChange={(v) => set("backgroundOpacity", v === "" ? "" : Number(v) / 100)}
+        />
+        <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
+          Shared for ON/OFF background and border. 0% = fully transparent, 100% = fully opaque.
+        </div>
+
+        <PropInput
           label="Font Size"
           type="number"
           min={8}
           max={48}
           value={p.fontSize ?? 18}
-          onChange={(v) => set("fontSize", Number(v))}
+          onChange={(v) => set("fontSize", v === "" ? "" : Number(v))}
         />
       </PropSection>
 
@@ -786,6 +1045,8 @@ export function ButtonPropertyPanel({
 
         {(() => {
           const assets = getButtonAssets();
+
+          assets.forEach((asset) => preloadButtonImage(asset.url));
 
           return (
             <div className="space-y-3">
@@ -859,14 +1120,17 @@ export function ButtonPropertyPanel({
               <PropInput
                 label="Image Fit"
                 options={[
+                  { value: "fill", label: "Fit Button Exactly" },
                   { value: "cover", label: "Cover" },
                   { value: "contain", label: "Contain" },
-                  { value: "fill", label: "Fill" },
                   { value: "none", label: "Original Size" },
                 ]}
-                value={p.imageFit || "cover"}
+                value={p.imageFit ?? "fill"}
                 onChange={(v) => set("imageFit", v)}
               />
+              <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
+                Fit Button Exactly automatically removes transparent image margins and then fits the visible image to the full Button Width × Height.
+              </div>
 
               <PropInput
                 label="Text Overlay"
@@ -938,6 +1202,9 @@ export function ButtonPropertyPanel({
 export function RuntimeButton({ widget, value, onChange, onNavigate }) {
   const p = widget.props || {};
   const v = getVisual(p);
+
+  preloadButtonImage(resolveButtonAsset(p.onImage));
+  preloadButtonImage(resolveButtonAsset(p.offImage));
   const variant = p.variant || "neon";
   const action = p.action || "write";
   const buttonType =
@@ -966,6 +1233,10 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
       String(runtimeValue).toLowerCase() === "true" ||
       String(runtimeValue).toLowerCase() === "on"
     );
+
+  const activeImage = isOn ? p.onImage : p.offImage;
+  const fittedImage = useFittedButtonImage(activeImage);
+
   const [resetting, setResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState("");
 
@@ -1159,10 +1430,15 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
     await writeValue(p.valueOff ?? 0);
   };
 
+  const backgroundOpacity = getBackgroundOpacity(p.backgroundOpacity ?? 1);
   const onBg = p.onBackground || v.accentColor || "var(--accent-cyan)";
   const offBg = p.offBackground || v.backgroundColor || "var(--bg-canvas)";
+  const onBgTransparent = withAlpha(onBg, backgroundOpacity);
+  const offBgTransparent = withAlpha(offBg, backgroundOpacity);
   const onBorder = p.onBorder || v.accentColor || "var(--accent-cyan)";
   const offBorder = p.offBorder || v.borderColor || "var(--panel-mid)";
+  const onBorderTransparent = withAlpha(onBorder, backgroundOpacity);
+  const offBorderTransparent = withAlpha(offBorder, backgroundOpacity);
   const onText = p.onTextColor || v.textColor || "#FFFFFF";
   const offText = p.offTextColor || v.secondaryTextColor || "var(--panel-line)";
 
@@ -1176,9 +1452,13 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
   const fontSize = p.fontSize || 18;
 
   let btnStyle = {
-    background: isOn ? onBg : offBg,
-    border: `${v.borderWidth || 1}px solid ${isOn ? onBorder : offBorder}`,
-    boxShadow: isOn ? `0 0 ${v.glowIntensity || 18}px ${onBg}` : "none",
+    background: isOn ? onBgTransparent : offBgTransparent,
+    border: `${v.borderWidth || 1}px solid ${
+      isOn ? onBorderTransparent : offBorderTransparent
+    }`,
+    boxShadow: isOn
+      ? `0 0 ${v.glowIntensity || 18}px ${onBgTransparent}`
+      : "none",
     textColor: isOn ? onText : offText,
     showLed: variant === "neon" && action !== "reset",
   };
@@ -1186,7 +1466,7 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
   if (variant === "neon") {
     btnStyle.background = `linear-gradient(135deg, ${
       v.backgroundColor || "var(--panel-canvas)"
-    }, ${isOn ? onBg : offBg})`;
+    }, ${isOn ? onBgTransparent : offBgTransparent})`;
   }
 
   return (
@@ -1220,7 +1500,7 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
           touchAction: "none",
         }}
       >
-        {(isOn ? p.onImage : p.offImage) && p.imageOverlay !== false ? (
+        {fittedImage && p.imageOverlay !== false ? (
           <div
             className="absolute inset-0 pointer-events-none"
             style={{
@@ -1230,14 +1510,27 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
           />
         ) : null}
 
-        {(isOn ? p.onImage : p.offImage) ? (
+        {fittedImage ? (
           <img
-            src={resolveButtonAsset(isOn ? p.onImage : p.offImage)}
+            src={fittedImage}
             alt=""
             draggable={false}
-            className="absolute inset-0 w-full h-full pointer-events-none select-none"
+            className="absolute pointer-events-none select-none block"
             style={{
-              objectFit: p.imageFit || "cover",
+              left: 0,
+              top: 0,
+              width: "100%",
+              height: "100%",
+              minWidth: "100%",
+              minHeight: "100%",
+              maxWidth: "100%",
+              maxHeight: "100%",
+              objectFit: p.imageFit || "fill",
+              objectPosition: "center center",
+              display: "block",
+              margin: 0,
+              padding: 0,
+              flexShrink: 0,
               zIndex: 1,
             }}
           />
@@ -1247,22 +1540,28 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
           <div
             className="absolute top-2 right-2 w-2.5 h-2.5 rounded-full transition-all duration-300"
             style={{
-              background: isOn ? onBg : offBg,
-              boxShadow: isOn ? `0 0 8px ${onBg}` : "none",
+              background: isOn ? onBgTransparent : offBgTransparent,
+              boxShadow: isOn
+                ? `0 0 8px ${onBgTransparent}`
+                : "none",
             }}
           />
         )}
 
-        <span
-          className="font-bold uppercase tracking-widest"
-          style={{
-            color: btnStyle.textColor,
-            fontSize,
-            textShadow: isOn ? `0 0 12px ${onBg}` : "none",
-          }}
-        >
-          {resetting ? "RESETTING..." : label}
-        </span>
+        {p.showLabel !== false && (
+          <span
+            className="font-bold uppercase tracking-widest"
+            style={{
+              color: btnStyle.textColor,
+              fontSize,
+              textShadow: isOn
+                ? `0 0 12px ${onBgTransparent}`
+                : "none",
+            }}
+          >
+            {resetting ? "RESETTING..." : label}
+          </span>
+        )}
 
         {isReset && resetMessage && (
           <span

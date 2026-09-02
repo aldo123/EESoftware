@@ -604,12 +604,12 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
     <PropSection title="Chart">
       <PropInput
         label="Title"
-        value={p.title || "PROCESS TREND"}
+        value={p.title ?? "PROCESS TREND"}
         onChange={v => set("title", v)}
       />
       <PropInput
         label="Unit"
-        value={p.unit || ""}
+        value={p.unit ?? ""}
         onChange={v => set("unit", v)}
       />
       <div className="grid grid-cols-2 gap-2">
@@ -619,7 +619,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           min={5}
           max={3600}
           value={p.historySeconds ?? 60}
-          onChange={v => set("historySeconds", Number(v))}
+          onChange={v => set("historySeconds", v === "" ? "" : Number(v))}
         />
         <PropInput
           label="Sample (ms)"
@@ -627,7 +627,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           min={100}
           max={5000}
           value={p.sampleInterval ?? 500}
-          onChange={v => set("sampleInterval", Number(v))}
+          onChange={v => set("sampleInterval", v === "" ? "" : Number(v))}
         />
       </div>
       <PropInput
@@ -636,7 +636,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
         min={0}
         max={4}
         value={p.decimals ?? 1}
-        onChange={v => set("decimals", Number(v))}
+        onChange={v => set("decimals", v === "" ? "" : Number(v))}
       />
     </PropSection>
 
@@ -653,13 +653,13 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
             label="Min"
             type="number"
             value={p.yMin ?? 0}
-            onChange={v => set("yMin", Number(v))}
+            onChange={v => set("yMin", v === "" ? "" : Number(v))}
           />
           <PropInput
             label="Max"
             type="number"
             value={p.yMax ?? 100}
-            onChange={v => set("yMax", Number(v))}
+            onChange={v => set("yMax", v === "" ? "" : Number(v))}
           />
         </div>
       )}
@@ -683,7 +683,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           { label: "TCP/IP Device", value: "device" },
           { label: "Internal Variable", value: "internal" },
         ]}
-        value={p.triggerDataSource || "device"}
+        value={p.triggerDataSource ?? "device"}
         onChange={v => set("triggerDataSource", v)}
       />
 
@@ -694,7 +694,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
               Trigger Device
             </label>
             <select
-              value={p.triggerDevice || ""}
+              value={p.triggerDevice ?? ""}
               onChange={e => set("triggerDevice", e.target.value)}
               className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
             >
@@ -712,7 +712,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           <PropInput
             label="Trigger Address Type"
             options={LINECHART_ADDRESS_TYPES}
-            value={p.triggerAddressType || "holding_register"}
+            value={p.triggerAddressType ?? "holding_register"}
             onChange={v => set("triggerAddressType", v)}
           />
 
@@ -729,7 +729,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
             Trigger Internal Variable
           </label>
           <select
-            value={p.triggerInternalVariable || ""}
+            value={p.triggerInternalVariable ?? ""}
             onChange={e => set("triggerInternalVariable", e.target.value)}
             className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
           >
@@ -755,13 +755,13 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           label="Start Value"
           type="number"
           value={p.triggerStartValue ?? 1}
-          onChange={v => set("triggerStartValue", Number(v))}
+          onChange={v => set("triggerStartValue", v === "" ? "" : Number(v))}
         />
         <PropInput
           label="Stop Value"
           type="number"
           value={p.triggerStopValue ?? 0}
-          onChange={v => set("triggerStopValue", Number(v))}
+          onChange={v => set("triggerStopValue", v === "" ? "" : Number(v))}
         />
       </div>
 
@@ -840,7 +840,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
                 { label: "TCP/IP Device", value: "device" },
                 { label: "Internal Variable", value: "internal" },
               ]}
-              value={series.dataSource || "device"}
+              value={series.dataSource ?? "device"}
               onChange={v => updateSeries("dataSource", v)}
             />
 
@@ -851,7 +851,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
                     Device
                   </label>
                   <select
-                    value={series.device || ""}
+                    value={series.device ?? ""}
                     onChange={e => updateSeries("device", e.target.value)}
                     className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
                   >
@@ -869,7 +869,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
                 <PropInput
                   label="Address Type"
                   options={LINECHART_ADDRESS_TYPES}
-                  value={series.addressType || "holding_register"}
+                  value={series.addressType ?? "holding_register"}
                   onChange={v => updateSeries("addressType", v)}
                 />
 
@@ -886,7 +886,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
                   Internal Variable
                 </label>
                 <select
-                  value={series.internalVariable || ""}
+                  value={series.internalVariable ?? ""}
                   onChange={e => updateSeries("internalVariable", e.target.value)}
                   className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
                 >
@@ -965,7 +965,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           <PropInput
             label="Background"
             type="color"
-            value={p.backgroundColor || "var(--panel-canvas)"}
+            value={p.backgroundColor ?? "var(--panel-canvas)"}
             onChange={v => set("backgroundColor", v)}
           />
         </div>
@@ -974,7 +974,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           <PropInput
             label="Border"
             type="color"
-            value={p.borderColor || "var(--panel-mid)"}
+            value={p.borderColor ?? "var(--panel-mid)"}
             onChange={v => set("borderColor", v)}
           />
         </div>
@@ -983,7 +983,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           <PropInput
             label="Grid"
             type="color"
-            value={p.gridColor || "var(--panel-mid)"}
+            value={p.gridColor ?? "var(--panel-mid)"}
             onChange={v => set("gridColor", v)}
           />
         </div>
@@ -992,7 +992,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           <PropInput
             label="Axis Text"
             type="color"
-            value={p.labelColor || "var(--panel-line)"}
+            value={p.labelColor ?? "var(--panel-line)"}
             onChange={v => set("labelColor", v)}
           />
         </div>
@@ -1001,7 +1001,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
           <PropInput
             label="Chart Text"
             type="color"
-            value={p.textColor || "#FFFFFF"}
+            value={p.textColor ?? "#FFFFFF"}
             onChange={v => set("textColor", v)}
           />
         </div>
@@ -1014,7 +1014,7 @@ export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
             max={5}
             step={0.1}
             value={p.lineWidth ?? 1.8}
-            onChange={v => set("lineWidth", Number(v))}
+            onChange={v => set("lineWidth", v === "" ? "" : Number(v))}
           />
         </div>
 
