@@ -1,4 +1,4 @@
-// src/pages/DynamicCPPage.jsx
+
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { API } from "../service/api";
 import { useTCPPLC } from "../hooks/useTCPPLC";
@@ -48,9 +48,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fieldValues, setFieldValues] = useState({});
-  // COM + Realtime TextBox values are kept separately from Logic Builder fields.
-  // Sequential TextBoxes continue to use fieldValues only when Logic Builder
-  // explicitly writes to their variable.
+  // COM TextBox values are kept separately from Logic Builder fields.
+  // Read-trigger gating is handled independently for COM/TCP/Internal sources.
   const [comTextBoxValues, setComTextBoxValues] = useState({});
   // Realtime RS232 values for Testing Table rows. Sequential values are written by Logic Builder.
   const [testTableComValues, setTestTableComValues] = useState({});
@@ -172,6 +171,15 @@ export default function DynamicCPPage({ cpNumber, user }) {
     enabled: Boolean(cpNumber),
     pollInterval: 50,
   });
+
+  // cp-scan is handled by a long-lived event listener. Keep the
+  // latest TCP/PLC values in a ref so COM TextBox PLC-trigger checks
+  // always use the current trigger state instead of a stale closure.
+  const tcpValuesRef = useRef(tcpValues);
+
+  useEffect(() => {
+    tcpValuesRef.current = tcpValues;
+  }, [tcpValues]);
 
   // ============================================================
   // Helpers
@@ -341,16 +349,14 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       if (widget.type === "textbox") {
         const source = normalizeInputSource(p.inputSource);
-        const inputType = String(p.inputType || "realtime").trim().toLowerCase();
 
         // Internal variables are stored in fieldValues and are not PLC bindings.
         if (source === "internal") {
           return false;
         }
 
-        // COM + Realtime is fed by cp-scan, not Modbus/TCP.
-        // Sequential is controlled by Logic Builder.
-        if (source !== "tcp" || inputType !== "realtime") {
+        // COM/RS232 is fed by cp-scan; TCP/IP is the only PLC binding.
+        if (source !== "tcp") {
           return false;
         }
       }
@@ -634,6 +640,18 @@ export default function DynamicCPPage({ cpNumber, user }) {
     [evaluateCalculation, resolveCalculationSource]
   );
 
+  const valuesEqualRuntime = (actual, expected) => {
+    const a = String(actual ?? "").trim().toLowerCase();
+    const e = String(expected ?? "").trim().toLowerCase();
+
+    if (a === e) return true;
+
+    const an = Number(actual);
+    const en = Number(expected);
+
+    return Number.isFinite(an) && Number.isFinite(en) && an === en;
+  };
+
   const getRuntimeValue = useCallback(
     (widget) => {
       const p = widget?.props || {};
@@ -644,7 +662,6 @@ export default function DynamicCPPage({ cpNumber, user }) {
       if (widget?.type === "textbox") {
         const mode = String(p.textMode || "read").trim().toLowerCase();
         const source = normalizeInputSource(p.inputSource);
-        const inputType = String(p.inputType || "realtime").trim().toLowerCase();
         const fallback = p.defaultText ?? p.text ?? "TEXT";
 
         if (mode === "static") return fallback;
@@ -674,13 +691,51 @@ export default function DynamicCPPage({ cpNumber, user }) {
           return fieldValues[resultVariable] ?? fallback;
         }
 
-        // COM + Realtime: value comes directly from cp-scan.
-        if (source === "com" && inputType === "realtime") {
+        // ----------------------------------------------------------
+        // READ TRIGGER GATE
+        // TCP and Internal Variable data are NOT displayed while the
+        // configured trigger is OFF.
+        //
+        // realtime = no trigger gate; data is live immediately
+        // internal = trigger variable must equal readTriggerValue
+        // plc = selected TCP trigger address must equal readTriggerValue
+        // ----------------------------------------------------------
+        if (mode === "read") {
+          const triggerSource = String(
+            p.readTriggerSource || "realtime"
+          ).trim().toLowerCase();
+
+          if (triggerSource === "internal") {
+            const triggerVariable = String(
+              p.readTriggerVariable || ""
+            ).trim();
+
+            if (!triggerVariable) return fallback;
+
+            const triggerCurrent = getInternalValue(triggerVariable);
+            const triggerExpected = p.readTriggerValue ?? 1;
+
+            if (!valuesEqualRuntime(triggerCurrent, triggerExpected)) {
+              return fallback;
+            }
+          } else if (triggerSource === "plc") {
+            const triggerBindingId = `${widget.id}:__read_trigger__`;
+            const triggerCurrent = tcpValues[triggerBindingId];
+            const triggerExpected = p.readTriggerValue ?? 1;
+
+            if (!valuesEqualRuntime(triggerCurrent, triggerExpected)) {
+              return fallback;
+            }
+          }
+        }
+
+        // COM/RS232: value comes directly from cp-scan.
+        if (source === "com") {
           const value = comTextBoxValues[String(widget.id)];
           return value !== undefined ? value : fallback;
         }
 
-        // TCP/IP + Realtime: value comes from useTCPPLC.
+        // TCP/IP: value comes from useTCPPLC.
         // Internal Variable: the variable name is the source of truth.
         if (source === "internal") {
           const variableName = String(p.variable || p.fieldKey || "").trim();
@@ -691,7 +746,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
             : fallback;
         }
 
-        if (source === "tcp" && inputType === "realtime" && hasPLCBinding(widget)) {
+        if (source === "tcp" && hasPLCBinding(widget)) {
           const direct = tcpValues[String(widget.id)];
           if (direct !== undefined) return direct;
 
@@ -775,6 +830,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
       hasPLCBinding,
       normalizeInputSource,
       tcpValues,
+      valuesEqualRuntime,
     ]
   );
 
@@ -1334,7 +1390,6 @@ export default function DynamicCPPage({ cpNumber, user }) {
       if (type === "textbox") {
         const textMode = String(p.textMode || "read").trim().toLowerCase();
         const source = normalizeInputSource(p.inputSource);
-        const inputType = String(p.inputType || "realtime").trim().toLowerCase();
 
         // Static Text has no PLC binding.
         if (textMode === "static") return;
@@ -1386,13 +1441,65 @@ export default function DynamicCPPage({ cpNumber, user }) {
           return;
         }
 
-        // Internal Variable mode is stored in fieldValues, not PLC polling.
+        // ----------------------------------------------------------
+        // READ TRIGGER
+        // The trigger is an independent gate from the TextBox DATA SOURCE.
+        // It must be registered even when the TextBox data itself comes
+        // from an Internal Variable.
+        // ----------------------------------------------------------
+        if (textMode === "read") {
+          const triggerSource = String(
+            p.readTriggerSource || "realtime"
+          ).trim().toLowerCase();
+
+          if (triggerSource === "plc") {
+            const triggerDeviceName = String(
+              p.readTriggerDevice || ""
+            ).trim();
+            const triggerAddress = p.readTriggerAddress;
+            const triggerAddressType = normalizeType(
+              p.readTriggerAddressType
+            );
+
+            if (
+              triggerDeviceName &&
+              triggerAddress !== undefined &&
+              triggerAddress !== null &&
+              String(triggerAddress).trim() !== "" &&
+              triggerAddressType
+            ) {
+              const triggerDevice = getTCPDevice(triggerDeviceName);
+
+              if (
+                triggerDevice &&
+                isValidPLCBinding("textbox", triggerAddressType)
+              ) {
+                const triggerBindingId = `${widget.id}:__read_trigger__`;
+
+                registerBinding({
+                  widgetId: triggerBindingId,
+                  widgetType: "textbox",
+                  device: triggerDevice,
+                  addressType: triggerAddressType,
+                  address: triggerAddress,
+                });
+
+                console.log(
+                  `[DynamicCPPage] TextBox read trigger binding: ${triggerBindingId} -> ${triggerDevice.name} / ${triggerAddressType} / ${triggerAddress}`
+                );
+              }
+            }
+          }
+        }
+
+        // Internal Variable mode is stored in the shared Internal Variable
+        // store, not PLC polling.
         if (source === "internal") {
           return;
         }
 
-        // Read / Display and Input + Write use the existing TCP realtime path.
-        if (source !== "tcp" || inputType !== "realtime") {
+        // TCP/IP is the only TextBox DATA source registered with Modbus/TCP.
+        if (source !== "tcp") {
           return;
         }
 
@@ -1406,6 +1513,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
             return;
           }
         }
+
       } else if (
         type !== "button" &&
         type !== "light" &&
@@ -1966,66 +2074,105 @@ export default function DynamicCPPage({ cpNumber, user }) {
       );
 
       // ------------------------------------------------------------
-      // COM + REALTIME TEXTBOX
-      // ------------------------------------------------------------
-      // The RS232 hook dispatches:
-      //   { cpNumber, source, value }
-      //
-      // Match sourceDevice against the COM source name. A few legacy
-      // property names are accepted so existing saved layouts continue
-      // to work. Sequential TextBoxes are intentionally ignored here.
-      const normalizeDeviceToken = (v) =>
-        String(v ?? "")
-          .trim()
-          .toLowerCase()
-          .replace(/\s+/g, "");
+      // COM TEXTBOX
+       // ------------------------------------------------------------
+       // Keep COM routing tied to the selected sourceDevice.
+       // Do not use legacy comPort/device/portName/source fallbacks.
+       const normalizeDeviceToken = (v) =>
+         String(v ?? "")
+           .trim()
+           .toLowerCase()
+           .replace(/\s+/g, "");
 
-      const sourceToken = normalizeDeviceToken(source);
+       const valuesEqual = (actual, expected) => {
+         const a = String(actual ?? "").trim().toLowerCase();
+         const e = String(expected ?? "").trim().toLowerCase();
+         if (a === e) return true;
+         const an = Number(actual);
+         const en = Number(expected);
+         return Number.isFinite(an) && Number.isFinite(en) && an === en;
+       };
 
-      setComTextBoxValues((previous) => {
-        const next = { ...previous };
-        let changed = false;
+       const sourceToken = normalizeDeviceToken(source);
 
-        runtimeWidgets.forEach((widget) => {
-          if (widget?.type !== "textbox") return;
+       setComTextBoxValues((previous) => {
+         const next = { ...previous };
+         let changed = false;
 
-          const p = widget.props || {};
-          const inputSource = normalizeInputSource(p.inputSource);
-          const inputType = String(p.inputType || "realtime").trim().toLowerCase();
+         runtimeWidgets.forEach((widget) => {
+           if (widget?.type !== "textbox") return;
 
-          if (inputSource !== "com" || inputType !== "realtime") {
-            return;
-          }
+           const p = widget.props || {};
+           const inputSource = normalizeInputSource(p.inputSource);
+           const mode = String(p.textMode || "read").trim().toLowerCase();
 
-          const configuredSources = [
-            p.sourceDevice,
-            p.comPort,
-            p.portName,
-            p.device,
-            p.source,
-          ]
-            .filter(Boolean)
-            .map(normalizeDeviceToken);
+           if (inputSource !== "com" || mode !== "read") return;
 
-          if (!configuredSources.includes(sourceToken)) {
-            return;
-          }
+           const configuredSource = normalizeDeviceToken(p.sourceDevice);
+           if (!configuredSource || configuredSource !== sourceToken) return;
 
-          if (next[String(widget.id)] !== value) {
-            next[String(widget.id)] = value;
-            changed = true;
-          }
+           const triggerSource = String(
+             p.readTriggerSource || "realtime"
+           ).trim().toLowerCase();
 
-          console.log(
-            `[DynamicCPPage] COM TextBox realtime update: ${widget.id} <- ${source} = ${value}`
-          );
-        });
+           let triggerAllowed = true;
 
-        return changed ? next : previous;
-      });
+           if (triggerSource === "internal") {
+             const variableName = String(
+               p.readTriggerVariable || ""
+             ).trim();
+             const current = variableName
+               ? getInternalValue(variableName)
+               : undefined;
+             triggerAllowed = valuesEqual(
+               current,
+               p.readTriggerValue ?? 1
+             );
+           } else if (triggerSource === "plc") {
+             const triggerBindingId = `${widget.id}:__read_trigger__`;
+             const currentPLCTrigger =
+               tcpValuesRef.current[triggerBindingId];
 
-      // ------------------------------------------------------------
-      // COM + REALTIME TEST TABLE ROWS
+             triggerAllowed = valuesEqual(
+               currentPLCTrigger,
+               p.readTriggerValue ?? 1
+             );
+
+             console.log(
+               `[DynamicCPPage] COM PLC trigger check: widget=${widget.id}, binding=${triggerBindingId}, current=${currentPLCTrigger}, expected=${p.readTriggerValue ?? 1}, allowed=${triggerAllowed}`
+             );
+           }
+
+           if (!triggerAllowed) {
+             const key = String(widget.id);
+
+             // Never retain/replay COM data collected while the PLC
+             // read-trigger is OFF.
+             if (Object.prototype.hasOwnProperty.call(next, key)) {
+               delete next[key];
+               changed = true;
+             }
+
+             console.log(
+               `[DynamicCPPage] COM scan BLOCKED: widget=${widget.id}, source=${source}, trigger=${triggerSource} — buffer cleared`
+             );
+             return;
+           }
+
+           if (next[String(widget.id)] !== value) {
+             next[String(widget.id)] = value;
+             changed = true;
+           }
+
+           console.log(
+             `[DynamicCPPage] COM TextBox ACCEPTED: ${widget.id} <- ${source} = ${value}`
+           );
+         });
+
+         return changed ? next : previous;
+       });
+
+       // COM + REALTIME TEST TABLE ROWS
       // ------------------------------------------------------------
       setTestTableComValues((previous) => {
         const next = { ...previous };
@@ -2084,6 +2231,47 @@ export default function DynamicCPPage({ cpNumber, user }) {
     normalizeInputSource,
     widgets,
   ]);
+
+  // ============================================================
+  // PLC READ-TRIGGER BUFFER CLEAR
+  // ============================================================
+  // A COM scan received while the PLC trigger is OFF must never be
+  // replayed later when the trigger becomes ON.
+  useEffect(() => {
+    setComTextBoxValues((previous) => {
+      let changed = false;
+      const next = { ...previous };
+
+      (runtimeWidgets || []).forEach((widget) => {
+        if (widget?.type !== "textbox") return;
+
+        const p = widget.props || {};
+        const mode = String(p.textMode || "read").trim().toLowerCase();
+        const source = normalizeInputSource(p.inputSource);
+        const triggerSource = String(
+          p.readTriggerSource || "realtime"
+        ).trim().toLowerCase();
+
+        if (mode !== "read" || source !== "com" || triggerSource !== "plc") {
+          return;
+        }
+
+        const triggerBindingId = `${widget.id}:__read_trigger__`;
+        const triggerCurrent = tcpValues[triggerBindingId];
+        const triggerExpected = p.readTriggerValue ?? 1;
+
+        if (!valuesEqualRuntime(triggerCurrent, triggerExpected)) {
+          const key = String(widget.id);
+          if (Object.prototype.hasOwnProperty.call(next, key)) {
+            delete next[key];
+            changed = true;
+          }
+        }
+      });
+
+      return changed ? next : previous;
+    });
+  }, [runtimeWidgets, tcpValues, normalizeInputSource]);
 
   // ============================================================
   // PAGE NAVIGATION

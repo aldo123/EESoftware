@@ -310,11 +310,18 @@ export const textboxDef = {
     // DATA SOURCE
     // Internal Variable, TCP/IP, or COM/RS232.
     inputSource: "tcp",
-    inputType: "realtime",
     device: "",
     addressType: "holding_register",
     address: "",
     sourceDevice: "",
+
+    // READ TRIGGER
+    readTriggerSource: "realtime",
+    readTriggerVariable: "",
+    readTriggerDevice: "",
+    readTriggerAddressType: "coil",
+    readTriggerAddress: "",
+    readTriggerValue: 1,
 
     // Icon
     icon: "",
@@ -1020,16 +1027,137 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             </>
           )}
 
-          {String(p.inputSource || "tcp").toLowerCase() !== "internal" && (
-            <PropInput
-              label="Input Type"
-              options={[
-                { value: "realtime", label: "Realtime" },
-                { value: "sequential", label: "Sequential" },
-              ]}
-              value={p.inputType || "realtime"}
-              onChange={(v) => set("inputType", v)}
-            />
+          {p.textMode === "read" && (
+            <div className="mt-2 p-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)]">
+              <div className="text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-2">
+                Read Trigger
+              </div>
+              <PropInput
+                label="Trigger Source"
+                options={[
+                  { value: "plc", label: "PLC / TCP" },
+                  { value: "internal", label: "Internal Variable" },
+                  { value: "realtime", label: "Realtime Event" },
+                ]}
+                value={p.readTriggerSource ?? "realtime"}
+                onChange={(v) => set("readTriggerSource", v)}
+              />
+              {p.readTriggerSource === "internal" && (
+                <PropInput
+                  label="Trigger Variable"
+                  options={[
+                    {
+                      value: "",
+                      label: internalVariablesLoading
+                        ? "Loading internal variables..."
+                        : "Select trigger variable...",
+                    },
+                    ...internalVariableOptions,
+                  ]}
+                  value={p.readTriggerVariable ?? ""}
+                  onChange={(v) => set("readTriggerVariable", v)}
+                />
+              )}
+              {p.readTriggerSource === "plc" && (
+                <>
+                  <div>
+                    <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                      Trigger Device
+                    </label>
+                    <select
+                      value={p.readTriggerDevice ?? ""}
+                      onChange={(e) => set("readTriggerDevice", e.target.value)}
+                      className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+                    >
+                      <option value="">Select TCP device...</option>
+                      {availableDevices
+                        .filter((dev) => {
+                          const type = String(
+                            dev?.type ??
+                            dev?.Type ??
+                            ""
+                          ).trim().toUpperCase();
+
+                          return type === "TCP";
+                        })
+                        .map((dev) => {
+                          const deviceName =
+                            dev?.name ??
+                            dev?.["Device Name"] ??
+                            dev?.device_name ??
+                            "";
+
+                          if (!deviceName) return null;
+
+                          return (
+                            <option
+                              key={`read-trigger-tcp-${deviceName}`}
+                              value={deviceName}
+                            >
+                              {deviceName}
+                              {dev?.connection
+                                ? ` — ${dev.connection}`
+                                : ""}
+                              {dev?.connected === false
+                                ? " — Disconnected"
+                                : ""}
+                            </option>
+                          );
+                        })}
+                    </select>
+
+                    {availableDevices.filter((dev) => {
+                      const type = String(
+                        dev?.type ??
+                        dev?.Type ??
+                        ""
+                      ).trim().toUpperCase();
+
+                      return type === "TCP";
+                    }).length === 0 && (
+                      <div className="text-[8px] text-[var(--accent-amber)] mt-1">
+                        No TCP device configured.
+                      </div>
+                    )}
+
+                    <div className="text-[8px] text-[var(--text-dim)] mt-1">
+                      Trigger Device uses the same connected TCP device list as
+                      the main TCP/IP Data Source.
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <PropInput
+                      label="Trigger Address"
+                      value={p.readTriggerAddress ?? ""}
+                      onChange={(v) => set("readTriggerAddress", v)}
+                      placeholder="M100 / Coil 100"
+                    />
+                    <PropInput
+                      label="Address Type"
+                      options={[
+                        { value: "coil", label: "Coil" },
+                        { value: "discrete_input", label: "Discrete Input" },
+                        { value: "holding_register", label: "Holding Register" },
+                        { value: "input_register", label: "Input Register" },
+                      ]}
+                      value={p.readTriggerAddressType ?? "coil"}
+                      onChange={(v) => set("readTriggerAddressType", v)}
+                    />
+                  </div>
+                  <PropInput
+                    label="Trigger Value"
+                    type="number"
+                    value={p.readTriggerValue ?? 1}
+                    onChange={(v) =>
+                      set("readTriggerValue", v === "" ? "" : Number(v))
+                    }
+                  />
+                </>
+              )}
+              <div className="text-[8px] text-[var(--text-dim)] mt-1">
+                Read trigger berasal dari PLC, Internal Variable, atau Realtime Event.
+              </div>
+            </div>
           )}
 
           {(String(p.inputSource || "tcp").toLowerCase() === "tcp" ||
@@ -1492,7 +1620,12 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             <PropInput
               label="Background"
               type="color"
-              value="#03121E"
+              value={(() => {
+                const value = p.frameBackground;
+                if (typeof value !== "string" || !value.trim()) return "#03121E";
+                const match = value.trim().match(/^#([0-9a-fA-F]{6})$/);
+                return match ? `#${match[1]}` : "#03121E";
+              })()}
               onChange={(v) => set("frameBackground", v)}
             />
 
