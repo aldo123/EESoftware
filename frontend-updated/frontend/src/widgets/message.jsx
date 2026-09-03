@@ -6,7 +6,7 @@
 // This keeps Message as a normal Page Builder widget while allowing
 // it to display SYSTEM / DEVICE / COM / TCP / INTERNAL activity.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { PropInput, PropSection } from "./shared";
 
 const DEFAULT_PROPS = {
@@ -117,7 +117,7 @@ export const messageDef = {
   label: "Message",
   icon: "☷",
   desc: "System, device, COM, TCP/IP and internal variable information log",
-  defaults: DEFAULT_PROPS,
+  defaultProps: DEFAULT_PROPS
 };
 
 export function MessagePreview({ widget }) {
@@ -251,6 +251,7 @@ export function RuntimeMessage({ widget, logs = [], onClear }) {
   const p = { ...DEFAULT_PROPS, ...(widget?.props || {}) };
   const scrollRef = useRef(null);
   const userScrolledRef = useRef(false);
+  const [showTopButton, setShowTopButton] = useState(false);
 
   const visibleLogs = useMemo(() => {
     const source = Array.isArray(logs) ? logs : [];
@@ -262,13 +263,28 @@ export function RuntimeMessage({ widget, logs = [], onClear }) {
   useEffect(() => {
     const el = scrollRef.current;
     if (!el || p.autoScroll === false || userScrolledRef.current) return;
-    el.scrollTop = el.scrollHeight;
+
+    // Newest message is at the top.
+    // Use a smooth scroll so incoming messages don't cause a harsh jump.
+    requestAnimationFrame(() => {
+      el.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    });
   }, [visibleLogs.length, p.autoScroll]);
 
   return (
     <div
-      className="w-full h-full flex flex-col overflow-hidden font-mono"
+      className="flex flex-col overflow-hidden font-mono"
       style={{
+        position: "absolute",
+        left: Number(widget?.x ?? 0),
+        top: Number(widget?.y ?? 0),
+        width: Number(p.width ?? DEFAULT_PROPS.width),
+        height: Number(p.height ?? DEFAULT_PROPS.height),
+        zIndex: Number(widget?.zIndex ?? 1),
+        boxSizing: "border-box",
         background: alphaHex(p.backgroundColor, p.backgroundOpacity),
         border: `${Number(p.borderWidth ?? 1)}px solid ${p.borderColor || "#1E3A4D"}`,
         borderRadius: Number(p.borderRadius ?? 8),
@@ -304,6 +320,7 @@ export function RuntimeMessage({ widget, logs = [], onClear }) {
               type="button"
               onClick={() => {
                 userScrolledRef.current = false;
+                setShowTopButton(false);
                 onClear?.();
               }}
               className="px-2 py-1 rounded border border-white/10 hover:bg-white/10 text-[8px] opacity-70 hover:opacity-100"
@@ -321,11 +338,14 @@ export function RuntimeMessage({ widget, logs = [], onClear }) {
           fontSize: Math.max(7, Number(p.fontSize || 11)),
           lineHeight: Number(p.lineHeight || 1.45),
           scrollbarWidth: "thin",
+          scrollbarColor: "rgba(255,255,255,.18) transparent",
         }}
         onScroll={(e) => {
           const el = e.currentTarget;
-          const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-          userScrolledRef.current = distanceFromBottom > 16;
+          // Messages are newest-first, so the top is the latest message.
+          const awayFromTop = el.scrollTop > 24;
+          userScrolledRef.current = awayFromTop;
+          setShowTopButton(awayFromTop);
         }}
       >
         {visibleLogs.length === 0 ? (
@@ -333,7 +353,7 @@ export function RuntimeMessage({ widget, logs = [], onClear }) {
             No messages
           </div>
         ) : (
-          visibleLogs.map((log, index) => (
+          [...visibleLogs].reverse().map((log, index) => (
             <div
               key={log?.id || `${log?.timestamp || index}-${index}`}
               className="flex gap-2 px-1 py-0.5 rounded hover:bg-white/[0.025]"
@@ -353,6 +373,31 @@ export function RuntimeMessage({ widget, logs = [], onClear }) {
           ))
         )}
       </div>
+
+      {showTopButton && p.autoScroll !== false && (
+        <button
+          type="button"
+          title="Jump to latest message"
+          aria-label="Jump to latest message"
+          onClick={() => {
+            const el = scrollRef.current;
+            if (!el) return;
+
+            userScrolledRef.current = false;
+            setShowTopButton(false);
+
+            el.scrollTo({
+              top: 0,
+              behavior: "smooth",
+            });
+          }}
+          className="absolute right-3 bottom-3 z-10 flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border border-white/10 bg-black/60 backdrop-blur-sm shadow-lg text-[9px] opacity-85 hover:opacity-100 hover:bg-black/75 transition-all duration-150"
+          style={{ color: p.textColor || "#D7E7F5" }}
+        >
+          <span style={{ color: COLORS.green }}>↑</span>
+          <span>Latest</span>
+        </button>
+      )}
     </div>
   );
 }

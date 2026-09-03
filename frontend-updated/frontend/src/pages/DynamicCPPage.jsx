@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { API } from "../service/api";
 import { useTCPPLC } from "../hooks/useTCPPLC";
@@ -16,6 +15,7 @@ import {
   RuntimeAlarmBanner,
   RuntimeProgressBar,
   RuntimeSelectorSwitch,
+  RuntimeMessage,
 } from "../widgets";
 
 // ──────────────────────────────────────────────────────────────────
@@ -60,6 +60,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // Shared Internal Variable store. Widgets must use this central store
   // instead of accessing /api/internal-variables directly.
   const {
+    variables: internalVariables,
     getValue: getInternalValue,
     getVariable: getInternalVariable,
     setValue: setInternalValue,
@@ -162,6 +163,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
   const {
     values: tcpValues,
+    connectionStatus: tcpConnectionStatus,
+    errors: tcpErrors,
     writeValue: writeTCPValue,
     registerBinding,
     clearBindings,
@@ -1953,27 +1956,308 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const addLog = useCallback(
     (
       message,
-      color = "var(--accent-green)"
+      color = "var(--accent-green)",
+      meta = {}
     ) => {
-      const time =
-        new Date().toLocaleTimeString(
-          "en-US",
-          { hour12: false }
-        );
+      const now = new Date();
+      const time = now.toLocaleTimeString("en-US", {
+        hour12: false,
+      });
+
+      const source = String(meta?.source || "SYSTEM").trim().toUpperCase();
+      const level = String(
+        meta?.level ||
+        (
+          String(color).includes("red")
+            ? "ERROR"
+            : String(color).includes("orange")
+              ? "WARNING"
+              : "INFO"
+        )
+      ).trim().toUpperCase();
 
       setLogs((previous) => [
-        ...previous.slice(-199),
+        ...previous.slice(-499),
         {
+          id: `${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: now.getTime(),
           time,
-          message,
+          message: String(message ?? ""),
           color,
+          source,
+          level,
         },
       ]);
     },
     []
   );
 
+  const formatMessageValue = useCallback((value) => {
+    if (value === undefined) return "undefined";
+    if (value === null) return "null";
+    if (typeof value === "object") {
+      try { return JSON.stringify(value); } catch { return String(value); }
+    }
+    return String(value);
+  }, []);
+
+  // Runtime startup message.
+  useEffect(() => {
+    if (!cpNumber) return;
+    addLog(
+      `CP${String(cpNumber).padStart(2, "0")} runtime started`,
+      "var(--accent-green)",
+      { source: "SYSTEM", level: "INFO" }
+    );
+  }, [cpNumber, addLog]);
+
+  // Report the configured TCP/IP device list once it is loaded.
+  useEffect(() => {
+    if (!Array.isArray(tcpDevices) || tcpDevices.length === 0) return;
+
+    tcpDevices.forEach((device) => {
+      addLog(
+        `TCP/IP device configured — ${device.name} (${device.host}:${device.port})`,
+        "var(--accent-green)",
+        { source: "DEVICE", level: "INFO" }
+      );
+    });
+  }, [tcpDevices, addLog]);
+
   // ============================================================
+  // CENTRAL MESSAGE / COMMUNICATION LOG
+  // ============================================================
+  // The Message widget consumes the same `logs` state used by the
+  // existing diagnostic log. Communication events are intentionally
+  // logged only when their value/status changes, not on every 50 ms poll.
+  const previousTCPValuesRef = useRef({});
+  const previousTCPStatusRef = useRef({});
+  const previousTCPErrorsRef = useRef({});
+  const previousInternalValuesRef = useRef({});
+  const tcpMessageInitializedRef = useRef(false);
+  const internalMessageInitializedRef = useRef(false);
+
+  // TCP/IP connection status + errors.
+  // useTCPPLC maintains status per physical binding/address. We expose
+  // the transition as a human-readable device message.
+  useEffect(() => {
+    const currentStatus = tcpConnectionStatus || {};
+    const currentErrors = tcpErrors || {};
+
+    if (!tcpMessageInitializedRef.current) {
+      previousTCPStatusRef.current = { ...currentStatus };
+      previousTCPErrorsRef.current = { ...currentErrors };
+      tcpMessageInitializedRef.current = true;
+
+      // Initial state: report already-connected bindings as INITIAL CONNECTED.
+      Object.entries(currentStatus).forEach(([key, connected]) => {
+        if (connected === true) {
+          addLog(
+            `TCP/IP initial connection OK — ${key}`,
+            "var(--accent-green)",
+            { source: "DEVICE", level: "INFO" }
+          );
+        }
+      });
+
+      Object.entries(currentErrors).forEach(([key, message]) => {
+        if (message) {
+          addLog(
+            `TCP/IP initial connection error — ${key}: ${message}`,
+            "var(--accent-red)",
+            { source: "DEVICE", level: "ERROR" }
+          );
+        }
+      });
+
+      return;
+    }
+
+    const previousStatus = previousTCPStatusRef.current || {};
+    const previousErrors = previousTCPErrorsRef.current || {};
+
+    const keys = new Set([
+      ...Object.keys(previousStatus),
+      ...Object.keys(currentStatus),
+    ]);
+
+    keys.forEach((key) => {
+      const before = previousStatus[key];
+      const after = currentStatus[key];
+
+      if (before !== after && after === true) {
+        addLog(
+          `TCP/IP connected — ${key}`,
+          "var(--accent-green)",
+          { source: "DEVICE", level: "INFO" }
+        );
+      } else if (before !== after && after === false) {
+        const reason = currentErrors[key] || "communication lost";
+        addLog(
+          `TCP/IP disconnected — ${key}: ${reason}`,
+          "var(--accent-red)",
+          { source: "DEVICE", level: "ERROR" }
+        );
+      }
+    });
+
+    const errorKeys = new Set([
+      ...Object.keys(previousErrors),
+      ...Object.keys(currentErrors),
+    ]);
+
+    errorKeys.forEach((key) => {
+      const before = previousErrors[key];
+      const after = currentErrors[key];
+
+      if (after && after !== before) {
+        addLog(
+          `TCP/IP error — ${key}: ${after}`,
+          "var(--accent-red)",
+          { source: "TCP", level: "ERROR" }
+        );
+      }
+    });
+
+    previousTCPStatusRef.current = { ...currentStatus };
+    previousTCPErrorsRef.current = { ...currentErrors };
+  }, [tcpConnectionStatus, tcpErrors, addLog]);
+
+  // TCP/IP data changes.
+  // Only configured runtime bindings are logged so unrelated internal
+  // implementation keys do not flood the Message widget.
+  useEffect(() => {
+    const current = tcpValues || {};
+    const previous = previousTCPValuesRef.current || {};
+
+    if (!tcpMessageInitializedRef.current) {
+      previousTCPValuesRef.current = { ...current };
+      return;
+    }
+
+    const bindingDescriptions = new Map();
+
+    (runtimeWidgets || []).forEach((widget) => {
+      if (!widget) return;
+
+      const p = widget.props || {};
+      const type = String(widget.type || "").toLowerCase();
+
+      if (type === "linechart") {
+        const series = Array.isArray(p.series) ? p.series : [];
+        series.forEach((seriesItem) => {
+          if (String(seriesItem?.sourceType || "tcp").toLowerCase() !== "tcp") return;
+          const key = `${widget.id}:${seriesItem.id}`;
+          if (!Object.prototype.hasOwnProperty.call(current, key)) return;
+          bindingDescriptions.set(
+            key,
+            `${p.title || "LineChart"} / ${seriesItem.name || seriesItem.alias || seriesItem.id}`
+          );
+        });
+        return;
+      }
+
+      if (type === "testtable") {
+        const rows = Array.isArray(p.rows) ? p.rows : [];
+        rows.forEach((row) => {
+          if (String(row?.sourceType || "tcp").toLowerCase() !== "tcp") return;
+          const key = `${widget.id}:${row.id}`;
+          if (!Object.prototype.hasOwnProperty.call(current, key)) return;
+          bindingDescriptions.set(
+            key,
+            `${p.title || "TestTable"} / ${row.item || row.id}`
+          );
+        });
+        return;
+      }
+
+      const source = normalizeInputSource(p.inputSource);
+      const dataSource = String(p.dataSource || "device").trim().toLowerCase();
+
+      if (
+        (source === "tcp" || dataSource === "device") &&
+        hasPLCBinding(widget) &&
+        Object.prototype.hasOwnProperty.call(current, String(widget.id))
+      ) {
+        bindingDescriptions.set(
+          String(widget.id),
+          `${type || "Widget"} ${widget.id} / ${p.device || "TCP device"} / ${p.addressType || ""} ${p.address ?? ""}`.trim()
+        );
+      }
+    });
+
+    bindingDescriptions.forEach((description, key) => {
+      const value = current[key];
+      const before = previous[key];
+
+      if (before !== undefined && !Object.is(before, value)) {
+        addLog(
+          `${description} — value: ${formatMessageValue(before)} → ${formatMessageValue(value)}`,
+          "var(--accent-blue)",
+          { source: "TCP", level: "RX" }
+        );
+      }
+    });
+
+    previousTCPValuesRef.current = { ...current };
+  }, [
+    tcpValues,
+    runtimeWidgets,
+    hasPLCBinding,
+    normalizeInputSource,
+    addLog,
+    formatMessageValue,
+  ]);
+
+  // Internal Variable changes.
+  // useInternalVariables polls at 50 ms, so compare snapshots rather than
+  // creating a message on every poll cycle.
+  useEffect(() => {
+    const current = {};
+    (internalVariables || []).forEach((variable) => {
+      if (!variable?.name) return;
+      current[String(variable.name)] = variable.value;
+    });
+
+    if (!internalMessageInitializedRef.current) {
+      previousInternalValuesRef.current = { ...current };
+      internalMessageInitializedRef.current = true;
+      return;
+    }
+
+    const previous = previousInternalValuesRef.current || {};
+
+    Object.entries(current).forEach(([name, value]) => {
+      if (!Object.prototype.hasOwnProperty.call(previous, name)) return;
+
+      if (!Object.is(previous[name], value)) {
+        addLog(
+          `${name}: ${formatMessageValue(previous[name])} → ${formatMessageValue(value)}`,
+          "var(--accent-purple)",
+          { source: "INTERNAL", level: "INFO" }
+        );
+      }
+    });
+
+    previousInternalValuesRef.current = { ...current };
+  }, [internalVariables, addLog, formatMessageValue]);
+
+  // Reset communication-log baselines together with the runtime reset.
+  useEffect(() => {
+    const handler = () => {
+      previousTCPValuesRef.current = {};
+      previousTCPStatusRef.current = {};
+      previousTCPErrorsRef.current = {};
+      previousInternalValuesRef.current = {};
+      tcpMessageInitializedRef.current = false;
+      internalMessageInitializedRef.current = false;
+    };
+
+    window.addEventListener("cp-reset", handler);
+    return () => window.removeEventListener("cp-reset", handler);
+  }, []);
+
+    // ============================================================
   // RS232 / SCANNER LOGIC
   // ============================================================
 
@@ -2068,6 +2352,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       const source = String(event.detail?.source ?? "");
       const value = String(event.detail?.value ?? "");
+      const scanKind = String(event.detail?.kind || "com").trim().toLowerCase();
 
       console.log(
         `[DynamicCPPage] Received cp-scan for ${source} → ${value}`
@@ -2210,6 +2495,22 @@ export default function DynamicCPPage({ cpNumber, user }) {
         return changed ? next : previous;
       });
 
+      // Central Message widget: every incoming scanner/COM/device-trigger
+      // event is recorded before the existing Logic Builder flow runs.
+      const sourceText = String(source || "").trim() || "unknown";
+      const isLikelyDeviceTrigger =
+        scanKind === "device-trigger" ||
+        String(sourceText).toLowerCase().includes("trigger");
+
+      addLog(
+        `${isLikelyDeviceTrigger ? "Device Trigger" : "COM"} RX [${sourceText}] — ${String(value ?? "")}`,
+        "var(--accent-blue)",
+        {
+          source: isLikelyDeviceTrigger ? "DEVICE" : "COM",
+          level: "RX",
+        }
+      );
+
       // Keep the existing Logic Builder scan flow unchanged.
       handleScan(source, value);
     };
@@ -2230,6 +2531,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     handleScan,
     normalizeInputSource,
     widgets,
+    addLog,
   ]);
 
   // ============================================================
@@ -2653,11 +2955,19 @@ export default function DynamicCPPage({ cpNumber, user }) {
     if (type === "alarmbanner") return <RuntimeAlarmBanner key={id} widget={widget} value={runtimeValue} />;
     if (type === "progressbar") return <RuntimeProgressBar key={id} widget={widget} value={runtimeValue} />;
     if (type === "selectorswitch") return <RuntimeSelectorSwitch key={id} widget={widget} value={runtimeValue} onChange={(value) => handleSelectorSwitchChange(widget, value)} />;
+    if (type === "message") return (
+      <RuntimeMessage
+        key={id}
+        widget={widget}
+        logs={logs}
+        onClear={() => setLogs([])}
+      />
+    );
 
     // Manual / Calibration / Timing Limit are no longer special widgets.
     // They are now normal custom pages created through Page Builder.
     return null;
-  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, handleSelectorSwitchChange, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage, navigateToPage]);
+  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, handleSelectorSwitchChange, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage, navigateToPage, logs]);
 
   // ============================================================
   // RENDER STATES

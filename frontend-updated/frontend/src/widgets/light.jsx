@@ -37,7 +37,6 @@ export const lightDef = {
     address: "",
 
     label: "STATUS",
-    variable: "Light1",
 
     // Used by both PLC and Internal Variable modes.
     valueOn: 1,
@@ -483,38 +482,7 @@ export function LightPropertyPanel({
             />
           </PropSection>
 
-          <PropSection title="Data Binding">
-            <PropInput
-              label="Variable"
-              value={p.variable ?? ""}
-              onChange={(v) => set("variable", v)}
-            />
-
-            <div className="text-[8px] text-[var(--text-dim)] mt-0.5">
-              Light is READ only. It supports Coil, Discrete
-              Input, Holding Register and Input Register.
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <PropInput
-                label="Value ON"
-                type="number"
-                value={p.valueOn ?? 1}
-                onChange={(v) =>
-                  set("valueOn", v === "" ? "" : Number(v))
-                }
-              />
-
-              <PropInput
-                label="Value OFF"
-                type="number"
-                value={p.valueOff ?? 0}
-                onChange={(v) =>
-                  set("valueOff", v === "" ? "" : Number(v))
-                }
-              />
-            </div>
-          </PropSection>
+          
         </>
       )}
 
