@@ -23,23 +23,23 @@
             "width": 140
         },
         {
-            "key": "chassis_sn",
-            "label": "Chassis SN (WU# Code 1)",
+            "key": "step",
+            "label": "Step1",
             "width": 140
         },
         {
-            "key": "main_pcba",
-            "label": "Main PCBA (SU# Code F)",
+            "key": "step2",
+            "label": "Step2",
             "width": 140
         },
         {
-            "key": "mac_address",
-            "label": "Mac Address (SU# Code F)",
+            "key": "step3",
+            "label": "Step3",
             "width": 140
         },
         {
-            "key": "app_version",
-            "label": "App Version",
+            "key": "result",
+            "label": "Result",
             "width": 140
         }
     ],

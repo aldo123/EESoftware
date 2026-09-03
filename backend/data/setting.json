@@ -46,22 +46,22 @@
     "Communication Devices": {
         "_table": [
             {
-                "Baudrate": "115200",
-                "COM Port": "COM5",
-                "Data Bits": "8",
                 "Device Name": "Part",
+                "Type": "COM",
+                "COM Port": "COM5",
+                "Baudrate": "115200",
                 "Parity": "None",
-                "Stop Bits": "1",
-                "Type": "COM"
+                "Data Bits": "8",
+                "Stop Bits": "1"
             },
             {
-                "Baudrate": "9600",
-                "COM Port": "COM6",
-                "Data Bits": "8",
                 "Device Name": "Product",
+                "Type": "COM",
+                "COM Port": "COM6",
+                "Baudrate": "9600",
                 "Parity": "None",
-                "Stop Bits": "1",
-                "Type": "COM"
+                "Data Bits": "8",
+                "Stop Bits": "1"
             },
             {
                 "Device Name": "PLC",
