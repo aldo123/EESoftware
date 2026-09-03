@@ -113,6 +113,7 @@ export const TEXTBOX_ICONS = [
   { value: "✓", label: "Pass", icon: "✓" },
   { value: "✗", label: "NG", icon: "✗" },
   { value: "⚙️", label: "Machine", icon: "⚙️" },
+  { value: "🔗", label: "Connection", icon: "🔗" },
 ];
 
 
