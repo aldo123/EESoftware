@@ -42,6 +42,7 @@ const resolutionKey = (w, h) => `${w}x${h}`;
 
 export default function DynamicCPPage({ cpNumber, user }) {
   const [widgets, setWidgets] = useState([]);
+  const [specificationRevision, setSpecificationRevision] = useState(0);
   const [pages, setPages] = useState({});
   const [activePageId, setActivePageId] = useState(null);
   const [activePopupPage, setActivePopupPage] = useState(null);
@@ -2202,6 +2203,19 @@ export default function DynamicCPPage({ cpNumber, user }) {
     };
   }, []);
 
+  // Specification editor runs in a separate modal/component. When it saves,
+  // refresh only Specification runtime widgets instead of forcing a page reload.
+  useEffect(() => {
+    const onSpecificationUpdated = () => {
+      setSpecificationRevision((value) => value + 1);
+    };
+
+    window.addEventListener("specification-updated", onSpecificationUpdated);
+    return () => {
+      window.removeEventListener("specification-updated", onSpecificationUpdated);
+    };
+  }, []);
+
   // ============================================================
   // RUNTIME DISPLAY RESOLUTION
   // ============================================================
@@ -3285,7 +3299,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     );
     if (type === "linechart") return <RuntimeLineChart key={id} widget={widget} history={chartHistory[id] || []} running={chartRunning[id] !== false} />;
     if (type === "gauge") return <RuntimeGauge key={id} widget={widget} value={runtimeValue} />;
-    if (type === "testtable") return <RuntimeTestTable key={id} widget={widget} getValue={getTestTableValue} />;
+    if (type === "testtable") return <RuntimeTestTable key={`${id}:${specificationRevision}`} widget={widget} getValue={getTestTableValue} />;
     if (type === "camerafeed") return <RuntimeCameraFeed key={id} widget={widget} cpNumber={cpNumber} />;
     if (type === "image") return <RuntimeImage key={id} widget={widget} />;
     if (type === "alarmbanner") return <RuntimeAlarmBanner key={id} widget={widget} value={runtimeValue} />;

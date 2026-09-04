@@ -587,7 +587,7 @@ export default function Specification({ onClose, cpNumber = "" }) {
         })),
       };
 
-      await jsonRequest(
+      const saved = await jsonRequest(
         `${API}/api/specifications/${current.id}`,
         {
           method: "PUT",
@@ -595,7 +595,32 @@ export default function Specification({ onClose, cpNumber = "" }) {
         }
       );
 
-      await loadSpecifications(current.id);
+      // Use the exact row data returned by the backend. This prevents the
+      // editor from temporarily showing stale/default Result targets after
+      // Save and avoids depending on a second GET request to refresh state.
+      const savedSpec = saved?.specification
+        ? normalizeSpecification(saved.specification)
+        : normalizeSpecification({ ...current, rows: payload.rows });
+
+      setSpecifications((previous) =>
+        previous.map((item) =>
+          String(item.id) === String(current.id) ? savedSpec : item
+        )
+      );
+      setCurrent(savedSpec);
+      setSelectedId(String(current.id));
+
+      // Tell DynamicCPPage/RuntimeTestTable that this specification changed.
+      window.dispatchEvent(
+        new CustomEvent("specification-updated", {
+          detail: {
+            specificationId: current.id,
+            cpNumber,
+            specification: savedSpec,
+          },
+        })
+      );
+
       setMessage("Specification saved.");
     } catch (err) {
       setError(err.message || "Failed to save specification");

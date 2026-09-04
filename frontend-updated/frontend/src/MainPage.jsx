@@ -723,12 +723,16 @@ export default function MainPage({ user: initialUser, onLogout }) {
   };
 
   // ── Render konten berdasarkan menu aktif ───────────────────
+  // IMPORTANT:
+  // DynamicCPPage is rendered OUTSIDE the active-menu switch so its
+  // runtime/effects stay mounted while the user opens Dashboard,
+  // Calibration, SN List, etc. Only its visual layer is hidden.
   const renderContent = () => {
     switch (activeMenu) {
       case "Main":
-        if (processCode && cpNumber) {
-          return <DynamicCPPage key={`${cpNumber}-${dynamicPageRefreshKey}`} user={user} cpNumber={cpNumber} />;
-        }
+        // DynamicCPPage is handled by the persistent runtime layer below.
+        // When no CP/process is configured, show the normal MainContent.
+        if (processCode && cpNumber) return null;
         return <MainContent />;
 
       case "Downtime":
@@ -957,8 +961,42 @@ export default function MainPage({ user: initialUser, onLogout }) {
 
         {/* KONTEN UTAMA + SIDEBAR KANAN (kondisional) */}
         <div className="flex flex-1 overflow-hidden">
-          {/* Area konten dinamis */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          {/*
+           * Persistent Dynamic Page runtime
+           * --------------------------------
+           * DO NOT put this component inside the activeMenu switch or
+           * AnimatePresence. Doing so unmounts it whenever the navbar
+           * changes and kills its timers/PLC polling/widget activity.
+           *
+           * We keep it mounted and only hide the visual layer. React
+           * effects, timers, runtime state and communication therefore
+           * continue running in the background.
+           */}
+          <div
+            className={
+              `flex-1 flex flex-col overflow-hidden relative ` +
+              (activeMenu === "Main" && processCode && cpNumber
+                ? ""
+                : "hidden")
+            }
+            aria-hidden={!(activeMenu === "Main" && processCode && cpNumber)}
+          >
+            {processCode && cpNumber ? (
+              <DynamicCPPage
+                key={`${cpNumber}-${dynamicPageRefreshKey}`}
+                user={user}
+                cpNumber={cpNumber}
+              />
+            ) : null}
+          </div>
+
+          {/* Normal pages. DynamicCPPage is intentionally excluded here. */}
+          <div
+            className={
+              `flex-1 flex flex-col overflow-hidden relative ` +
+              (activeMenu === "Main" && processCode && cpNumber ? "hidden" : "")
+            }
+          >
             <AnimatePresence mode="wait">
               <motion.div
                 key={activeMenu}
