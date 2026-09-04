@@ -10705,7 +10705,7 @@
             "width": 245
           },
           "type": "button",
-          "x": 361,
+          "x": 363,
           "y": 1000,
           "zIndex": 15
         },
@@ -10749,7 +10749,7 @@
             "width": 245
           },
           "type": "button",
-          "x": 50,
+          "x": 80,
           "y": 1000,
           "zIndex": 16
         },
@@ -10793,7 +10793,7 @@
             "width": 245
           },
           "type": "button",
-          "x": 672,
+          "x": 645,
           "y": 1000,
           "zIndex": 17
         },
@@ -10837,7 +10837,7 @@
             "width": 245
           },
           "type": "button",
-          "x": 983,
+          "x": 928,
           "y": 1000,
           "zIndex": 18
         },
@@ -10881,7 +10881,7 @@
             "width": 245
           },
           "type": "button",
-          "x": 1294,
+          "x": 1210,
           "y": 1000,
           "zIndex": 19
         },
@@ -10925,9 +10925,62 @@
             "width": 245
           },
           "type": "button",
-          "x": 1605,
+          "x": 1493,
           "y": 1000,
           "zIndex": 20
+        },
+        {
+          "id": "w1788552592060_1",
+          "props": {
+            "action": "navigate",
+            "address": "",
+            "addressType": "coil",
+            "backgroundOpacity": 1,
+            "builderState": 1,
+            "buttonType": "toggle",
+            "device": "",
+            "fontSize": 18,
+            "height": 65,
+            "imageFit": "fill",
+            "imageOverlay": true,
+            "labelOff": "BUTTON OFF",
+            "labelOn": "BUTTON ON",
+            "offBackground": "#0c610a",
+            "offImage": "button-images/HOME.png",
+            "onBackground": "#0c610a",
+            "onImage": "button-images/HOME.png",
+            "resetLabel": "RESET",
+            "resetTargets": [],
+            "showLabel": false,
+            "simulation": {
+              "enabled": true,
+              "mode": "manual"
+            },
+            "targetPage": "dynamic",
+            "valueOff": 0,
+            "valueOn": 1,
+            "variant": "solid",
+            "visual": {
+              "accentColor": "var(--accent-cyan)",
+              "backgroundColor": "var(--panel-canvas)",
+              "borderColor": "var(--panel-mid)",
+              "borderRadius": 12,
+              "borderWidth": 1,
+              "glow": true,
+              "glowIntensity": 18,
+              "secondaryTextColor": "var(--panel-line)",
+              "textColor": "#FFFFFF",
+              "theme": "wik_cyan"
+            },
+            "width": 100,
+            "writeTarget": "tcp",
+            "onBorder": "#0c610a",
+            "offBorder": "#0c610a"
+          },
+          "type": "button",
+          "x": 1775,
+          "y": 995,
+          "zIndex": 21
         }
       ]
     },
