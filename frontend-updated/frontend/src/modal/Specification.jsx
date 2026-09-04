@@ -20,6 +20,16 @@ const EMPTY_ROW = {
   source_device: "",
   source_register_type: "Holding",
   source: "",
+
+  value_result_type: "internal",
+  value_result_device: "",
+  value_result_register_type: "Holding",
+  value_result: "",
+
+  status_result_type: "internal",
+  status_result_device: "",
+  status_result_register_type: "Holding",
+  status_result: "",
 };
 
 const TRIGGER_START_OPTIONS = [
@@ -45,6 +55,11 @@ const DATA_SOURCE_OPTIONS = [
   { value: "TCP", label: "TCP" },
   { value: "internal", label: "internal" },
   { value: "RS232", label: "RS232" },
+];
+
+const RESULT_TARGET_OPTIONS = [
+  { value: "internal", label: "Internal" },
+  { value: "TCP", label: "TCP / PLC" },
 ];
 
 function uid() {
@@ -145,6 +160,197 @@ function Select({ value, onChange, options, disabled = false }) {
         </option>
       ))}
     </select>
+  );
+}
+
+function TriggerConfigCell({ row, tcpNames, internalNames, updateRow }) {
+  const type = row.trigger_start || "Internal";
+  const isTcp = type === "TCP";
+  const isInternal = type === "Internal";
+
+  return (
+    <div className="flex flex-col gap-1 min-w-[190px]">
+      <Select
+        value={type}
+        onChange={(value) => {
+          const patch = { trigger_start: value };
+          if (value === "TCP") {
+            patch.trigger_device = tcpNames[0] || "";
+            patch.trigger_register_type = "Holding";
+            patch.trigger_source = "";
+          } else if (value === "Internal") {
+            patch.trigger_device = "";
+            patch.trigger_register_type = "Holding";
+            patch.trigger_source = internalNames[0] || "";
+          } else {
+            patch.trigger_device = "";
+            patch.trigger_register_type = "Holding";
+            patch.trigger_source = "";
+          }
+          updateRow(row.id, patch);
+        }}
+        options={TRIGGER_START_OPTIONS}
+      />
+      {isTcp ? (
+        <>
+          <Select
+            value={row.trigger_device}
+            onChange={(value) => updateRow(row.id, { trigger_device: value })}
+            options={[{ value: "", label: "Select PLC" }, ...tcpNames.map((name) => ({ value: name, label: name }))]}
+          />
+          <Select
+            value={row.trigger_register_type}
+            onChange={(value) => updateRow(row.id, { trigger_register_type: value })}
+            options={REGISTER_OPTIONS}
+          />
+          <Input
+            value={row.trigger_source}
+            onChange={(value) => updateRow(row.id, { trigger_source: value })}
+            placeholder="PLC address"
+          />
+        </>
+      ) : isInternal ? (
+        <Select
+          value={row.trigger_source}
+          onChange={(value) => updateRow(row.id, { trigger_source: value })}
+          options={[{ value: "", label: "Select variable" }, ...internalNames.map((name) => ({ value: name, label: name }))]}
+        />
+      ) : (
+        <Input value="" disabled placeholder="Realtime trigger" onChange={() => {}} />
+      )}
+    </div>
+  );
+}
+
+function SourceConfigCell({ row, tcpNames, rs232Names, internalNames, updateRow }) {
+  const type = row.data_source || "internal";
+  const isTcp = type === "TCP";
+  const isInternal = type === "internal";
+  const isRs232 = type === "RS232";
+
+  return (
+    <div className="flex flex-col gap-1 min-w-[190px]">
+      <Select
+        value={type}
+        onChange={(value) => {
+          const patch = { data_source: value };
+          if (value === "TCP") {
+            patch.source_device = tcpNames[0] || "";
+            patch.source_register_type = "Holding";
+            patch.source = "";
+          } else if (value === "RS232") {
+            patch.source_device = rs232Names[0] || "";
+            patch.source_register_type = "Holding";
+            patch.source = "com device";
+          } else {
+            patch.source_device = "";
+            patch.source_register_type = "Holding";
+            patch.source = internalNames[0] || "";
+          }
+          updateRow(row.id, patch);
+        }}
+        options={DATA_SOURCE_OPTIONS}
+      />
+      {isTcp ? (
+        <>
+          <Select
+            value={row.source_device}
+            onChange={(value) => updateRow(row.id, { source_device: value })}
+            options={[{ value: "", label: "Select PLC" }, ...tcpNames.map((name) => ({ value: name, label: name }))]}
+          />
+          <Select
+            value={row.source_register_type}
+            onChange={(value) => updateRow(row.id, { source_register_type: value })}
+            options={REGISTER_OPTIONS}
+          />
+          <Input
+            value={row.source}
+            onChange={(value) => updateRow(row.id, { source: value })}
+            placeholder="PLC address"
+          />
+        </>
+      ) : isInternal ? (
+        <Select
+          value={row.source}
+          onChange={(value) => updateRow(row.id, { source: value })}
+          options={[{ value: "", label: "Select variable" }, ...internalNames.map((name) => ({ value: name, label: name }))]}
+        />
+      ) : isRs232 ? (
+        <>
+          <Select
+            value={row.source_device}
+            onChange={(value) => updateRow(row.id, { source_device: value })}
+            options={[{ value: "", label: "Select COM" }, ...rs232Names.map((name) => ({ value: name, label: name }))]}
+          />
+          <Input
+            value={row.source || "com device"}
+            onChange={(value) => updateRow(row.id, { source: value })}
+            placeholder="com device"
+          />
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ResultTargetCell({ row, prefix, tcpNames, internalNames, result }) {
+  const type = row[`${prefix}_result_type`] || "internal";
+  const device = row[`${prefix}_result_device`] || "";
+  const registerType = row[`${prefix}_result_register_type`] || "Holding";
+  const target = row[`${prefix}_result`] || "";
+  const isTcp = type === "TCP";
+
+  const patch = (key, value) => ({ [`${prefix}_${key}`]: value });
+
+  return (
+    <div className="flex flex-col gap-1 min-w-[190px]">
+      <Select
+        value={type}
+        onChange={(value) => {
+          result.updateRow(row.id, value === "TCP" ? {
+            [`${prefix}_result_type`]: "TCP",
+            [`${prefix}_result_device`]: tcpNames[0] || "",
+            [`${prefix}_result_register_type`]: "Holding",
+            [`${prefix}_result`]: "",
+          } : {
+            [`${prefix}_result_type`]: "internal",
+            [`${prefix}_result_device`]: "",
+            [`${prefix}_result_register_type`]: "Holding",
+            [`${prefix}_result`]: internalNames[0] || "",
+          });
+        }}
+        options={RESULT_TARGET_OPTIONS}
+      />
+      {isTcp ? (
+        <>
+          <Select
+            value={device}
+            onChange={(value) => result.updateRow(row.id, patch("result_device", value))}
+            options={[{ value: "", label: "Select PLC" }, ...tcpNames.map((name) => ({ value: name, label: name }))]}
+          />
+          <Select
+            value={registerType}
+            onChange={(value) => result.updateRow(row.id, patch("result_register_type", value))}
+            options={[{ value: "Holding", label: "Holding" }, { value: "Coil", label: "Coil" }]}
+          />
+          <Input
+            value={target}
+            onChange={(value) => result.updateRow(row.id, patch("result", value))}
+            placeholder="PLC address"
+          />
+        </>
+      ) : (
+        <Select
+          value={target}
+          onChange={(value) => result.updateRow(row.id, patch("result", value))}
+          options={[{ value: "", label: "Select variable" }, ...internalNames.map((name) => ({ value: name, label: name }))]}
+        />
+      )}
+      <div className="rounded-md border border-[var(--border-soft)] px-2 py-1 text-[9px]">
+        <div className="text-[var(--text-muted)]">Result</div>
+        <div className="font-bold text-[var(--text-primary)]">{result.value == null ? "-" : result.value}</div>
+      </div>
+    </div>
   );
 }
 
@@ -369,6 +575,15 @@ export default function Specification({ onClose, cpNumber = "" }) {
           source_device: row.source_device,
           source_register_type: row.source_register_type,
           source: row.source,
+
+          value_result_type: row.value_result_type,
+          value_result_device: row.value_result_device,
+          value_result_register_type: row.value_result_register_type,
+          value_result: row.value_result,
+          status_result_type: row.status_result_type,
+          status_result_device: row.status_result_device,
+          status_result_register_type: row.status_result_register_type,
+          status_result: row.status_result,
         })),
       };
 
@@ -762,7 +977,7 @@ export default function Specification({ onClose, cpNumber = "" }) {
               </div>
 
               <div className="flex-1 min-h-0 overflow-auto">
-                <table className="border-collapse text-[10px] min-w-[2200px]">
+                <table className="border-collapse text-[10px] min-w-[1850px]">
                   <thead className="sticky top-0 z-20 bg-[#1F2937] text-white">
                     <tr>
                       <th className="border border-[var(--border)] p-2 min-w-[150px] text-left">
@@ -774,17 +989,8 @@ export default function Specification({ onClose, cpNumber = "" }) {
                       <th className="border border-[var(--border)] p-2 min-w-[100px] text-left">
                         Upper Limit
                       </th>
-                      <th className="border border-[var(--border)] p-2 min-w-[125px] text-left">
-                        Trigger Start
-                      </th>
-                      <th className="border border-[var(--border)] p-2 min-w-[150px] text-left">
-                        Device Trigger
-                      </th>
-                      <th className="border border-[var(--border)] p-2 min-w-[155px] text-left">
-                        Type Register Trigger
-                      </th>
-                      <th className="border border-[var(--border)] p-2 min-w-[180px] text-left">
-                        Trigger Source
+                      <th className="border border-[var(--border)] p-2 min-w-[210px] text-left">
+                        Trigger
                       </th>
                       <th className="border border-[var(--border)] p-2 min-w-[90px] text-left">
                         Time Start
@@ -795,17 +1001,14 @@ export default function Specification({ onClose, cpNumber = "" }) {
                       <th className="border border-[var(--border)] p-2 min-w-[90px] text-left">
                         Method
                       </th>
-                      <th className="border border-[var(--border)] p-2 min-w-[120px] text-left">
-                        Data Source
-                      </th>
-                      <th className="border border-[var(--border)] p-2 min-w-[150px] text-left">
-                        Device Source
-                      </th>
-                      <th className="border border-[var(--border)] p-2 min-w-[155px] text-left">
-                        Type Register Source
-                      </th>
-                      <th className="border border-[var(--border)] p-2 min-w-[180px] text-left">
+                      <th className="border border-[var(--border)] p-2 min-w-[210px] text-left">
                         Source
+                      </th>
+                      <th className="border border-[var(--border)] p-2 min-w-[210px] text-left">
+                        Value Result
+                      </th>
+                      <th className="border border-[var(--border)] p-2 min-w-[210px] text-left">
+                        Status Result
                       </th>
                       <th className="border border-[var(--border)] p-2 min-w-[70px] text-white font-bold">
                         Test
@@ -866,96 +1069,12 @@ export default function Specification({ onClose, cpNumber = "" }) {
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
-                            <Select
-                              value={row.trigger_start}
-                              onChange={(value) =>
-                                updateTriggerStart(row, value)
-                              }
-                              options={TRIGGER_START_OPTIONS}
+                            <TriggerConfigCell
+                              row={row}
+                              tcpNames={tcpNames}
+                              internalNames={internalNames}
+                              updateRow={updateRow}
                             />
-                          </td>
-
-                          <td className="border border-[var(--border-soft)] p-1">
-                            {triggerTcp ? (
-                              <Select
-                                value={row.trigger_device}
-                                onChange={(value) =>
-                                  updateRow(row.id, {
-                                    trigger_device: value,
-                                  })
-                                }
-                                options={[
-                                  {
-                                    value: "",
-                                    label: "Select PLC",
-                                  },
-                                  ...tcpNames.map((name) => ({
-                                    value: name,
-                                    label: name,
-                                  })),
-                                ]}
-                              />
-                            ) : (
-                              <Input
-                                value={row.trigger_device}
-                                disabled
-                                placeholder="—"
-                                onChange={() => {}}
-                              />
-                            )}
-                          </td>
-
-                          <td className="border border-[var(--border-soft)] p-1">
-                            <Select
-                              value={row.trigger_register_type}
-                              disabled={!triggerTcp}
-                              onChange={(value) =>
-                                updateRow(row.id, {
-                                  trigger_register_type: value,
-                                })
-                              }
-                              options={REGISTER_OPTIONS}
-                            />
-                          </td>
-
-                          <td className="border border-[var(--border-soft)] p-1">
-                            {triggerInternal ? (
-                              <Select
-                                value={row.trigger_source}
-                                onChange={(value) =>
-                                  updateRow(row.id, {
-                                    trigger_source: value,
-                                  })
-                                }
-                                options={[
-                                  {
-                                    value: "",
-                                    label: "Select variable",
-                                  },
-                                  ...internalNames.map((name) => ({
-                                    value: name,
-                                    label: name,
-                                  })),
-                                ]}
-                              />
-                            ) : (
-                              <Input
-                                value={row.trigger_source}
-                                onChange={(value) =>
-                                  updateRow(row.id, {
-                                    trigger_source: value,
-                                  })
-                                }
-                                placeholder={
-                                  triggerTcp
-                                    ? "0 / D100 / address"
-                                    : "—"
-                                }
-                                disabled={
-                                  row.trigger_start === "Realtime"
-                                }
-                              />
-                            )}
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
@@ -995,118 +1114,39 @@ export default function Specification({ onClose, cpNumber = "" }) {
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
-                            <Select
-                              value={row.data_source}
-                              onChange={(value) =>
-                                updateDataSource(row, value)
-                              }
-                              options={DATA_SOURCE_OPTIONS}
+                            <SourceConfigCell
+                              row={row}
+                              tcpNames={tcpNames}
+                              rs232Names={rs232Names}
+                              internalNames={internalNames}
+                              updateRow={updateRow}
                             />
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
-                            {sourceTcp ? (
-                              <Select
-                                value={row.source_device}
-                                onChange={(value) =>
-                                  updateRow(row.id, {
-                                    source_device: value,
-                                  })
-                                }
-                                options={[
-                                  {
-                                    value: "",
-                                    label: "Select PLC",
-                                  },
-                                  ...tcpNames.map((name) => ({
-                                    value: name,
-                                    label: name,
-                                  })),
-                                ]}
-                              />
-                            ) : sourceRs232 ? (
-                              <Select
-                                value={row.source_device}
-                                onChange={(value) =>
-                                  updateRow(row.id, {
-                                    source_device: value,
-                                  })
-                                }
-                                options={[
-                                  {
-                                    value: "",
-                                    label: "Select COM",
-                                  },
-                                  ...rs232Names.map((name) => ({
-                                    value: name,
-                                    label: name,
-                                  })),
-                                ]}
-                              />
-                            ) : (
-                              <Input
-                                value=""
-                                disabled
-                                placeholder="—"
-                                onChange={() => {}}
-                              />
-                            )}
-                          </td>
-
-                          <td className="border border-[var(--border-soft)] p-1">
-                            <Select
-                              value={row.source_register_type}
-                              disabled={!sourceTcp}
-                              onChange={(value) =>
-                                updateRow(row.id, {
-                                  source_register_type: value,
-                                })
-                              }
-                              options={REGISTER_OPTIONS}
+                            <ResultTargetCell
+                              row={row}
+                              prefix="value"
+                              tcpNames={tcpNames}
+                              internalNames={internalNames}
+                              result={{
+                                value: testResults[String(row.id)]?.result,
+                                updateRow,
+                              }}
                             />
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
-                            {sourceInternal ? (
-                              <Select
-                                value={row.source}
-                                onChange={(value) =>
-                                  updateRow(row.id, {
-                                    source: value,
-                                  })
-                                }
-                                options={[
-                                  {
-                                    value: "",
-                                    label: "Select variable",
-                                  },
-                                  ...internalNames.map((name) => ({
-                                    value: name,
-                                    label: name,
-                                  })),
-                                ]}
-                              />
-                            ) : sourceRs232 ? (
-                              <Input
-                                value={row.source || "com device"}
-                                onChange={(value) =>
-                                  updateRow(row.id, {
-                                    source: value,
-                                  })
-                                }
-                                placeholder="com device"
-                              />
-                            ) : (
-                              <Input
-                                value={row.source}
-                                onChange={(value) =>
-                                  updateRow(row.id, {
-                                    source: value,
-                                  })
-                                }
-                                placeholder="Modbus address"
-                              />
-                            )}
+                            <ResultTargetCell
+                              row={row}
+                              prefix="status"
+                              tcpNames={tcpNames}
+                              internalNames={internalNames}
+                              result={{
+                                value: testResults[String(row.id)]?.status,
+                                updateRow,
+                              }}
+                            />
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
