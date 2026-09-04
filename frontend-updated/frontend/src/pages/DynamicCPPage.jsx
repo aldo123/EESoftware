@@ -40,12 +40,63 @@ const DEFAULT_RUNTIME_RESOLUTION = { width: 1920, height: 1080 };
 
 const resolutionKey = (w, h) => `${w}x${h}`;
 
+const getWidgetRect = (widget) => {
+  const x = Number(widget?.x ?? 0);
+  const y = Number(widget?.y ?? 0);
+  const width = Math.max(1, Number(widget?.props?.width ?? 1));
+  const height = Math.max(1, Number(widget?.props?.height ?? 1));
+
+  return {
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0,
+    width: Number.isFinite(width) ? width : 1,
+    height: Number.isFinite(height) ? height : 1,
+  };
+};
+
+const getPopupContentBounds = (widgets, canvas) => {
+  const list = Array.isArray(widgets)
+    ? widgets.filter(Boolean).map(getWidgetRect)
+    : [];
+
+  if (!list.length) {
+    return {
+      minX: 0,
+      minY: 0,
+      width: canvas.width,
+      height: canvas.height,
+    };
+  }
+
+  const minX = Math.min(...list.map(r => r.x));
+  const minY = Math.min(...list.map(r => r.y));
+  const maxX = Math.max(...list.map(r => r.x + r.width));
+  const maxY = Math.max(...list.map(r => r.y + r.height));
+
+  // Small logical breathing room around the actual widget group.
+  const padding = 24;
+
+  const boundedMinX = Math.max(0, minX - padding);
+  const boundedMinY = Math.max(0, minY - padding);
+  const boundedMaxX = Math.min(canvas.width, maxX + padding);
+  const boundedMaxY = Math.min(canvas.height, maxY + padding);
+
+  return {
+    minX: boundedMinX,
+    minY: boundedMinY,
+    width: Math.max(1, boundedMaxX - boundedMinX),
+    height: Math.max(1, boundedMaxY - boundedMinY),
+  };
+};
+
 export default function DynamicCPPage({ cpNumber, user }) {
   const [widgets, setWidgets] = useState([]);
-  const [specificationRevision, setSpecificationRevision] = useState(0);
   const [pages, setPages] = useState({});
   const [activePageId, setActivePageId] = useState(null);
   const [activePopupPage, setActivePopupPage] = useState(null);
+  const [popupMaximized, setPopupMaximized] = useState(false);
+  const popupViewportRef = useRef(null);
+  const [popupViewport, setPopupViewport] = useState({ width: 0, height: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [fieldValues, setFieldValues] = useState({});
@@ -96,6 +147,64 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // Source/design resolution loaded from Page Builder.
   // Widget coordinates are always stored in these pixels.
   const [designCanvas, setDesignCanvas] = useState({ width: 1920, height: 1080 });
+
+  useEffect(() => {
+    const element = popupViewportRef.current;
+    if (!element || !activePopupPage) return;
+
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      setPopupViewport((previous) => {
+        if (
+          Math.abs(previous.width - rect.width) < 1 &&
+          Math.abs(previous.height - rect.height) < 1
+        ) {
+          return previous;
+        }
+
+        return {
+          width: rect.width,
+          height: rect.height,
+        };
+      });
+    };
+
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [activePopupPage, popupMaximized]);
+
+  const popupPage = activePopupPage
+    ? pages?.[activePopupPage] || null
+    : null;
+
+  const popupWidgets = Array.isArray(popupPage?.widgets)
+    ? popupPage.widgets
+    : [];
+
+  const popupBounds = useMemo(
+    () => getPopupContentBounds(popupWidgets, designCanvas),
+    [popupWidgets, designCanvas]
+  );
+
+  const popupScale = useMemo(() => {
+    const availableWidth = Math.max(1, popupViewport.width - 24);
+    const availableHeight = Math.max(1, popupViewport.height - 24);
+
+    const sx = availableWidth / popupBounds.width;
+    const sy = availableHeight / popupBounds.height;
+
+    const scale = Math.min(sx, sy);
+
+    return Number.isFinite(scale)
+      ? Math.max(0.05, scale)
+      : 1;
+  }, [popupViewport, popupBounds]);
 
   // Target/runtime resolution selected on Dynamic Page.
   // This is independent from the Page Builder design resolution.
@@ -1181,6 +1290,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
         setActivePageId("dynamic");
         setWidgets(loadedPages.dynamic.widgets);
         setActivePopupPage(null);
+        setPopupMaximized(false);
         setLoading(false);
 
         // Page Builder resolution is the SOURCE/DESIGN coordinate system.
@@ -2203,19 +2313,6 @@ export default function DynamicCPPage({ cpNumber, user }) {
     };
   }, []);
 
-  // Specification editor runs in a separate modal/component. When it saves,
-  // refresh only Specification runtime widgets instead of forcing a page reload.
-  useEffect(() => {
-    const onSpecificationUpdated = () => {
-      setSpecificationRevision((value) => value + 1);
-    };
-
-    window.addEventListener("specification-updated", onSpecificationUpdated);
-    return () => {
-      window.removeEventListener("specification-updated", onSpecificationUpdated);
-    };
-  }, []);
-
   // ============================================================
   // RUNTIME DISPLAY RESOLUTION
   // ============================================================
@@ -2931,15 +3028,41 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
   const navigateToPage = useCallback((targetPageId) => {
     const id = String(targetPageId || "").trim();
+
     if (!id || !pages[id]) {
-      addLog(`Target page not found: ${id || "(empty)"}`, "var(--accent-red)");
+      addLog(
+        `Target page not found: ${id || "(empty)"}`,
+        "var(--accent-red)"
+      );
       return;
     }
 
-    setActivePageId(id);
-    setWidgets(Array.isArray(pages[id].widgets) ? pages[id].widgets : []);
+    // IMPORTANT:
+    // Dynamic Page is the permanent runtime page.
+    // Every other Page Builder page opens inside the popup window.
+    // Do NOT replace activePageId/widgets here, otherwise the Dynamic
+    // runtime is replaced and the popup never appears.
+    if (id !== "dynamic") {
+      setActivePopupPage(id);
+      setPopupMaximized(false);
+
+      console.log(
+        `[DynamicCPPage] Open popup page: ${id} (${pages[id].name || id})`
+      );
+      return;
+    }
+
+    // Explicit request to return to the Dynamic Page.
     setActivePopupPage(null);
-    console.log(`[DynamicCPPage] Navigate to page: ${id} (${pages[id].name || id})`);
+    setPopupMaximized(false);
+    setActivePageId("dynamic");
+    setWidgets(
+      Array.isArray(pages.dynamic?.widgets)
+        ? pages.dynamic.widgets
+        : []
+    );
+
+    console.log("[DynamicCPPage] Returned to Dynamic Page");
   }, [addLog, pages]);
 
   // ============================================================
@@ -3277,10 +3400,30 @@ export default function DynamicCPPage({ cpNumber, user }) {
   }, [tcpValues, testTableComValues, fieldValues]);
 
   const openPopupPage = useCallback((page) => {
-    if (page === "manual" || page === "calibration") setActivePopupPage(page);
-  }, []);
+    const id = String(page || "").trim();
 
-  const closePopupPage = useCallback(() => setActivePopupPage(null), []);
+    if (!id || id === "dynamic" || !pages[id]) {
+      if (id && id !== "dynamic") {
+        addLog(
+          `Popup page not found: ${id}`,
+          "var(--accent-red)"
+        );
+      }
+      return;
+    }
+
+    setActivePopupPage(id);
+    setPopupMaximized(false);
+
+    console.log(
+      `[DynamicCPPage] Open popup page: ${id} (${pages[id].name || id})`
+    );
+  }, [addLog, pages]);
+
+  const closePopupPage = useCallback(() => {
+    setActivePopupPage(null);
+    setPopupMaximized(false);
+  }, []);
 
   const renderRuntimeWidget = useCallback((widget) => {
     const { type, id } = widget;
@@ -3299,7 +3442,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     );
     if (type === "linechart") return <RuntimeLineChart key={id} widget={widget} history={chartHistory[id] || []} running={chartRunning[id] !== false} />;
     if (type === "gauge") return <RuntimeGauge key={id} widget={widget} value={runtimeValue} />;
-    if (type === "testtable") return <RuntimeTestTable key={`${id}:${specificationRevision}`} widget={widget} getValue={getTestTableValue} />;
+    if (type === "testtable") return <RuntimeTestTable key={id} widget={widget} getValue={getTestTableValue} />;
     if (type === "camerafeed") return <RuntimeCameraFeed key={id} widget={widget} cpNumber={cpNumber} />;
     if (type === "image") return <RuntimeImage key={id} widget={widget} />;
     if (type === "alarmbanner") return <RuntimeAlarmBanner key={id} widget={widget} value={runtimeValue} />;
@@ -3431,33 +3574,226 @@ export default function DynamicCPPage({ cpNumber, user }) {
       </div>
 
 
-      {activePopupPage && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) closePopupPage(); }}>
-          <div className="relative w-[96vw] h-[92vh] max-w-[1800px] overflow-hidden rounded-2xl border border-[var(--border)] shadow-2xl bg-[var(--bg-canvas)]" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="absolute z-20 top-0 left-0 right-0 h-12 flex items-center justify-between px-4 border-b border-[var(--border-soft)] bg-[var(--bg-surface-2)]/95 backdrop-blur-sm">
-              <div className="flex items-center gap-2">
-                <span className="text-lg">{activePopupPage === "manual" ? "🕹" : "🎯"}</span>
-                <span className="text-[var(--text-primary)] font-bold text-sm">{activePopupPage === "manual" ? "Manual Control" : "Calibration"}</span>
-                <span className="text-[9px] font-mono text-[var(--text-muted)] px-2 py-1 rounded bg-[var(--border-soft)]">Popup Page</span>
+      {activePopupPage && popupPage && (
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center p-3 sm:p-5"
+          style={{
+            background: "rgba(3, 8, 14, 0.78)",
+            backdropFilter: "blur(7px)",
+            WebkitBackdropFilter: "blur(7px)",
+          }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              closePopupPage();
+            }
+          }}
+        >
+          <section
+            className={
+              popupMaximized
+                ? "relative w-full h-full overflow-hidden rounded-xl"
+                : "relative w-[94vw] h-[88vh] max-w-[1680px] max-h-[920px] min-h-[560px] overflow-hidden rounded-xl"
+            }
+            style={{
+              background: "var(--bg-surface, #f7fafc)",
+              border: "1px solid rgba(148, 163, 184, 0.55)",
+              boxShadow:
+                "0 24px 80px rgba(0,0,0,0.48), 0 8px 28px rgba(0,0,0,0.24)",
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            {/* Professional window title bar */}
+            <header
+              className="absolute inset-x-0 top-0 z-30 h-[50px] flex items-center justify-between px-3 sm:px-4"
+              style={{
+                background:
+                  "linear-gradient(180deg, #12202d 0%, #0b1621 100%)",
+                borderBottom: "1px solid rgba(148,163,184,0.22)",
+              }}
+            >
+              <div className="flex items-center min-w-0 gap-3">
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                  style={{
+                    background: "rgba(34,197,94,0.12)",
+                    border: "1px solid rgba(34,197,94,0.35)",
+                    color: "#86efac",
+                  }}
+                >
+                  <span className="text-sm">
+                    {popupPage.icon || "📄"}
+                  </span>
+                </div>
+
+                <div className="min-w-0 leading-none">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] font-bold text-white truncate">
+                      {popupPage.name || activePopupPage}
+                    </span>
+                    <span
+                      className="px-1.5 py-[3px] rounded text-[7px] font-bold tracking-[0.08em]"
+                      style={{
+                        color: "#86efac",
+                        background: "rgba(34,197,94,0.12)",
+                        border: "1px solid rgba(34,197,94,0.28)",
+                      }}
+                    >
+                      POPUP
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[7px] text-slate-400 tracking-wide">
+                    CP{cpNumber} • RUNTIME PAGE
+                  </div>
+                </div>
               </div>
-              <button type="button" onClick={closePopupPage} className="h-8 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--border-soft)] text-[10px] font-bold">← Back</button>
+
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="hidden sm:flex items-center gap-1.5 px-2.5 h-7 rounded-md mr-1"
+                  style={{
+                    color: "#86efac",
+                    background: "rgba(34,197,94,0.08)",
+                    border: "1px solid rgba(34,197,94,0.20)",
+                  }}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{
+                      background: "#22c55e",
+                      boxShadow: "0 0 7px rgba(34,197,94,0.8)",
+                    }}
+                  />
+                  <span className="text-[7px] font-bold tracking-wide">
+                    RUNTIME ACTIVE
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  title={popupMaximized ? "Restore" : "Maximize"}
+                  onClick={() => setPopupMaximized((value) => !value)}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                  style={{
+                    background: "rgba(148,163,184,0.07)",
+                    border: "1px solid rgba(148,163,184,0.18)",
+                  }}
+                >
+                  {popupMaximized ? "❐" : "□"}
+                </button>
+
+                <button
+                  type="button"
+                  title="Close"
+                  onClick={closePopupPage}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                  style={{
+                    background: "rgba(148,163,184,0.07)",
+                    border: "1px solid rgba(148,163,184,0.18)",
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            </header>
+
+            {/* Compact context bar */}
+            <div
+              className="absolute top-[50px] inset-x-0 z-20 h-[30px] flex items-center justify-between px-4"
+              style={{
+                background: "#eef3f7",
+                borderBottom: "1px solid #d7e0e8",
+              }}
+            >
+              <div className="flex items-center gap-2 text-[7px] font-semibold tracking-wide">
+                <span className="text-slate-400">PAGE</span>
+                <span className="text-slate-500">/</span>
+                <span className="text-slate-700 truncate">
+                  {popupPage.name || activePopupPage}
+                </span>
+              </div>
+
+              <div className="text-[7px] font-mono text-slate-400">
+                CP: {String(cpNumber).padStart(2, "0")}
+              </div>
             </div>
-            <div className="absolute inset-0 pt-12 overflow-hidden flex items-center justify-center">
-              {(pages[activePopupPage]?.widgets || []).length === 0 ? (
+
+            {/* Actual popup viewport */}
+            <div
+              ref={popupViewportRef}
+              className="absolute inset-x-0 bottom-[28px] top-[80px] overflow-hidden flex items-center justify-center"
+              style={{
+                background:
+                  "linear-gradient(145deg, #f3f7fa 0%, #fbfcfd 48%, #f5f1e7 100%)",
+              }}
+            >
+              {popupWidgets.length === 0 ? (
                 <div className="text-center px-6">
-                  <div className="text-5xl opacity-20 mb-3">{activePopupPage === "manual" ? "🕹" : "🎯"}</div>
-                  <div className="text-[var(--text-primary)] font-bold text-sm">{activePopupPage === "manual" ? "Manual Control Page" : "Calibration Page"}</div>
-                  <div className="text-[var(--text-muted)] text-xs mt-1">This page is empty. Open Page Builder to design it.</div>
+                  <div className="text-4xl opacity-20 mb-3">
+                    {popupPage.icon || "📄"}
+                  </div>
+                  <div className="text-slate-700 font-bold text-sm">
+                    {popupPage.name || activePopupPage}
+                  </div>
+                  <div className="text-slate-400 text-xs mt-1">
+                    This page is empty. Open Page Builder to design it.
+                  </div>
                 </div>
               ) : (
-                <div className="relative overflow-hidden w-[94vw] h-[84vh] max-w-[1600px] max-h-[850px]" style={{ background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 10 }}>
-                  <div className="absolute left-0 top-0 origin-top-left" style={{ width: designCanvas.width, height: designCanvas.height, transform: `scale(${Math.min(1, (window.innerWidth * 0.94) / designCanvas.width, (window.innerHeight * 0.84) / designCanvas.height)})` }}>
-                    {(pages[activePopupPage]?.widgets || []).map(renderRuntimeWidget)}
+                <div
+                  className="relative shrink-0"
+                  style={{
+                    width: popupBounds.width,
+                    height: popupBounds.height,
+                    transform: `scale(${popupScale})`,
+                    transformOrigin: "center center",
+                  }}
+                >
+                  <div
+                    className="absolute overflow-hidden"
+                    style={{
+                      left: 0,
+                      top: 0,
+                      width: popupBounds.width,
+                      height: popupBounds.height,
+                    }}
+                  >
+                    <div
+                      className="absolute"
+                      style={{
+                        left: -popupBounds.minX,
+                        top: -popupBounds.minY,
+                        width: designCanvas.width,
+                        height: designCanvas.height,
+                      }}
+                    >
+                      {popupWidgets.map(renderRuntimeWidget)}
+                    </div>
                   </div>
                 </div>
               )}
             </div>
-          </div>
+
+            {/* Footer/status bar */}
+            <footer
+              className="absolute bottom-0 inset-x-0 z-20 h-[28px] flex items-center justify-between px-3"
+              style={{
+                background: "#f8fafc",
+                borderTop: "1px solid #d7e0e8",
+              }}
+            >
+              <span className="text-[7px] font-mono text-slate-400">
+                Dynamic Runtime • Live Widget Mode
+              </span>
+
+              <span className="flex items-center gap-1.5 text-[7px] font-semibold text-slate-500">
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: "#22c55e" }}
+                />
+                Active
+              </span>
+            </footer>
+          </section>
         </div>
       )}
 
