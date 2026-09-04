@@ -51,6 +51,9 @@ export default function DynamicCPPage({ cpNumber, user }) {
   // COM TextBox values are kept separately from Logic Builder fields.
   // Read-trigger gating is handled independently for COM/TCP/Internal sources.
   const [comTextBoxValues, setComTextBoxValues] = useState({});
+  // Input Data TextBox values contain only accepted source values.
+  const [inputDataValues, setInputDataValues] = useState({});
+  const inputDataWriteRef = useRef({});
   // Realtime RS232 values for Testing Table rows. Sequential values are written by Logic Builder.
   const [testTableComValues, setTestTableComValues] = useState({});
   const [logs, setLogs] = useState([]);
@@ -655,6 +658,147 @@ export default function DynamicCPPage({ cpNumber, user }) {
     return Number.isFinite(an) && Number.isFinite(en) && an === en;
   };
 
+  const convertInputDataValue = useCallback((rawValue, dataType) => {
+    const type = String(dataType || "number").trim().toLowerCase();
+
+    if (type === "text" || type === "string") {
+      return String(rawValue ?? "");
+    }
+
+    if (type === "boolean") {
+      const normalized = String(rawValue ?? "").trim().toLowerCase();
+      if (["1", "true", "on", "yes"].includes(normalized)) return 1;
+      if (["0", "false", "off", "no"].includes(normalized)) return 0;
+      return undefined;
+    }
+
+    if (type === "integer") {
+      const parsed = Number.parseInt(String(rawValue ?? "").trim(), 10);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+
+    const numeric = Number(String(rawValue ?? "").trim());
+    return Number.isFinite(numeric) ? numeric : undefined;
+  }, []);
+
+  const isInputDataTriggerAllowed = useCallback(
+    (widget) => {
+      const p = widget?.props || {};
+      const triggerSource = String(
+        p.inputDataTriggerSource || "realtime"
+      ).trim().toLowerCase();
+
+      if (triggerSource === "realtime") return true;
+
+      if (triggerSource === "internal") {
+        const variableName = String(
+          p.inputDataTriggerVariable || ""
+        ).trim();
+
+        if (!variableName) return false;
+
+        return valuesEqualRuntime(
+          getInternalValue(variableName),
+          p.inputDataTriggerValue ?? 1
+        );
+      }
+
+      if (triggerSource === "plc") {
+        const triggerBindingId =
+          `${widget.id}:__inputdata_trigger__`;
+
+        return valuesEqualRuntime(
+          tcpValuesRef.current[triggerBindingId],
+          p.inputDataTriggerValue ?? 1
+        );
+      }
+
+      return false;
+    },
+    [getInternalValue, valuesEqualRuntime]
+  );
+
+  const acceptInputData = useCallback(
+    async (widget, rawValue) => {
+      if (!widget || widget.type !== "textbox") return;
+
+      const p = widget.props || {};
+      if (
+        String(p.textMode || "").trim().toLowerCase() !==
+        "inputdata"
+      ) {
+        return;
+      }
+
+      if (!isInputDataTriggerAllowed(widget)) return;
+
+      const destination = String(
+        p.inputDataDestinationVariable || ""
+      ).trim();
+
+      if (!destination) {
+        console.warn(
+          `[DynamicCPPage] Input Data destination variable is empty: ${widget.id}`
+        );
+        return;
+      }
+
+      const converted = convertInputDataValue(
+        rawValue,
+        p.dataType || "number"
+      );
+
+      if (converted === undefined) {
+        console.error(
+          `[DynamicCPPage] Input Data conversion failed: ${widget.id}`
+        );
+        return;
+      }
+
+      const widgetKey = String(widget.id);
+      setInputDataValues((previous) => {
+        const oldValue = previous[widgetKey];
+        if (String(oldValue) === String(converted)) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [widgetKey]: converted,
+        };
+      });
+
+      const valueKey = String(converted);
+      const writeKey = `${destination}:${valueKey}`;
+
+      // 50 ms polling must not write the same value to the DB repeatedly.
+      if (inputDataWriteRef.current[widgetKey] === writeKey) return;
+
+      try {
+        await setInternalValue(destination, converted);
+        inputDataWriteRef.current[widgetKey] = writeKey;
+
+        console.log(
+          `[DynamicCPPage] Input Data accepted: ${widget.id} → ${destination} = ${valueKey}`
+        );
+      } catch (error) {
+        console.error(
+          `[DynamicCPPage] Input Data write failed for ${destination}:`,
+          error
+        );
+
+        console.error(
+          `[DynamicCPPage] Input Data write failed: ${error.message}`
+        );
+      }
+    },
+    [
+      convertInputDataValue,
+      isInputDataTriggerAllowed,
+      setInternalValue,
+    ]
+  );
+
   const getRuntimeValue = useCallback(
     (widget) => {
       const p = widget?.props || {};
@@ -668,6 +812,13 @@ export default function DynamicCPPage({ cpNumber, user }) {
         const fallback = p.defaultText ?? p.text ?? "TEXT";
 
         if (mode === "static") return fallback;
+
+        if (mode === "inputdata") {
+          const acceptedValue = inputDataValues[String(widget.id)];
+          return acceptedValue !== undefined && acceptedValue !== null
+            ? acceptedValue
+            : fallback;
+        }
 
         if (mode === "calculation") {
           const resultVariable = String(
@@ -826,6 +977,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     [
       calculateTextBox,
       comTextBoxValues,
+      inputDataValues,
       fieldValues,
       getInternalValue,
       getTCPDevice,
@@ -844,6 +996,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const resetAll = useCallback(() => {
     setFieldValues({});
     setComTextBoxValues({});
+    setInputDataValues({});
+    inputDataWriteRef.current = {};
     setLogs([]);
     setChartHistory({});
     setChartRunning({});
@@ -1445,6 +1599,98 @@ export default function DynamicCPPage({ cpNumber, user }) {
         }
 
         // ----------------------------------------------------------
+        // INPUT DATA
+        //
+        // DATA and ENABLE TRIGGER are two independent PLC bindings.
+        // Example:
+        //   Trigger = Coil 1
+        //   Data    = Holding Register 5
+        //
+        // Bindings:
+        //   <widgetId>:__inputdata_trigger__
+        //   <widgetId>
+        // ----------------------------------------------------------
+        if (textMode === "inputdata") {
+          if (source === "tcp") {
+            if (
+              p.device &&
+              p.address !== undefined &&
+              p.address !== null &&
+              String(p.address).trim() !== ""
+            ) {
+              const dataDevice = getTCPDevice(p.device);
+              const dataAddressType = normalizeType(p.addressType);
+
+              if (
+                dataDevice &&
+                dataAddressType &&
+                isValidPLCBinding("textbox", dataAddressType)
+              ) {
+                registerBinding({
+                  widgetId: widget.id,
+                  widgetType: "textbox",
+                  device: dataDevice,
+                  addressType: dataAddressType,
+                  address: p.address,
+                });
+
+                console.log(
+                  `[DynamicCPPage] TextBox Input Data source: ${widget.id} -> ${dataDevice.name} / ${dataAddressType} / ${p.address}`
+                );
+              }
+            }
+          }
+
+          const triggerSource = String(
+            p.inputDataTriggerSource || "realtime"
+          ).trim().toLowerCase();
+
+          if (triggerSource === "plc") {
+            const triggerDeviceName = String(
+              p.inputDataTriggerDevice || ""
+            ).trim();
+            const triggerAddress = p.inputDataTriggerAddress;
+            const triggerAddressType = normalizeType(
+              p.inputDataTriggerAddressType
+            );
+
+            if (
+              triggerDeviceName &&
+              triggerAddress !== undefined &&
+              triggerAddress !== null &&
+              String(triggerAddress).trim() !== "" &&
+              triggerAddressType
+            ) {
+              const triggerDevice = getTCPDevice(triggerDeviceName);
+
+              if (
+                triggerDevice &&
+                isValidPLCBinding("textbox", triggerAddressType)
+              ) {
+                const triggerBindingId =
+                  `${widget.id}:__inputdata_trigger__`;
+
+                registerBinding({
+                  widgetId: triggerBindingId,
+                  widgetType: "textbox",
+                  device: triggerDevice,
+                  addressType: triggerAddressType,
+                  address: triggerAddress,
+                });
+
+                console.log(
+                  `[DynamicCPPage] TextBox Input Data trigger: ${triggerBindingId} -> ${triggerDevice.name} / ${triggerAddressType} / ${triggerAddress}`
+                );
+              }
+            }
+          }
+
+          // COM is event-driven by cp-scan; do not fall through to the
+          // generic TextBox PLC binding below.
+          return;
+        }
+
+        // ----------------------------------------------------------
         // READ TRIGGER
         // The trigger is an independent gate from the TextBox DATA SOURCE.
         // It must be registered even when the TextBox data itself comes
@@ -1594,6 +1840,42 @@ export default function DynamicCPPage({ cpNumber, user }) {
     normalizeInputSource,
     isValidPLCBinding,
     registerBinding,
+  ]);
+
+  // ============================================================
+  // INPUT DATA TCP ACQUISITION
+  //
+  // useTCPPLC polls at 50 ms. The trigger and data addresses are
+  // independent. Data is accepted only while the trigger is ON.
+  // ============================================================
+  useEffect(() => {
+    if (!runtimeWidgets.length) return;
+
+    runtimeWidgets.forEach((widget) => {
+      if (widget?.type !== "textbox") return;
+
+      const p = widget.props || {};
+      if (
+        String(p.textMode || "").trim().toLowerCase() !==
+        "inputdata"
+      ) {
+        return;
+      }
+
+      if (normalizeInputSource(p.inputSource) !== "tcp") return;
+      if (!isInputDataTriggerAllowed(widget)) return;
+
+      const rawValue = tcpValues[String(widget.id)];
+      if (rawValue === undefined || rawValue === null) return;
+
+      acceptInputData(widget, rawValue);
+    });
+  }, [
+    runtimeWidgets,
+    tcpValues,
+    normalizeInputSource,
+    isInputDataTriggerAllowed,
+    acceptInputData,
   ]);
 
   // ============================================================
@@ -2457,6 +2739,57 @@ export default function DynamicCPPage({ cpNumber, user }) {
          return changed ? next : previous;
        });
 
+      // ------------------------------------------------------------
+      // COM INPUT DATA
+      //
+      // cp-scan provides the source payload. The same enable-trigger
+      // logic is used as TCP Input Data.
+      // ------------------------------------------------------------
+      runtimeWidgets.forEach((widget) => {
+        if (widget?.type !== "textbox") return;
+
+        const p = widget.props || {};
+        if (
+          normalizeInputSource(p.inputSource) !== "com" ||
+          String(p.textMode || "").trim().toLowerCase() !== "inputdata"
+        ) {
+          return;
+        }
+
+        const configuredSource = normalizeDeviceToken(p.sourceDevice);
+        if (!configuredSource || configuredSource !== sourceToken) return;
+
+        const triggerSource = String(
+          p.inputDataTriggerSource || "realtime"
+        ).trim().toLowerCase();
+
+        let triggerAllowed = true;
+
+        if (triggerSource === "internal") {
+          const variableName = String(
+            p.inputDataTriggerVariable || ""
+          ).trim();
+
+          triggerAllowed =
+            Boolean(variableName) &&
+            valuesEqual(
+              getInternalValue(variableName),
+              p.inputDataTriggerValue ?? 1
+            );
+        } else if (triggerSource === "plc") {
+          triggerAllowed = valuesEqual(
+            tcpValuesRef.current[
+              `${widget.id}:__inputdata_trigger__`
+            ],
+            p.inputDataTriggerValue ?? 1
+          );
+        }
+
+        if (!triggerAllowed) return;
+
+        acceptInputData(widget, value);
+      });
+
        // COM + REALTIME TEST TABLE ROWS
       // ------------------------------------------------------------
       setTestTableComValues((previous) => {
@@ -2531,6 +2864,9 @@ export default function DynamicCPPage({ cpNumber, user }) {
     handleScan,
     normalizeInputSource,
     widgets,
+    runtimeWidgets,
+    getInternalValue,
+    acceptInputData,
     addLog,
   ]);
 

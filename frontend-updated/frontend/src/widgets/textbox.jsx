@@ -289,10 +289,20 @@ export const textboxDef = {
 
     // TEXT MODE
     // static = fixed text, read = display from the selected source,
-    // write = user input written to the selected source (Internal Variable or TCP/IP).
+    // write = user input written to the selected source (Internal Variable or TCP/IP),
+    // inputdata = acquire TCP/COM data and store it into an Internal Variable.
     textMode: "read",
     writeTrigger: "enter",
     dataType: "number",
+
+    // INPUT DATA
+    inputDataDestinationVariable: "",
+    inputDataTriggerSource: "realtime",
+    inputDataTriggerVariable: "",
+    inputDataTriggerDevice: "",
+    inputDataTriggerAddressType: "coil",
+    inputDataTriggerAddress: "",
+    inputDataTriggerValue: 1,
 
     // HMI input method for Write mode.
     // popup = touch-friendly HMI keypad/keyboard, native = browser input.
@@ -923,6 +933,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
             { value: "static", label: "Static Text" },
             { value: "read", label: "Read / Display" },
             { value: "write", label: "Input + Write" },
+            { value: "inputdata", label: "Input Data" },
             { value: "calculation", label: "Calculation" },
           ]}
           value={p.textMode || "read"}
@@ -936,9 +947,9 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
           placeholder="Shown when no runtime value is available"
         />
 
-        {p.textMode === "write" && (
+        {(p.textMode === "write" || p.textMode === "inputdata") && (
           <PropInput
-            label="Write Data Type"
+            label={p.textMode === "inputdata" ? "Input Data Type" : "Write Data Type"}
             options={[
               { value: "number", label: "Number" },
               { value: "integer", label: "Integer" },
@@ -982,6 +993,206 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
           </>
         )}
       </PropSection>
+
+      {p.textMode === "inputdata" && (
+        <PropSection title="Input Data">
+          <div className="text-[8px] text-[var(--text-dim)] mb-2">
+            Read data from TCP/IP or COM/RS232 when the enable trigger is active,
+            display the accepted value, and save it to the selected Internal Variable.
+          </div>
+
+          <PropInput
+            label="Source"
+            options={[
+              { value: "tcp", label: "TCP / IP" },
+              { value: "com", label: "COM / RS232" },
+            ]}
+            value={p.inputSource || "tcp"}
+            onChange={(v) => set("inputSource", v)}
+          />
+
+          {String(p.inputSource || "tcp").toLowerCase() === "tcp" ? (
+            <>
+              <div>
+                <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                  TCP / IP Device
+                </label>
+                <select
+                  value={p.device || ""}
+                  onChange={(e) => set("device", e.target.value)}
+                  className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+                >
+                  <option value="">Select TCP device...</option>
+                  {availableDevices
+                    .filter((dev) => String(dev?.type ?? dev?.Type ?? "").trim().toUpperCase() === "TCP")
+                    .map((dev) => {
+                      const name = dev?.name ?? dev?.["Device Name"] ?? dev?.device_name ?? "";
+                      if (!name) return null;
+                      return (
+                        <option key={`inputdata-source-${name}`} value={name}>
+                          {name}{dev?.connection ? ` — ${dev.connection}` : ""}
+                          {dev?.connected === false ? " — Disconnected" : ""}
+                        </option>
+                      );
+                    })
+                    .filter(Boolean)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <PropInput
+                  label="Data Address"
+                  value={p.address ?? ""}
+                  onChange={(v) => set("address", v)}
+                  placeholder="Example: 5"
+                />
+                <PropInput
+                  label="Data Address Type"
+                  options={[
+                    { value: "coil", label: "Coil" },
+                    { value: "discrete_input", label: "Discrete Input" },
+                    { value: "holding_register", label: "Holding Register" },
+                    { value: "input_register", label: "Input Register" },
+                  ]}
+                  value={p.addressType || "holding_register"}
+                  onChange={(v) => set("addressType", v)}
+                />
+              </div>
+            </>
+          ) : (
+            <PropInput
+              label="COM / RS232 Device"
+              options={[
+                { value: "", label: "Select COM / RS232 device..." },
+                ...availableDevices
+                  .filter((dev) => {
+                    const type = String(dev?.type ?? dev?.Type ?? "").trim().toUpperCase();
+                    return ["COM", "RS232", "SERIAL", "MODBUS_RTU"].includes(type);
+                  })
+                  .map((dev) => {
+                    const name =
+                      dev?.name ??
+                      dev?.["Device Name"] ??
+                      dev?.device_name ??
+                      dev?.port ??
+                      dev?.["COM Port"] ??
+                      "";
+                    return name ? { value: name, label: name } : null;
+                  })
+                  .filter(Boolean),
+              ]}
+              value={p.sourceDevice || ""}
+              onChange={(v) => set("sourceDevice", v)}
+            />
+          )}
+
+          <PropInput
+            label="Destination Internal Variable"
+            options={[
+              {
+                value: "",
+                label: internalVariablesLoading
+                  ? "Loading internal variables..."
+                  : "Select destination variable...",
+              },
+              ...internalVariableOptions,
+            ]}
+            value={p.inputDataDestinationVariable || ""}
+            onChange={(v) => set("inputDataDestinationVariable", v)}
+          />
+
+          <div className="mt-2 p-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)]">
+            <div className="text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-2">
+              Enable Trigger
+            </div>
+
+            <PropInput
+              label="Trigger Source"
+              options={[
+                { value: "realtime", label: "Realtime" },
+                { value: "internal", label: "Internal Variable" },
+                { value: "plc", label: "PLC / TCP" },
+              ]}
+              value={p.inputDataTriggerSource || "realtime"}
+              onChange={(v) => set("inputDataTriggerSource", v)}
+            />
+
+            {String(p.inputDataTriggerSource || "realtime").toLowerCase() === "internal" && (
+              <PropInput
+                label="Trigger Variable"
+                options={[
+                  {
+                    value: "",
+                    label: internalVariablesLoading
+                      ? "Loading internal variables..."
+                      : "Select trigger variable...",
+                  },
+                  ...internalVariableOptions,
+                ]}
+                value={p.inputDataTriggerVariable || ""}
+                onChange={(v) => set("inputDataTriggerVariable", v)}
+              />
+            )}
+
+            {String(p.inputDataTriggerSource || "realtime").toLowerCase() === "plc" && (
+              <>
+                <div className="mt-2">
+                  <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
+                    Trigger Device
+                  </label>
+                  <select
+                    value={p.inputDataTriggerDevice || ""}
+                    onChange={(e) => set("inputDataTriggerDevice", e.target.value)}
+                    className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[10px] font-mono outline-none focus:border-[var(--accent-green)]"
+                  >
+                    <option value="">Select TCP device...</option>
+                    {availableDevices
+                      .filter((dev) => String(dev?.type ?? dev?.Type ?? "").trim().toUpperCase() === "TCP")
+                      .map((dev) => {
+                        const name = dev?.name ?? dev?.["Device Name"] ?? dev?.device_name ?? "";
+                        if (!name) return null;
+                        return (
+                          <option key={`inputdata-trigger-${name}`} value={name}>
+                            {name}{dev?.connection ? ` — ${dev.connection}` : ""}
+                            {dev?.connected === false ? " — Disconnected" : ""}
+                          </option>
+                        );
+                      })
+                      .filter(Boolean)}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <PropInput
+                    label="Trigger Address"
+                    value={p.inputDataTriggerAddress ?? ""}
+                    onChange={(v) => set("inputDataTriggerAddress", v)}
+                    placeholder="Example: 1"
+                  />
+                  <PropInput
+                    label="Trigger Address Type"
+                    options={[
+                      { value: "coil", label: "Coil" },
+                      { value: "discrete_input", label: "Discrete Input" },
+                      { value: "holding_register", label: "Holding Register" },
+                      { value: "input_register", label: "Input Register" },
+                    ]}
+                    value={p.inputDataTriggerAddressType || "coil"}
+                    onChange={(v) => set("inputDataTriggerAddressType", v)}
+                  />
+                </div>
+
+                <PropInput
+                  label="Trigger Value"
+                  type="number"
+                  value={p.inputDataTriggerValue ?? 1}
+                  onChange={(v) => set("inputDataTriggerValue", v === "" ? "" : Number(v))}
+                />
+              </>
+            )}
+          </div>
+        </PropSection>
+      )}
 
       {(p.textMode === "read" || p.textMode === "write") && (
         <PropSection title="Data Source">
@@ -1277,6 +1488,7 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
           )}
         </PropSection>
       )}
+
 
       {p.textMode === "calculation" && (
         <PropSection title="Calculation">
@@ -2361,7 +2573,7 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
     );
   }
 
-  if (mode === "read") {
+  if (mode === "read" || mode === "inputdata") {
     return (
       <div
         className="absolute"
