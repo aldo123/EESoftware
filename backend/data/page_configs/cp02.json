@@ -1264,10 +1264,10 @@
     {
       "id": "w1788352022299_4",
       "props": {
-        "address": "1",
+        "address": "",
         "addressType": "holding_register",
         "builderState": 0,
-        "device": "PLC",
+        "device": "",
         "displayMode": "badge",
         "height": 55,
         "label": "STATUS",
@@ -1276,7 +1276,7 @@
         "offLabel": "FAIL",
         "onColor": "var(--accent-cyan)",
         "onLabel": "PASS",
-        "readTarget": "tcp",
+        "readTarget": "internal",
         "shape": "square",
         "showLabel": true,
         "simulation": {
@@ -1285,7 +1285,7 @@
         },
         "valueOff": 0,
         "valueOn": 1,
-        "variable": "Result",
+        "variable": "HPTStep1",
         "visual": {
           "accentColor": "var(--accent-cyan)",
           "backgroundColor": "var(--panel-canvas)",
@@ -6137,10 +6137,10 @@
         {
           "id": "w1788352022299_4",
           "props": {
-            "address": "1",
+            "address": "",
             "addressType": "holding_register",
             "builderState": 0,
-            "device": "PLC",
+            "device": "",
             "displayMode": "badge",
             "height": 55,
             "label": "STATUS",
@@ -6149,7 +6149,7 @@
             "offLabel": "FAIL",
             "onColor": "var(--accent-cyan)",
             "onLabel": "PASS",
-            "readTarget": "tcp",
+            "readTarget": "internal",
             "shape": "square",
             "showLabel": true,
             "simulation": {
@@ -6158,7 +6158,7 @@
             },
             "valueOff": 0,
             "valueOn": 1,
-            "variable": "Result",
+            "variable": "HPTStep1",
             "visual": {
               "accentColor": "var(--accent-cyan)",
               "backgroundColor": "var(--panel-canvas)",

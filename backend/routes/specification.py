@@ -144,6 +144,30 @@ def init_specification_db():
             """
         )
 
+        # Result output destinations. These are intentionally separate for
+        # numeric Value Result and PASS/FAIL Status Result.
+        result_columns = {
+            "value_result_type": "TEXT NOT NULL DEFAULT 'internal'",
+            "value_result_device": "TEXT NOT NULL DEFAULT ''",
+            "value_result_register_type": "TEXT NOT NULL DEFAULT 'Holding'",
+            "value_result": "TEXT NOT NULL DEFAULT ''",
+            "status_result_type": "TEXT NOT NULL DEFAULT 'internal'",
+            "status_result_device": "TEXT NOT NULL DEFAULT ''",
+            "status_result_register_type": "TEXT NOT NULL DEFAULT 'Holding'",
+            "status_result": "TEXT NOT NULL DEFAULT ''",
+        }
+        parameter_columns = {
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA table_info(specification_parameters)"
+            ).fetchall()
+        }
+        for column_name, column_def in result_columns.items():
+            if column_name not in parameter_columns:
+                conn.execute(
+                    f"ALTER TABLE specification_parameters ADD COLUMN {column_name} {column_def}"
+                )
+
         # A specification name may be reused in another CP, but not twice
         # inside the same CP.
         conn.execute(
@@ -221,6 +245,14 @@ def _get_spec(conn, spec_id):
             source_device,
             source_register_type,
             source,
+            value_result_type,
+            value_result_device,
+            value_result_register_type,
+            value_result,
+            status_result_type,
+            status_result_device,
+            status_result_register_type,
+            status_result,
             created_at,
             updated_at
         FROM specification_parameters
@@ -373,6 +405,8 @@ def update_specification(specification_id):
     }
     method_values = {"Avg", "Min", "Max"}
     data_values = {"TCP", "internal", "RS232"}
+    result_target_values = {"TCP", "internal"}
+    result_register_values = {"Holding", "Coil"}
 
     try:
         with _connect() as conn:
@@ -464,6 +498,32 @@ def update_specification(specification_id):
                     row.get("source") or ""
                 ).strip()
 
+                value_result_type = str(
+                    row.get("value_result_type") or "internal"
+                ).strip()
+                value_result_device = str(
+                    row.get("value_result_device") or ""
+                ).strip()
+                value_result_register_type = str(
+                    row.get("value_result_register_type") or "Holding"
+                ).strip()
+                value_result = str(
+                    row.get("value_result") or ""
+                ).strip()
+
+                status_result_type = str(
+                    row.get("status_result_type") or "internal"
+                ).strip()
+                status_result_device = str(
+                    row.get("status_result_device") or ""
+                ).strip()
+                status_result_register_type = str(
+                    row.get("status_result_register_type") or "Holding"
+                ).strip()
+                status_result = str(
+                    row.get("status_result") or ""
+                ).strip()
+
                 if trigger_start not in trigger_values:
                     raise ValueError(
                         f"Invalid Trigger Start: {trigger_start}"
@@ -488,6 +548,26 @@ def update_specification(specification_id):
                     raise ValueError(
                         f"Invalid Data Source: {data_source}"
                     )
+
+                for label, target_type, device, register_type, target in (
+                    ("Value Result", value_result_type, value_result_device,
+                     value_result_register_type, value_result),
+                    ("Status Result", status_result_type, status_result_device,
+                     status_result_register_type, status_result),
+                ):
+                    if target_type not in result_target_values:
+                        raise ValueError(f"Invalid {label} Type")
+                    # Result outputs are optional. If no target is configured,
+                    # the calculated result is still available in the runtime UI.
+                    if not target:
+                        continue
+                    if target_type == "TCP":
+                        if not device:
+                            raise ValueError(f"{label} TCP device is required")
+                        if register_type not in result_register_values:
+                            raise ValueError(f"Invalid {label} Register Type")
+                    else:
+                        pass
 
                 lower_limit = _number(
                     row.get("lower_limit"),
@@ -540,12 +620,22 @@ def update_specification(specification_id):
                         data_source,
                         source_device,
                         source_register_type,
-                        source
+                        source,
+                        value_result_type,
+                        value_result_device,
+                        value_result_register_type,
+                        value_result,
+                        status_result_type,
+                        status_result_device,
+                        status_result_register_type,
+                        status_result
                     )
                     VALUES (
                         ?, ?, ?, ?,
                         ?, ?, ?, ?,
                         ?, ?, ?,
+                        ?, ?, ?, ?,
+                        ?, ?, ?, ?,
                         ?, ?, ?, ?
                     )
                     """,
@@ -565,6 +655,14 @@ def update_specification(specification_id):
                         source_device,
                         source_register_type,
                         source,
+                        value_result_type,
+                        value_result_device,
+                        value_result_register_type,
+                        value_result,
+                        status_result_type,
+                        status_result_device,
+                        status_result_register_type,
+                        status_result,
                     ),
                 )
 

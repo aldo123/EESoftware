@@ -334,6 +334,144 @@ def _read_source(row):
     )
 
 
+def _find_internal_variable(name):
+    wanted = str(name or "").strip()
+    if not wanted:
+        raise ValueError("Internal result variable is required")
+
+    for variable in _get_internal_variables():
+        if str(variable.get("name")) == wanted:
+            return variable
+
+    raise ValueError(f"Internal variable '{wanted}' not found")
+
+
+def _write_internal_value(name, value):
+    variable = _find_internal_variable(name)
+    variable_id = variable.get("id")
+    if variable_id is None:
+        raise ValueError(f"Internal variable '{name}' has no id")
+
+    data_type = str(variable.get("data_type") or "string").strip().lower()
+    if data_type == "boolean":
+        payload_value = _to_bool(value)
+    elif data_type == "number":
+        payload_value = float(_to_number(value))
+    else:
+        payload_value = str(value)
+
+    payload = {
+        "name": variable.get("name"),
+        "cp_number": variable.get("cp_number"),
+        "data_type": variable.get("data_type") or "string",
+        "value": payload_value,
+    }
+    return _http_json(
+        "PUT",
+        f"/api/internal-variables/{variable_id}",
+        payload,
+    )
+
+
+def _write_tcp(device_name, register_type, address, value):
+    if not device_name:
+        raise ValueError("TCP result device is required")
+
+    area = _normalize_register_type(register_type)
+    if area not in {"coil", "holding_register"}:
+        raise ValueError(
+            "Result TCP register must be Holding or Coil"
+        )
+
+    numeric_address = _address(address)
+    if area == "coil":
+        payload_value = _to_bool(value)
+    else:
+        payload_value = int(round(float(_to_number(value))))
+        if payload_value < 0 or payload_value > 65535:
+            raise ValueError(
+                f"Holding register result out of range: {payload_value}"
+            )
+
+    return _http_json(
+        "POST",
+        "/api/tcp/write",
+        {
+            "device_name": device_name,
+            "address_type": area,
+            "address": numeric_address,
+            "value": payload_value,
+        },
+    )
+
+
+def _write_result_target(target_type, device, register_type, target, value):
+    target = str(target or "").strip()
+    if not target:
+        return {"success": True, "skipped": True}
+    target_type = str(target_type or "internal").strip()
+    if target_type == "internal":
+        return _write_internal_value(target, value)
+    if target_type == "TCP":
+        return _write_tcp(device, register_type, target, value)
+    raise ValueError(f"Unsupported result target type: {target_type}")
+
+
+def _write_result_outputs(row, final_value, passed):
+    """
+    Write the calculated result to the configured Value Result target and
+    PASS/FAIL to the configured Status Result target.
+
+    Status mapping:
+      Internal boolean/number -> TRUE/1 for PASS, FALSE/0 for FAIL
+      Internal string         -> "PASS" / "FAIL"
+      TCP Coil                -> 1 for PASS, 0 for FAIL
+      TCP Holding Register    -> 1 for PASS, 0 for FAIL
+    """
+    errors = []
+
+    try:
+        _write_result_target(
+            row.get("value_result_type"),
+            row.get("value_result_device"),
+            row.get("value_result_register_type"),
+            row.get("value_result"),
+            final_value,
+        )
+    except Exception as exc:
+        errors.append(f"Value Result: {exc}")
+
+    status_value = "PASS" if passed else "FAIL"
+    try:
+        status_target_type = str(
+            row.get("status_result_type") or "internal"
+        ).strip()
+        if status_target_type == "internal":
+            variable = _find_internal_variable(row.get("status_result"))
+            data_type = str(variable.get("data_type") or "string").lower()
+            if data_type == "boolean":
+                output_status_value = bool(passed)
+            elif data_type == "number":
+                output_status_value = 1 if passed else 0
+            else:
+                output_status_value = status_value
+        else:
+            # TCP Coil/Holding Register status is always 1 = PASS, 0 = FAIL.
+            output_status_value = 1 if passed else 0
+
+        _write_result_target(
+            status_target_type,
+            row.get("status_result_device"),
+            row.get("status_result_register_type"),
+            row.get("status_result"),
+            output_status_value,
+        )
+    except Exception as exc:
+        errors.append(f"Status Result: {exc}")
+
+    return errors
+
+
 def _read_trigger(row):
     trigger_type = str(
         row.get("trigger_start") or ""
@@ -454,6 +592,8 @@ def _row_result(row):
         "fail": None,
         "samples": [],
         "error": None,
+        "output_errors": [],
+        "output_error": None,
     }
 
 
@@ -608,6 +748,13 @@ class SpecificationRuntime:
         result["status"] = "PASS" if passed else "FAIL"
         result["pass"] = passed
         result["fail"] = not passed
+        result["output_errors"] = _write_result_outputs(
+            row,
+            final_value,
+            passed,
+        )
+        if result["output_errors"]:
+            result["output_error"] = " | ".join(result["output_errors"])
 
     def _trigger_key(self, row):
         return (
@@ -891,6 +1038,8 @@ def _test_status(session):
             "pass": session.passed,
             "fail": session.failed,
             "error": session.error,
+            "output_errors": getattr(session, "output_errors", []),
+            "output_error": getattr(session, "output_error", None),
         }
 
 
@@ -927,6 +1076,8 @@ class SpecificationTestSession:
         self.result = None
         self.passed = None
         self.failed = None
+        self.output_errors = []
+        self.output_error = None
 
         self.trigger_at = None
         self.elapsed_seconds = 0.0
@@ -1048,6 +1199,17 @@ class SpecificationTestSession:
                 self.row.get("upper_limit"),
             )
             self.failed = not self.passed
+
+            self.output_errors = _write_result_outputs(
+                self.row,
+                self.result,
+                self.passed,
+            )
+            self.output_error = (
+                " | ".join(self.output_errors)
+                if self.output_errors
+                else None
+            )
 
             self.elapsed_seconds = self.stop
             self.status = "PASS" if self.passed else "FAIL"
