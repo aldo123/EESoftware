@@ -97,7 +97,7 @@ function AlignDistributePanel({ count, onAlign, onDelete, onDuplicate }) {
   );
 }
 
-function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction, canvasWidth, canvasHeight, availableDevices = [], availablePages = [] }) {
+function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction, canvasWidth, canvasHeight, availableDevices = [], availablePages = [], cpNumber = "" }) {
   if (!widget) return (<div className="flex flex-col items-center justify-center h-full text-center px-4"><span className="text-3xl opacity-20 mb-2">🖱</span><p className="text-[var(--text-muted)] text-[10px]">Click a widget on the canvas to edit its properties</p></div>);
   const { type, props: p, x, y } = widget;
 
@@ -155,7 +155,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction,
     {(() => {
       const Panel = WIDGET_PROPERTY_PANELS[type];
       if (!Panel) return null;
-      return <Panel p={p} set={set} availableDevices={availableDevices} availablePages={availablePages} />;
+      return <Panel p={p} set={set} availableDevices={availableDevices} availablePages={availablePages} cpNumber={cpNumber} />;
     })()}
 
 
@@ -1280,6 +1280,7 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
                 canvasHeight={CANVAS_H}
                 availableDevices={availableDevices}
                 availablePages={Object.entries(pages).map(([id, page]) => ({ id, name: page?.name || id }))}
+                cpNumber={cpNumber}
               />
             )}
           </div>

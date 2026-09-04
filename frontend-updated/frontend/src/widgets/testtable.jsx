@@ -884,8 +884,8 @@ function TestItemsSettings({ rows, onSave, onClose, availableDevices = [] }) {
   );
 }
 
-export function TestTablePropertyPanel({ p, set, setProps, availableDevices = [] }) {
-  const { variables, loading: variablesLoading } = useInternalVariables();
+export function TestTablePropertyPanel({ p, set, setProps, availableDevices = [], cpNumber = "" }) {
+  const { variables, loading: variablesLoading } = useInternalVariables(cpNumber);
 
   const rows = Array.isArray(p.rows) ? p.rows : [];
 

@@ -594,13 +594,15 @@ export function LineChartPreview({ widget }) {
 //  PAGE BUILDER — PROPERTY PANEL
 // ────────────────────────────────────────────────────────────────
 
-export function LineChartPropertyPanel({ p, set, availableDevices = [] }) {
+export function LineChartPropertyPanel({ p, set, availableDevices = [], cpNumber = "" }) {
   const {
     variables: internalVariables = [],
     loading: internalVariablesLoading,
     error: internalVariablesError,
-  } = useInternalVariables();
+  } = useInternalVariables(cpNumber);
 
+  // Page Builder scope: Internal Variable selectors use only variables
+  // belonging to the currently active CP.
   return (
   <>
     <PropSection title="Chart">

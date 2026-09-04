@@ -913,12 +913,13 @@ export function TextBoxPreview({ widget }) {
 // PAGE BUILDER — PROPERTY PANEL
 // ────────────────────────────────────────────────────────────────
 
-export function TextBoxPropertyPanel({ p, set, availableDevices = [] }) {
+export function TextBoxPropertyPanel({ p, set, availableDevices = [], cpNumber = "" }) {
   const {
     variables: internalVariables,
     loading: internalVariablesLoading,
-  } = useInternalVariables();
+  } = useInternalVariables(cpNumber);
 
+  // Only Internal Variables belonging to the active Page Builder CP are exposed here.
   const internalVariableOptions = internalVariables.map((item) => ({
     value: item.name,
     label: `${item.name} (${item.data_type || "string"})`,

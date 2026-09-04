@@ -400,13 +400,15 @@ export function GaugePreview({ widget }) {
 // ────────────────────────────────────────────────────────────────
 //  PAGE BUILDER — PROPERTY PANEL
 // ────────────────────────────────────────────────────────────────
-export function GaugePropertyPanel({ p, set, availableDevices = [] }) {
+export function GaugePropertyPanel({ p, set, availableDevices = [], cpNumber = "" }) {
   const {
     variables: internalVariables,
     loading: internalVariablesLoading,
     error: internalVariablesError,
-  } = useInternalVariables();
+  } = useInternalVariables(cpNumber);
 
+  // Page Builder scope: only Internal Variables belonging to the active CP
+  // are available in the Internal Variable data-source selector.
   return (
   <>
 

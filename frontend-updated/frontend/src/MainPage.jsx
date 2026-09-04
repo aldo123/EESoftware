@@ -986,7 +986,13 @@ export default function MainPage({ user: initialUser, onLogout }) {
         {/* Page Builder – kirim cpNumber yang benar */}
         {showBuilder && (<PageBuilder key="builder" cpNumber={cpNumber || "2"} availableDevices={commDevices} onClose={() => setShowBuilder(false)} onSaved={() => setDynamicPageRefreshKey(k => k + 1)} />)}
         {showLogic && (<LogicBuilder key="logic" cpNumber={cpNumber || "2"} onClose={() => setShowLogic(false)} />)}
-        {showInternalVariable && (<InternalVariable key="internal-variable" onClose={() => setShowInternalVariable(false)} />)}
+        {showInternalVariable && (
+          <InternalVariable
+            key={`internal-variable-${cpNumber || "none"}`}
+            cpNumber={cpNumber}
+            onClose={() => setShowInternalVariable(false)}
+          />
+        )}
         {showSpecification && (<Specification key="specification" onClose={() => setShowSpecification(false)} />)}
       </AnimatePresence>
     </div>

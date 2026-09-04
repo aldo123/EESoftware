@@ -343,14 +343,17 @@ export function LightPropertyPanel({
   p,
   set,
   availableDevices = [],
+  cpNumber = "",
 }) {
   const isOn = p.builderState === 1;
 
   const {
     variables: internalVariables = [],
     loading: internalVariablesLoading = false,
-  } = useInternalVariables();
+  } = useInternalVariables(cpNumber);
 
+  // Page Builder scope: only Internal Variables belonging to the active CP
+  // are available in the Read Target selector.
   const tcpDevices = (
     Array.isArray(availableDevices)
       ? availableDevices

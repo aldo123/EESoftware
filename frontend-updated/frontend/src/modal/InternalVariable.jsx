@@ -6,8 +6,9 @@ import { API } from "../service/api";
 
 const EMPTY_FORM = { name: "", data_type: "string", value: "" };
 
-export default function InternalVariable({ onClose }) {
+export default function InternalVariable({ onClose, cpNumber }) {
   const [variables, setVariables] = useState([]);
+  const currentCP = String(cpNumber ?? "").trim();
   const [form, setForm] = useState(EMPTY_FORM);
   const [editingId, setEditingId] = useState(null);
   const [formOpen, setFormOpen] = useState(false);
@@ -20,7 +21,13 @@ export default function InternalVariable({ onClose }) {
     setError("");
 
     try {
-      const res = await fetch(`${API}/api/internal-variables`);
+      if (!currentCP) {
+        throw new Error("CP number is required to open Internal Variables.");
+      }
+
+      const res = await fetch(
+        `${API}/api/internal-variables?cp_number=${encodeURIComponent(currentCP)}`
+      );
       const data = await res.json();
 
       if (!res.ok) {
@@ -39,7 +46,7 @@ export default function InternalVariable({ onClose }) {
 
   useEffect(() => {
     loadVariables();
-  }, []);
+  }, [currentCP]);
 
   const resetForm = () => {
     setForm(EMPTY_FORM);
@@ -111,6 +118,7 @@ export default function InternalVariable({ onClose }) {
 
       const payload = {
         name,
+        cp_number: currentCP,
         data_type: form.data_type,
         value: form.value,
       };
@@ -126,9 +134,54 @@ export default function InternalVariable({ onClose }) {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(
-          data.message || "Failed to save variable"
-        );
+        const message = data.message || "Failed to save variable";
+
+        // The backend currently treats variable names as globally unique.
+        // If the requested name already exists, look up its owner CP so the
+        // user gets a useful message instead of only "already exists".
+        if (
+          res.status === 409 ||
+          /already exists/i.test(String(message))
+        ) {
+          try {
+            const lookupRes = await fetch(`${API}/api/internal-variables`);
+            const lookupData = await lookupRes.json();
+
+            const allVariables = Array.isArray(lookupData.variables)
+              ? lookupData.variables
+              : [];
+
+            const existing = allVariables.find(
+              (item) =>
+                String(item.name || "").trim().toLowerCase() ===
+                name.toLowerCase()
+            );
+
+            if (existing) {
+              const ownerCP = String(existing.cp_number ?? "").trim();
+
+              if (ownerCP) {
+                throw new Error(
+                  `Variable '${name}' already exists and is used by CP ${ownerCP}.`
+                );
+              }
+
+              throw new Error(
+                `Variable '${name}' already exists, but its CP information is not available.`
+              );
+            }
+          } catch (lookupErr) {
+            // If lookupErr is our useful duplicate message, preserve it.
+            if (
+              lookupErr?.message &&
+              /already exists/i.test(lookupErr.message)
+            ) {
+              throw lookupErr;
+            }
+          }
+        }
+
+        throw new Error(message);
       }
 
       await loadVariables();
@@ -192,10 +245,10 @@ export default function InternalVariable({ onClose }) {
         <div className="px-6 py-4 border-b border-[var(--border-soft)] flex items-center justify-between shrink-0">
           <div>
             <p className="text-[#22C55E] font-bold text-lg">
-              Internal Variables
+              Internal Variables {currentCP ? `— CP ${currentCP}` : ""}
             </p>
             <p className="text-[var(--text-muted)] text-xs mt-0.5">
-              Variables shared by HMI widgets and stored in
+              Variables belonging to this CP, stored in
               backend/data/internalvariable.db
             </p>
           </div>
@@ -231,6 +284,9 @@ export default function InternalVariable({ onClose }) {
                       Name
                     </th>
                     <th className="px-4 py-2.5 font-semibold">
+                      CP
+                    </th>
+                    <th className="px-4 py-2.5 font-semibold">
                       Type
                     </th>
                     <th className="px-4 py-2.5 font-semibold">
@@ -246,7 +302,7 @@ export default function InternalVariable({ onClose }) {
                   {loading && (
                     <tr>
                       <td
-                        colSpan="4"
+                        colSpan="5"
                         className="px-4 py-8 text-center text-[var(--text-muted)]"
                       >
                         Loading…
@@ -257,7 +313,7 @@ export default function InternalVariable({ onClose }) {
                   {!loading && variables.length === 0 && (
                     <tr>
                       <td
-                        colSpan="4"
+                        colSpan="5"
                         className="px-4 py-8 text-center text-[var(--text-muted)]"
                       >
                         No internal variables.
@@ -275,6 +331,9 @@ export default function InternalVariable({ onClose }) {
                           {item.name}
                         </td>
 
+                        <td className="px-4 py-3 text-[#22C55E] font-semibold">
+                          {item.cp_number || currentCP}
+                        </td>
                         <td className="px-4 py-3 text-[var(--text-secondary)] uppercase">
                           {item.data_type}
                         </td>

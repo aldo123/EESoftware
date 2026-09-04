@@ -537,6 +537,7 @@ export function ButtonPropertyPanel({
   set,
   availableDevices = [],
   availablePages = [],
+  cpNumber = "",
 }) {
   const isOn = p.builderState === 1;
   const action = p.action || "write";
@@ -546,8 +547,10 @@ export function ButtonPropertyPanel({
   const {
     variables: internalVariables = [],
     loading: internalVariablesLoading = false,
-  } = useInternalVariables();
+  } = useInternalVariables(cpNumber);
 
+  // Page Builder scope: only Internal Variables belonging to the active CP
+  // are available for Write Target and Reset Target selections.
   const resetTargets = normalizeResetTargets(p.resetTargets);
 
   const setResetTargets = (nextTargets) => {

@@ -151,8 +151,9 @@ const subscribe = (listener) => {
 
 const getSnapshot = () => state;
 
-export function useInternalVariables() {
+export function useInternalVariables(cpNumber = "") {
   const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const scopedCP = String(cpNumber ?? "").trim();
 
   const refresh = useCallback(() => fetchVariables({ silent: false }), []);
 
@@ -197,22 +198,34 @@ export function useInternalVariables() {
     return Promise.resolve(result);
   }, []);
 
-  const createVariable = useCallback(async ({ name, data_type = "string", value = "" }) => {
+  const createVariable = useCallback(async ({ name, data_type = "string", value = "", cp_number = "", cpNumber = "" }) => {
     const n = String(name || "").trim();
+    const scopedCP = String(cp_number || cpNumber || "").trim();
     if (!n) throw new Error("Variable name is required.");
     const data = await request(API_BASE, {
       method: "POST",
-      body: JSON.stringify({ name: n, data_type, value: normalizeValue(value, data_type) }),
+      body: JSON.stringify({
+        name: n,
+        ...(scopedCP ? { cp_number: scopedCP } : {}),
+        data_type,
+        value: normalizeValue(value, data_type),
+      }),
     });
     await fetchVariables({ silent: true });
     return data?.variable || null;
   }, []);
 
-  const updateVariable = useCallback(async (id, { name, data_type = "string", value = "" }) => {
+  const updateVariable = useCallback(async (id, { name, data_type = "string", value = "", cp_number = "", cpNumber = "" }) => {
     if (id == null) throw new Error("Variable id is required.");
+    const scopedCP = String(cp_number || cpNumber || "").trim();
     const data = await request(`${API_BASE}/${id}`, {
       method: "PUT",
-      body: JSON.stringify({ name: String(name || "").trim(), data_type, value: normalizeValue(value, data_type) }),
+      body: JSON.stringify({
+        name: String(name || "").trim(),
+        ...(scopedCP ? { cp_number: scopedCP } : {}),
+        data_type,
+        value: normalizeValue(value, data_type),
+      }),
     });
     pending.delete(String(id)); dirty.delete(String(id));
     await fetchVariables({ silent: true });
@@ -229,8 +242,16 @@ export function useInternalVariables() {
 
   useEffect(() => () => {}, []);
 
+  const scopedVariables = scopedCP
+    ? snapshot.variables.filter(
+        (v) => String(v?.cp_number ?? v?.cp ?? "").trim() === scopedCP
+      )
+    : snapshot.variables;
+
   return {
-    variables: snapshot.variables, byName: snapshot.byName, loading: snapshot.loading,
+    variables: scopedVariables,
+    allVariables: snapshot.variables,
+    byName: snapshot.byName, loading: snapshot.loading,
     initialized: snapshot.initialized, error: snapshot.error,
     getValue, getVariable, setValue, setValues,
     createVariable, updateVariable, deleteVariable, refresh,
