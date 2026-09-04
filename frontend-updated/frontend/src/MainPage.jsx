@@ -769,8 +769,8 @@ export default function MainPage({ user: initialUser, onLogout }) {
     { icon: <IconSetting2 />, label: "Setting", action: () => setShowSetting(true) },
     { icon: <IconLogic />, label: "Logic Builder", action: () => setShowLogic(true) },
     { icon: <span>🎨</span>, label: "Page Builder", action: () => setShowBuilder(true) },
-    { icon: <span>▦</span>, label: "Internal Variables", action: () => setShowInternalVariable(true) },
-    { icon: <span>▤</span>, label: "Specification", action: () => setShowSpecification(true) },
+    { icon: <span>▦</span>, label: "Internal Variables", action: () => { if (!cpNumber) return; setShowInternalVariable(true); } },
+    { icon: <span>▤</span>, label: "Specification", action: () => { if (!cpNumber) return; setShowSpecification(true); } },
 
 
   ];
@@ -993,7 +993,13 @@ export default function MainPage({ user: initialUser, onLogout }) {
             onClose={() => setShowInternalVariable(false)}
           />
         )}
-        {showSpecification && (<Specification key="specification" onClose={() => setShowSpecification(false)} />)}
+        {showSpecification && (
+          <Specification
+            key={`specification-${cpNumber || "none"}`}
+            cpNumber={cpNumber}
+            onClose={() => setShowSpecification(false)}
+          />
+        )}
       </AnimatePresence>
     </div>
   );

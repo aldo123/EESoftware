@@ -148,7 +148,7 @@ function Select({ value, onChange, options, disabled = false }) {
   );
 }
 
-export default function Specification({ onClose }) {
+export default function Specification({ onClose, cpNumber = "" }) {
   const [specifications, setSpecifications] = useState([]);
   const [selectedId, setSelectedId] = useState("");
   const [current, setCurrent] = useState(null);
@@ -171,7 +171,7 @@ export default function Specification({ onClose }) {
     const results = await Promise.allSettled([
       jsonRequest(`${API}/api/tcp/devices`),
       jsonRequest(`${API}/api/rs232/devices`),
-      jsonRequest(`${API}/api/internal-variables`),
+      jsonRequest(`${API}/api/internal-variables${cpNumber ? `?cp_number=${encodeURIComponent(cpNumber)}` : ""}`),
     ]);
 
     if (results[0].status === "fulfilled") {
@@ -204,7 +204,7 @@ export default function Specification({ onClose }) {
     setError("");
 
     try {
-      const data = await jsonRequest(`${API}/api/specifications`);
+      const data = await jsonRequest(`${API}/api/specifications${cpNumber ? `?cp_number=${encodeURIComponent(cpNumber)}` : ""}`);
       const list = Array.isArray(data?.specifications)
         ? data.specifications.map(normalizeSpecification)
         : [];
@@ -224,12 +224,12 @@ export default function Specification({ onClose }) {
     } finally {
       setLoading(false);
     }
-  }, [selectedId]);
+  }, [selectedId, cpNumber]);
 
   useEffect(() => {
     loadSpecifications(null);
     loadDevices();
-  }, [loadSpecifications, loadDevices]);
+  }, [loadSpecifications, loadDevices, cpNumber]);
 
   function updateCurrent(patch) {
     setCurrent((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -289,6 +289,7 @@ export default function Specification({ onClose }) {
         body: JSON.stringify({
           name,
           rows: [],
+          cp_number: cpNumber,
         }),
       });
 
@@ -343,6 +344,7 @@ export default function Specification({ onClose }) {
     try {
       const payload = {
         name: current.name.trim(),
+        cp_number: cpNumber,
         rows: current.rows.map((row) => ({
           parameter_test: row.parameter_test,
           lower_limit:
