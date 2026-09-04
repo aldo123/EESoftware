@@ -26,13 +26,27 @@ def init_internal_variables_db():
         conn.execute("""CREATE TABLE IF NOT EXISTS internal_variables (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            cp_number TEXT NOT NULL DEFAULT '',
             data_type TEXT NOT NULL DEFAULT 'string',
             value TEXT NOT NULL DEFAULT '',
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )""")
+
+        # Safe migration for databases created by older versions.
+        columns = {
+            row["name"]
+            for row in conn.execute("PRAGMA table_info(internal_variables)").fetchall()
+        }
+        if "cp_number" not in columns:
+            conn.execute(
+                "ALTER TABLE internal_variables ADD COLUMN cp_number TEXT NOT NULL DEFAULT ''"
+            )
+
         conn.execute("""CREATE INDEX IF NOT EXISTS idx_internal_variables_name
                         ON internal_variables(name COLLATE NOCASE)""")
+        conn.execute("""CREATE INDEX IF NOT EXISTS idx_internal_variables_cp
+                        ON internal_variables(cp_number)""")
         conn.commit()
 
 def _validate_name(name):
@@ -73,22 +87,67 @@ def _row(row):
 
 @internal_variable_bp.get("")
 def list_internal_variables():
+    cp_number = str(
+        request.args.get("cp_number", request.args.get("cp", ""))
+        or ""
+    ).strip()
+
     with _connect() as conn:
-        rows = conn.execute("""SELECT id,name,data_type,value,created_at,updated_at
-                               FROM internal_variables ORDER BY name COLLATE NOCASE""").fetchall()
-    return jsonify({"success": True, "variables": [_row(r) for r in rows]})
+        if cp_number:
+            rows = conn.execute(
+                """SELECT id,name,cp_number,data_type,value,created_at,updated_at
+                   FROM internal_variables
+                   WHERE cp_number = ?
+                   ORDER BY name COLLATE NOCASE""",
+                (cp_number,),
+            ).fetchall()
+        else:
+            # Keep backward compatibility for runtime/global callers.
+            rows = conn.execute(
+                """SELECT id,name,cp_number,data_type,value,created_at,updated_at
+                   FROM internal_variables
+                   ORDER BY name COLLATE NOCASE"""
+            ).fetchall()
+
+    return jsonify({
+        "success": True,
+        "cp_number": cp_number,
+        "variables": [_row(r) for r in rows],
+    })
 
 @internal_variable_bp.post("")
 def create_internal_variable():
     body = request.get_json(silent=True) or {}
-    name = _validate_name(body.get("name")); data_type = _normalize_type(body.get("data_type"))
-    if not name: return jsonify({"success":False,"message":"Invalid variable name."}),400
-    if not data_type: return jsonify({"success":False,"message":"Invalid data type."}),400
+    name = _validate_name(body.get("name"))
+    data_type = _normalize_type(body.get("data_type"))
+    cp_number = str(
+        body.get("cp_number", body.get("cp", ""))
+        or ""
+    ).strip()
+
+    if not name:
+        return jsonify({"success": False, "message": "Invalid variable name."}), 400
+    if not data_type:
+        return jsonify({"success": False, "message": "Invalid data type."}), 400
+    if not cp_number:
+        return jsonify({"success": False, "message": "CP number is required."}), 400
+
     try:
         value = _normalize_value(body.get("value",""), data_type)
         with _connect() as conn:
-            cur = conn.execute("INSERT INTO internal_variables (name,data_type,value) VALUES (?,?,?)",(name,data_type,value))
-            row = conn.execute("SELECT id,name,data_type,value,created_at,updated_at FROM internal_variables WHERE id=?",(cur.lastrowid,)).fetchone()
+            # Variable names are intentionally still globally unique.
+            # This avoids breaking the existing runtime lookup by name.
+            cur = conn.execute(
+                """INSERT INTO internal_variables
+                   (name,cp_number,data_type,value)
+                   VALUES (?,?,?,?)""",
+                (name, cp_number, data_type, value),
+            )
+            row = conn.execute(
+                """SELECT id,name,cp_number,data_type,value,created_at,updated_at
+                   FROM internal_variables WHERE id=?""",
+                (cur.lastrowid,),
+            ).fetchone()
             conn.commit()
         return jsonify({"success":True,"variable":_row(row)}),201
     except sqlite3.IntegrityError:
@@ -119,7 +178,7 @@ def batch_update_internal_variables():
             conn.commit()
             rows = []
             for vid,_ in normalized:
-                rows.append(_row(conn.execute("SELECT id,name,data_type,value,created_at,updated_at FROM internal_variables WHERE id=?",(vid,)).fetchone()))
+                rows.append(_row(conn.execute("SELECT id,name,cp_number,data_type,value,created_at,updated_at FROM internal_variables WHERE id=?",(vid,)).fetchone()))
         return jsonify({"success":True,"count":len(rows),"variables":rows})
     except Exception as exc:
         return jsonify({"success":False,"message":str(exc)}),400
