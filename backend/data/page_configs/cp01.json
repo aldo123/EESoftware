@@ -180,7 +180,7 @@
           "mode": "manual"
         },
         "valueOn": 1,
-        "variable": "test",
+        "variable": "Step1",
         "variant": "solid",
         "visual": {
           "accentColor": "var(--accent-cyan)",
@@ -1594,7 +1594,7 @@
         },
         "valueOff": 0,
         "valueOn": 1,
-        "variable": "test",
+        "variable": "Step1",
         "visual": {
           "accentColor": "var(--accent-cyan)",
           "backgroundColor": "var(--panel-canvas)",
@@ -2505,7 +2505,7 @@
               "mode": "manual"
             },
             "valueOn": 1,
-            "variable": "test",
+            "variable": "Step1",
             "variant": "solid",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -3919,7 +3919,7 @@
             },
             "valueOff": 0,
             "valueOn": 1,
-            "variable": "test",
+            "variable": "Step1",
             "visual": {
               "accentColor": "var(--accent-cyan)",
               "backgroundColor": "var(--panel-canvas)",

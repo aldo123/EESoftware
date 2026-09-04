@@ -44,18 +44,72 @@ def _connect():
 
 
 def init_specification_db():
-    with _connect() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS specifications (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
+    """
+    Create/migrate specification.db.
 
+    Each specification belongs to exactly one CP.  The unique key is:
+        (name, cp_number)
+
+    Existing databases created by older versions are migrated without
+    deleting specification parameters.  Old specifications receive NULL
+    cp_number because their CP cannot be inferred safely.
+    """
+    with _connect() as conn:
+        columns = {
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA table_info(specifications)"
+            ).fetchall()
+        }
+
+        if not columns:
+            conn.execute(
+                """
+                CREATE TABLE specifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    cp_number TEXT NOT NULL,
+                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+        else:
+            # Legacy table had name UNIQUE and no cp_number.  Rebuild it so
+            # the old global UNIQUE(name) constraint is removed.
+            if "cp_number" not in columns:
+                conn.execute("PRAGMA foreign_keys = OFF")
+
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS specifications_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        cp_number TEXT,
+                        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+
+                conn.execute(
+                    """
+                    INSERT INTO specifications_new
+                        (id, name, cp_number, created_at, updated_at)
+                    SELECT
+                        id, name, NULL, created_at, updated_at
+                    FROM specifications
+                    """
+                )
+
+                conn.execute("DROP TABLE specifications")
+                conn.execute(
+                    "ALTER TABLE specifications_new RENAME TO specifications"
+                )
+
+                conn.execute("PRAGMA foreign_keys = ON")
+
+        # Ensure the parameter table exists.  It references specification id.
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS specification_parameters (
@@ -67,7 +121,7 @@ def init_specification_db():
                 upper_limit REAL,
 
                 trigger_start TEXT NOT NULL DEFAULT 'TCP',
-                trigger_device TEXT NOT NULL DEFAULT '',
+                trigger_device TEXT NOT NULL DEFAULT 'PLC',
                 trigger_register_type TEXT NOT NULL DEFAULT 'Holding',
                 trigger_source TEXT NOT NULL DEFAULT '',
 
@@ -76,7 +130,7 @@ def init_specification_db():
                 method TEXT NOT NULL DEFAULT 'Avg',
 
                 data_source TEXT NOT NULL DEFAULT 'TCP',
-                source_device TEXT NOT NULL DEFAULT '',
+                source_device TEXT NOT NULL DEFAULT 'PLC',
                 source_register_type TEXT NOT NULL DEFAULT 'Holding',
                 source TEXT NOT NULL DEFAULT '',
 
@@ -87,6 +141,16 @@ def init_specification_db():
                     REFERENCES specifications(id)
                     ON DELETE CASCADE
             )
+            """
+        )
+
+        # A specification name may be reused in another CP, but not twice
+        # inside the same CP.
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS
+            ux_specifications_name_cp
+            ON specifications(name COLLATE NOCASE, cp_number)
             """
         )
 
@@ -128,7 +192,7 @@ def _row_to_dict(row):
 def _get_spec(conn, spec_id):
     spec = conn.execute(
         """
-        SELECT id, name, created_at, updated_at
+        SELECT id, name, cp_number, created_at, updated_at
         FROM specifications
         WHERE id = ?
         """,
@@ -173,14 +237,32 @@ def _get_spec(conn, spec_id):
 
 @specification_bp.get("")
 def list_specifications():
+    cp_number = str(
+        request.args.get("cp_number", request.args.get("cp", ""))
+        or ""
+    ).strip()
+
     with _connect() as conn:
-        ids = conn.execute(
-            """
-            SELECT id
-            FROM specifications
-            ORDER BY name COLLATE NOCASE
-            """
-        ).fetchall()
+        if cp_number:
+            ids = conn.execute(
+                """
+                SELECT id
+                FROM specifications
+                WHERE cp_number = ?
+                ORDER BY name COLLATE NOCASE
+                """,
+                (cp_number,),
+            ).fetchall()
+        else:
+            # Backward-compatible global listing for runtime/administrative
+            # callers that intentionally do not provide a CP.
+            ids = conn.execute(
+                """
+                SELECT id
+                FROM specifications
+                ORDER BY name COLLATE NOCASE
+                """
+            ).fetchall()
 
         specifications = [
             _get_spec(conn, row["id"])
@@ -189,6 +271,7 @@ def list_specifications():
 
     return jsonify({
         "success": True,
+        "cp_number": cp_number,
         "specifications": specifications,
     })
 
@@ -214,6 +297,10 @@ def get_specification(specification_id):
 def create_specification():
     body = request.get_json(silent=True) or {}
     name = str(body.get("name") or "").strip()
+    cp_number = str(
+        body.get("cp_number", body.get("cp", ""))
+        or ""
+    ).strip()
 
     if not name:
         return jsonify({
@@ -221,11 +308,17 @@ def create_specification():
             "message": "Specification name is required",
         }), 400
 
+    if not cp_number:
+        return jsonify({
+            "success": False,
+            "message": "CP number is required",
+        }), 400
+
     try:
         with _connect() as conn:
             cursor = conn.execute(
-                "INSERT INTO specifications (name) VALUES (?)",
-                (name,),
+                "INSERT INTO specifications (name, cp_number) VALUES (?, ?)",
+                (name, cp_number),
             )
             conn.commit()
             result = _get_spec(conn, cursor.lastrowid)
@@ -238,7 +331,7 @@ def create_specification():
     except sqlite3.IntegrityError:
         return jsonify({
             "success": False,
-            "message": f"Specification '{name}' already exists",
+            "message": f"Specification '{name}' already exists in CP {cp_number}",
         }), 409
 
     except Exception as exc:
@@ -254,6 +347,10 @@ def update_specification(specification_id):
 
     name = str(body.get("name") or "").strip()
     rows = body.get("rows", [])
+    cp_number = str(
+        body.get("cp_number", body.get("cp", ""))
+        or ""
+    ).strip()
 
     if not name:
         return jsonify({
@@ -290,14 +387,26 @@ def update_specification(specification_id):
                     "message": "Specification not found",
                 }), 404
 
-            conn.execute(
-                """
-                UPDATE specifications
-                SET name = ?, updated_at = CURRENT_TIMESTAMP
-                WHERE id = ?
-                """,
-                (name, specification_id),
-            )
+            if cp_number:
+                conn.execute(
+                    """
+                    UPDATE specifications
+                    SET name = ?, cp_number = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (name, cp_number, specification_id),
+                )
+            else:
+                # Existing legacy records may have NULL cp_number.  Do not
+                # accidentally erase ownership when an old client saves them.
+                conn.execute(
+                    """
+                    UPDATE specifications
+                    SET name = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                    """,
+                    (name, specification_id),
+                )
 
             conn.execute(
                 """

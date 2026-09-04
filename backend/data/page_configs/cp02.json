@@ -92,12 +92,12 @@
       "id": "w1787050372491_1",
       "props": {
         "action": "write",
-        "address": "1",
+        "address": "",
         "addressType": "holding_register",
         "backgroundOpacity": 1,
         "builderState": 1,
         "buttonType": "toggle",
-        "device": "PLC",
+        "device": "",
         "fontSize": 18,
         "height": 55,
         "imageFit": "fill",
@@ -117,7 +117,7 @@
           "mode": "manual"
         },
         "valueOn": 1,
-        "variable": "step1",
+        "variable": "HPTStep1",
         "variant": "solid",
         "visual": {
           "accentColor": "var(--accent-cyan)",
@@ -132,7 +132,7 @@
           "theme": "wik_cyan"
         },
         "width": 120,
-        "writeTarget": "tcp"
+        "writeTarget": "internal"
       },
       "type": "button",
       "x": 145,
@@ -1320,12 +1320,12 @@
         "resetLabel": "RESET",
         "resetTargets": [
           {
-            "type": "tcp",
-            "variable": "",
-            "device": "PLC",
-            "addressType": "holding_register",
             "address": "1",
-            "id": "reset_1788243919541_8sxl2"
+            "addressType": "holding_register",
+            "device": "PLC",
+            "id": "reset_1788243919541_8sxl2",
+            "type": "tcp",
+            "variable": ""
           }
         ],
         "simulation": {
@@ -4965,12 +4965,12 @@
           "id": "w1787050372491_1",
           "props": {
             "action": "write",
-            "address": "1",
+            "address": "",
             "addressType": "holding_register",
             "backgroundOpacity": 1,
             "builderState": 1,
             "buttonType": "toggle",
-            "device": "PLC",
+            "device": "",
             "fontSize": 18,
             "height": 55,
             "imageFit": "fill",
@@ -4990,7 +4990,7 @@
               "mode": "manual"
             },
             "valueOn": 1,
-            "variable": "step1",
+            "variable": "HPTStep1",
             "variant": "solid",
             "visual": {
               "accentColor": "var(--accent-cyan)",
@@ -5005,7 +5005,7 @@
               "theme": "wik_cyan"
             },
             "width": 120,
-            "writeTarget": "tcp"
+            "writeTarget": "internal"
           },
           "type": "button",
           "x": 145,
@@ -6193,12 +6193,12 @@
             "resetLabel": "RESET",
             "resetTargets": [
               {
-                "type": "tcp",
-                "variable": "",
-                "device": "PLC",
-                "addressType": "holding_register",
                 "address": "1",
-                "id": "reset_1788243919541_8sxl2"
+                "addressType": "holding_register",
+                "device": "PLC",
+                "id": "reset_1788243919541_8sxl2",
+                "type": "tcp",
+                "variable": ""
               }
             ],
             "simulation": {
