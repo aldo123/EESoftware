@@ -281,18 +281,29 @@ function RoiPicker({ cameraId, roi, onChange, thresholdValue }) {
 // No per-type config blocks yet — add one `{node.type === "..." && (<>...</>)}`
 // block per node type as they get rebuilt (see git history for the old patterns:
 // static/field-key/device-register "source" dropdowns, condition rows, etc.)
-const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDevices = [], tcpDevices = [], rtuDevices = [], templates = [], onCreateTemplate, onOpenGroup, cpNumber = "" }) {
+const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDevices = [], tcpDevices = [], rtuDevices = [], templates = [], onCreateTemplate, onOpenGroup, cpNumber = "", activeGroupName = "" }) {
   const [localConfig, setLocalConfig] = useState({});
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [creatingGroup, setCreatingGroup] = useState(false);
-  const [variableGroups, setVariableGroups] = useState([]);
+  // Groups shown in Reset -> Reset per Group are the actual
+  // Logic Builder Groups (logic templates), not Internal Variable groups.
   const { variables: internalVariables, loading: internalVariablesLoading } = useInternalVariables(cpNumber || undefined);
 
-  useEffect(() => {
-    fetch(`${API}/api/internal-variables/groups`).then(r => r.ok ? r.json() : { groups: [] }).then(d => setVariableGroups(d.groups || [])).catch(() => {});
-  }, []);
+  const logicBuilderGroups = useMemo(() => {
+    const names = (templates || [])
+      .map(g => String(g?.name ?? g?.template_name ?? "").trim())
+      .filter(Boolean);
+
+    // Keep the currently opened Group available even if the parent list has
+    // not refreshed yet.
+    if (activeGroupName && !names.includes(activeGroupName)) {
+      names.unshift(activeGroupName);
+    }
+
+    return [...new Set(names)];
+  }, [templates, activeGroupName]);
 
   useEffect(() => {
     setLocalConfig(node?.config || {});
@@ -898,7 +909,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
 
           {c.mode === "all" && (
             <p className="text-[var(--text-muted)] text-[9px] mt-1">
-              Semua Internal Variable di aplikasi bakal di-reset ke default-nya masing-masing (string → kosong, number → 0, boolean → false). <b style={{ color: "#EF4444" }}>Ini nyentuh SEMUA variable</b>, gak cuma yang lo pakai di flow ini — pakai hati-hati. Perangkat PLC/device gak ikut ke-reset di mode ini.
+              Semua Internal Variable di aplikasi di-reset sesuai data type: <b>number → 0</b>, <b>boolean → false</b>, <b>string → empty</b>. <b style={{ color: "#EF4444" }}>Ini menyentuh SEMUA Internal Variable</b>, bukan device PLC.
             </p>
           )}
 
@@ -910,12 +921,26 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
                 className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#3B82F6]/60"
               >
                 <option value="">Select group…</option>
-                {variableGroups.map(g => <option key={g} value={g}>{g}</option>)}
+                {logicBuilderGroups.map(g => (
+                  <option key={g} value={g}>
+                    {g === activeGroupName ? `★ ${g} (aktif)` : g}
+                  </option>
+                ))}
               </select>
+              {logicBuilderGroups.length === 0 && (
+                <p className="text-[#F59E0B] text-[9px] mt-1">
+                  Belum ada Group di Logic Builder. Buat Group melalui Group Template terlebih dahulu.
+                </p>
+              )}
             </Field>
             <p className="text-[var(--text-muted)] text-[9px] mt-1">
-              Reset semua Internal Variable yang di-tag Group ini aja (di-set lewat menu Internal Variable manager, field "Group"). Cocok buat batasin reset cuma ke variable punya CP/flow ini, gak ikut kesenggol variable CP lain. Kalau dropdown-nya kosong, berarti belum ada variable yang di-tag Group manapun — buka menu Internal Variable dulu buat ngasih tag.
+              Reset semua Internal Variable yang di-tag Group ini (termasuk Group yang sedang aktif). Setiap variable kembali sesuai data type: <b>number → 0</b>, <b>boolean → false</b>, <b>string → empty</b>. Device PLC tidak ikut reset pada mode Group.
             </p>
+            {activeGroupName && (
+              <p className="text-[9px] mt-1 text-[#22C55E]">
+                ★ Group yang sedang dibuka: <b>{activeGroupName}</b>
+              </p>
+            )}
           </>)}
 
           {c.mode === "selected" && (<>
@@ -969,6 +994,9 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
                     ]} />
                   </Field>
                   <Field label="Address"><Input value={t.address} onChange={v => updateResetTarget(idx, { address: v })} placeholder="0" /></Field>
+                  <div className="rounded-md border border-[#3B82F6]/30 bg-[#3B82F6]/5 px-2 py-1.5 text-[9px] text-[var(--text-muted)]">
+                    Reset value: <b>Coil → false</b> · <b>Holding Register → 0</b>. Berlaku untuk Modbus TCP dan Modbus RTU.
+                  </div>
                 </>)}
               </div>
             ))}
@@ -982,7 +1010,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
             </button>
 
             <p className="text-[var(--text-muted)] text-[9px] mt-1">
-              Internal Variable direset ke default sesuai tipenya (boolean → false, number → 0, string → kosong). PLC coil/register direset ke 0. Cocok ditaruh di akhir flow (setelah Lampu nyala, atau setelah gagal) buat balikin trigger flag (mis. <code>Hipotstep1</code>) ke idle, biar siklus berikutnya bisa nge-trigger lagi dari rising edge.
+              <b>Internal Variable:</b> number → <b>0</b>, boolean → <b>false</b>, string → <b>empty</b>. <b>PLC Modbus TCP/RTU:</b> Coil → <b>false</b>, Holding Register → <b>0</b>. Reset dijalankan oleh Logic Engine saat node ini dieksekusi.
             </p>
           </>)}
         </>)}
@@ -1701,7 +1729,7 @@ function FlowEditor({ source, cpNumber, onClose, onBack, commDevices, tcpDevices
           )}
         </div>
         <div className="w-64 shrink-0 border-l border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
-          <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} commDevices={commDevices} tcpDevices={tcpDevices} rtuDevices={rtuDevices} templates={templates} onCreateTemplate={onCreateTemplate} onOpenGroup={onOpenGroup} cpNumber={cpNumber} />
+          <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} commDevices={commDevices} tcpDevices={tcpDevices} rtuDevices={rtuDevices} templates={templates} onCreateTemplate={onCreateTemplate} onOpenGroup={onOpenGroup} cpNumber={cpNumber} activeGroupName={source.kind === "template" ? (templateMeta.name || source.templateName || source.templateId || "") : ""} />
         </div>
       </div>
       <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>

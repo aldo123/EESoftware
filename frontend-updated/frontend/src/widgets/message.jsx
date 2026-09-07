@@ -71,25 +71,62 @@ function levelColor(level) {
   return COLORS.green;
 }
 
+const MESSAGE_FILTER_OPTIONS = [
+  { value: "system", label: "System", group: "source" },
+  { value: "device", label: "Device", group: "source" },
+  { value: "com", label: "COM / RS232", group: "source" },
+  { value: "tcp", label: "TCP / IP", group: "source" },
+  { value: "internal", label: "Internal Variable", group: "source" },
+  { value: "info", label: "Info", group: "level" },
+  { value: "warning", label: "Warning", group: "level" },
+  { value: "error", label: "Error", group: "level" },
+  { value: "rx", label: "RX", group: "level" },
+  { value: "tx", label: "TX", group: "level" },
+];
+
+function normalizeMessageFilters(filter) {
+  if (Array.isArray(filter)) {
+    const values = filter.map(v => String(v || "").trim().toLowerCase()).filter(Boolean);
+    return values.includes("all") ? [] : [...new Set(values)];
+  }
+
+  const f = String(filter || "all").trim().toLowerCase();
+  return f === "all" || !f ? [] : [f];
+}
+
 function matchesFilter(log, filter) {
-  const f = String(filter || "all").toLowerCase();
-  if (f === "all") return true;
+  const filters = normalizeMessageFilters(filter);
+  if (!filters.length) return true;
 
   const source = String(log?.source || "SYSTEM").toLowerCase();
   const level = String(log?.level || "info").toLowerCase();
 
-  if (f === "system") return source === "system";
-  if (f === "device") return source === "device";
-  if (f === "com") return source === "com";
-  if (f === "tcp") return source === "tcp";
-  if (f === "internal") return source === "internal";
-  if (f === "error") return level === "error";
-  if (f === "warning") return level === "warning" || level === "warn";
-  if (f === "rx") return level === "rx";
-  if (f === "tx") return level === "tx";
-  if (f === "info") return level === "info";
+  return filters.some((f) => {
+    if (f === "system") return source === "system";
+    if (f === "device") return source === "device";
+    if (f === "com") return source === "com";
+    if (f === "tcp") return source === "tcp";
+    if (f === "internal") return source === "internal";
+    if (f === "error") return level === "error";
+    if (f === "warning") return level === "warning" || level === "warn";
+    if (f === "rx") return level === "rx";
+    if (f === "tx") return level === "tx";
+    if (f === "info") return level === "info";
+    return false;
+  });
+}
 
-  return true;
+function messageFilterLabel(filter) {
+  const filters = normalizeMessageFilters(filter);
+  if (!filters.length) return "All Messages";
+
+  const labels = filters
+    .map(v => MESSAGE_FILTER_OPTIONS.find(o => o.value === v)?.label)
+    .filter(Boolean);
+
+  return labels.length <= 2
+    ? labels.join(" + ")
+    : `${labels.length} filters selected`;
 }
 
 function formatLog(log, p) {
@@ -167,6 +204,71 @@ export function MessagePreview({ widget }) {
   );
 }
 
+function MessageFilterMultiSelect({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const selected = normalizeMessageFilters(value);
+
+  const toggle = (filter) => {
+    const next = selected.includes(filter)
+      ? selected.filter(v => v !== filter)
+      : [...selected, filter];
+
+    onChange(next);
+  };
+
+  const clear = () => onChange([]);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="w-full min-h-8 rounded-md px-2 py-1 text-left text-[10px] bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] outline-none flex items-center justify-between gap-2"
+      >
+        <span className="truncate">{messageFilterLabel(value)}</span>
+        <span className="opacity-60">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="absolute z-50 left-0 right-0 mt-1 rounded-md border border-[var(--border)] bg-[#111827] shadow-xl p-2">
+          <label className="flex items-center gap-2 h-7 px-1 text-[10px] text-white cursor-pointer border-b border-white/10 mb-1 bg-[#111827]">
+            <input
+              type="checkbox"
+              checked={selected.length === 0}
+              onChange={clear}
+            />
+            <span className="font-semibold">All Messages</span>
+          </label>
+
+          {MESSAGE_FILTER_OPTIONS.map((option) => (
+            <label
+              key={option.value}
+              className="flex items-center gap-2 h-7 px-1 text-[10px] text-white cursor-pointer hover:bg-white/10 rounded bg-[#111827]"
+            >
+              <input
+                type="checkbox"
+                checked={selected.includes(option.value)}
+                onChange={() => toggle(option.value)}
+              />
+              <span>{option.label}</span>
+            </label>
+          ))}
+
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={clear}
+              className="w-full mt-1 h-7 rounded text-[9px] text-gray-300 hover:bg-white/10 bg-[#111827]"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function MessagePropertyPanel({ p, set }) {
   const value = { ...DEFAULT_PROPS, ...(p || {}) };
 
@@ -185,23 +287,10 @@ export function MessagePropertyPanel({ p, set }) {
       </PropSection>
 
       <PropSection title="Filter">
-        <select
-          value={value.filter || "all"}
-          onChange={(e) => set("filter", e.target.value)}
-          className="w-full h-8 rounded-md px-2 text-[10px] bg-[var(--bg-canvas)] border border-[var(--border)] text-[var(--text-primary)] outline-none"
-        >
-          <option value="all">All Messages</option>
-          <option value="system">System</option>
-          <option value="device">Device</option>
-          <option value="com">COM / RS232</option>
-          <option value="tcp">TCP / IP</option>
-          <option value="internal">Internal Variable</option>
-          <option value="info">Info</option>
-          <option value="warning">Warning</option>
-          <option value="error">Error</option>
-          <option value="rx">RX</option>
-          <option value="tx">TX</option>
-        </select>
+        <MessageFilterMultiSelect
+          value={value.filter}
+          onChange={(next) => set("filter", next)}
+        />
       </PropSection>
 
       <PropSection title="Display">
