@@ -12,7 +12,7 @@ TEMPLATES_DIR = os.path.join(DATA_DIR, "logic_templates")
 
 # Node types with true/false branch outputs, used when flattening Group (subflow_call)
 # nodes. Add a type here whenever a new check-style node is built.
-CHECK_NODE_TYPES = {"zone_inspect", "count_over_time", "custom_script"}
+CHECK_NODE_TYPES = {"zone_inspect", "count_over_time", "custom_script", "multi_condition_gate"}
 MAX_SUBFLOW_DEPTH = 8
 
 # ─── Runtime State per CP ──────────────────────────────────────────
@@ -63,15 +63,26 @@ def _node_output_ports(node: dict) -> list:
     if ntype == "switch":
         cases = node.get("config", {}).get("cases", [])
         return [f"case_{i}" for i in range(len(cases))] + ["default"]
+    if ntype == "subflow_call" and node.get("config", {}).get("expose_check"):
+        return ["true", "false"]
+    if ntype == "group_output":
+        return [node.get("config", {}).get("port", "next")]
     return ["next"]
 
 
 def _flatten_flow(nodes: list, connections: list, depth: int = 0) -> tuple[dict, list]:
     """Inline every 'subflow_call' (Group) node with the contents of the template it
     references, so the executor never needs to know Groups exist. A template's entry
-    point is whichever of its nodes has no incoming connection; any of its output ports
-    left unconnected falls through to whatever came after the Group node in the outer
-    flow. Recurses so Groups can contain Groups, bounded by MAX_SUBFLOW_DEPTH."""
+    point is whichever of its nodes has no incoming connection (several independent
+    root chains are all wired up, not just one). Any of the template's inner output
+    ports left unconnected bridges out to whatever the Group node's SAME-NAMED outer
+    port connects to (e.g. a dangling inner "true" bridges to the Group's outer
+    "true") — falling back to the outer "next" port for any port name the Group
+    doesn't itself expose (e.g. a plain-action node left dangling inside a
+    next-only Group). This lets a Group act as a full subroutine: as much internal
+    logic as you like, with the same true/false-branching interface to the outside
+    as any other check node when its "Expose as Check" option is on. Recurses so
+    Groups can contain Groups, bounded by MAX_SUBFLOW_DEPTH."""
     node_map = {n["id"]: dict(n) for n in nodes}
     conns = [dict(c) for c in connections]
 
@@ -91,15 +102,22 @@ def _flatten_flow(nodes: list, connections: list, depth: int = 0) -> tuple[dict,
         t_nodes, t_conns = _flatten_flow(template.get("nodes", []) or [], template.get("connections", []) or [], depth + 1)
 
         outer_incoming = [c for c in conns if c.get("toId") == call_id]
-        # A Group's "next" port can itself fan out to several downstream nodes — keep them all.
-        bridge_targets = [c["toId"] for c in conns if c.get("fromId") == call_id and c.get("fromPort") == "next"]
+        # A Group's outer ports (typically just "next", or "true"/"false" when
+        # "Expose as Check" is on) can each fan out to several downstream nodes.
+        outer_bridge_by_port = {}
+        for c in conns:
+            if c.get("fromId") == call_id:
+                outer_bridge_by_port.setdefault(c.get("fromPort"), []).append(c["toId"])
+
+        def bridge_targets_for(port):
+            return outer_bridge_by_port.get(port) or outer_bridge_by_port.get("next") or []
 
         del node_map[call_id]
         conns = [c for c in conns if c.get("fromId") != call_id and c.get("toId") != call_id]
 
         if not t_nodes:
             for c in outer_incoming:
-                for i, target in enumerate(bridge_targets):
+                for i, target in enumerate(bridge_targets_for("next")):
                     conns.append({**c, "id": f"{c.get('id', 'c')}__empty{i}", "toId": target})
             continue
 
@@ -114,8 +132,15 @@ def _flatten_flow(nodes: list, connections: list, depth: int = 0) -> tuple[dict,
 
         # A template can have several independent root chains (nodes with no incoming
         # connection) — run all of them rather than arbitrarily picking one and orphaning
-        # the rest.
-        entry_ids = sorted(set(remapped_nodes.keys()) - {c["toId"] for c in remapped_conns}) or [next(iter(remapped_nodes))]
+        # the rest. A "group_output" node is excluded even when unconnected: it's a
+        # receiver by definition (things flow INTO it), never a legitimate trigger
+        # origin — an unwired one (e.g. a "false" exit nothing reached yet) must stay
+        # dead, not misfire as though the Group's outer input reached it directly.
+        connected_ids = {c["toId"] for c in remapped_conns}
+        entry_ids = sorted(
+            nid for nid, n in remapped_nodes.items()
+            if n.get("type") != "group_output" and nid not in connected_ids
+        ) or [next(iter(remapped_nodes))]
         for c in outer_incoming:
             for i, eid in enumerate(entry_ids):
                 conns.append({**c, "id": f"{c.get('id', 'c')}__entry{i}", "toId": eid})
@@ -124,7 +149,7 @@ def _flatten_flow(nodes: list, connections: list, depth: int = 0) -> tuple[dict,
         for nid, n in remapped_nodes.items():
             for port in _node_output_ports(n):
                 if (nid, port) not in used_out_ports:
-                    for i, target in enumerate(bridge_targets):
+                    for i, target in enumerate(bridge_targets_for(port)):
                         conns.append({"id": f"{nid}__{port}__auto{i}", "fromId": nid, "fromPort": port, "toId": target})
 
         node_map.update(remapped_nodes)
@@ -212,15 +237,16 @@ class FlowExecutor:
     def _reject(self, reason: str):
         self.commands.append({"cmd": "reject", "reason": reason})
 
-    def _evaluate_condition(self, cond: dict) -> bool:
-        """Generic left-op-right evaluator, shared by any future check/gate node."""
-        operator = cond.get("operator", "equals")
-        field_source = cond.get("field_source", "field_key")
-        left = self._resolve_device_value(cond, "field_") if field_source == "device" else self._get_field(cond.get("field", ""))
-        right = self._resolve_source(cond.get("compare_source", "static"), cond, static_value=cond.get("value", ""), field_key=cond.get("value_source", ""), device_prefix="value_")
+    @staticmethod
+    def _compare_values(left, operator: str, right, right2=None) -> bool:
+        """Generic left-op-right(-right2) comparator, shared by any check/gate node."""
         try:
-            if operator in ("greater_than", "less_than", "greater_equal", "less_equal"):
-                l_num, r_num = float(left), float(right)
+            if operator in ("greater_than", "less_than", "greater_equal", "less_equal", "between"):
+                l_num = float(left)
+                if operator == "between":
+                    lo, hi = float(right), float(right2)
+                    return min(lo, hi) <= l_num <= max(lo, hi)
+                r_num = float(right)
                 if operator == "greater_than":
                     return l_num > r_num
                 if operator == "less_than":
@@ -229,14 +255,169 @@ class FlowExecutor:
                     return l_num >= r_num
                 return l_num <= r_num
             if operator == "equals":
-                return str(left) == str(right)
+                # Case-insensitive: an Internal Variable's boolean True/False (Python's
+                # str(True) == "True") must still match a lowercase "true" typed into
+                # the condition's Value field, and PASS/pass/Pass are all the same intent.
+                return str(left).strip().lower() == str(right).strip().lower()
             if operator == "not_equals":
-                return str(left) != str(right)
+                return str(left).strip().lower() != str(right).strip().lower()
             if operator == "contains":
-                return str(right) in str(left)
+                return str(right).strip().lower() in str(left).strip().lower()
         except (ValueError, TypeError):
             return False
         return False
+
+    def _evaluate_condition(self, cond: dict) -> bool:
+        """Generic left-op-right evaluator, shared by any future check/gate node."""
+        operator = cond.get("operator", "equals")
+        field_source = cond.get("field_source", "field_key")
+        left = self._resolve_device_value(cond, "field_") if field_source == "device" else self._get_field(cond.get("field", ""))
+        right = self._resolve_source(cond.get("compare_source", "static"), cond, static_value=cond.get("value", ""), field_key=cond.get("value_source", ""), device_prefix="value_")
+        return self._compare_values(left, operator, right)
+
+    def _read_internal_variable(self, name: str):
+        """Read one Internal Variable's current value straight from its SQLite store."""
+        from routes.internal_variable import _connect, _row
+        try:
+            with _connect() as conn:
+                row = conn.execute(
+                    "SELECT id, name, data_type, value FROM internal_variables WHERE name = ? COLLATE NOCASE",
+                    (name,),
+                ).fetchone()
+            parsed = _row(row)
+            return parsed["value"] if parsed else None
+        except Exception as e:
+            self._log(f"Internal variable read error '{name}': {e}", "#EF4444")
+            return None
+
+    def _write_internal_variable(self, name: str, value) -> bool:
+        from routes.internal_variable import _connect, _normalize_value
+        try:
+            with _connect() as conn:
+                row = conn.execute(
+                    "SELECT id, data_type FROM internal_variables WHERE name = ? COLLATE NOCASE", (name,)
+                ).fetchone()
+                if row is None:
+                    self._log(f"Internal variable write error: '{name}' not found", "#EF4444")
+                    return False
+                normalized = _normalize_value(value, row["data_type"])
+                conn.execute(
+                    "UPDATE internal_variables SET value=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (normalized, row["id"]),
+                )
+                conn.commit()
+            return True
+        except Exception as e:
+            self._log(f"Internal variable write error '{name}': {e}", "#EF4444")
+            return False
+
+    def _reset_internal_variable(self, name: str) -> bool:
+        """Reset one Internal Variable back to its data type's default (string ->
+        "", number -> 0, boolean -> false) — e.g. a trigger flag a Write Output
+        node set to fire a test, ready to fire again next cycle."""
+        from routes.internal_variable import _connect
+
+        defaults = {"number": "0", "boolean": "false", "string": ""}
+        try:
+            with _connect() as conn:
+                row = conn.execute(
+                    "SELECT id, data_type FROM internal_variables WHERE name = ? COLLATE NOCASE", (name,)
+                ).fetchone()
+                if row is None:
+                    self._log(f"Reset error: '{name}' not found", "#EF4444")
+                    return False
+                conn.execute(
+                    "UPDATE internal_variables SET value=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                    (defaults.get(row["data_type"], ""), row["id"]),
+                )
+                conn.commit()
+            return True
+        except Exception as e:
+            self._log(f"Reset error '{name}': {e}", "#EF4444")
+            return False
+
+    def _reset_internal_variables_by_group(self, group_name: str) -> int:
+        """Reset every Internal Variable tagged with the given Group (see the
+        "Group" field in the Internal Variable manager) to its data type's
+        default. Lets a Reset node touch only the variables that belong to one
+        CP/flow instead of the whole app's Internal Variable pool."""
+        from routes.internal_variable import _connect
+
+        defaults = {"number": "0", "boolean": "false", "string": ""}
+        try:
+            with _connect() as conn:
+                rows = conn.execute(
+                    "SELECT id, data_type FROM internal_variables WHERE group_name = ? COLLATE NOCASE",
+                    (group_name,),
+                ).fetchall()
+                for row in rows:
+                    conn.execute(
+                        "UPDATE internal_variables SET value=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (defaults.get(row["data_type"], ""), row["id"]),
+                    )
+                conn.commit()
+            return len(rows)
+        except Exception as e:
+            self._log(f"Reset Group '{group_name}' error: {e}", "#EF4444")
+            return 0
+
+    def _reset_all_internal_variables(self) -> int:
+        """Reset every Internal Variable to its data type's default. Returns how
+        many rows were touched, for the log line."""
+        from routes.internal_variable import _connect
+
+        defaults = {"number": "0", "boolean": "false", "string": ""}
+        try:
+            with _connect() as conn:
+                rows = conn.execute("SELECT id, data_type FROM internal_variables").fetchall()
+                for row in rows:
+                    conn.execute(
+                        "UPDATE internal_variables SET value=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (defaults.get(row["data_type"], ""), row["id"]),
+                    )
+                conn.commit()
+            return len(rows)
+        except Exception as e:
+            self._log(f"Reset All error: {e}", "#EF4444")
+            return 0
+
+    def _write_device_value(self, cfg: dict, value, prefix: str = "") -> bool:
+        """Write one value to a Modbus TCP or RTU coil/holding register."""
+        protocol = cfg.get(f"{prefix}protocol", "tcp")
+        device_name = cfg.get(f"{prefix}device_name", "")
+        address_type = cfg.get(f"{prefix}address_type", "holding_register")
+        address = cfg.get(f"{prefix}address", "0")
+        try:
+            addr = int(address)
+            is_coil = address_type == "coil"
+            bit_value = str(value).strip().lower() in ("1", "true", "on", "yes")
+            reg_value = None if is_coil else int(float(value))
+            if reg_value is not None and not 0 <= reg_value <= 65535:
+                raise ValueError("Holding Register value must be 0..65535")
+
+            if protocol == "rtu":
+                import struct
+                mod = __import__("modbus_rtu")
+                client = mod._get_client(device_name)
+                if is_coil:
+                    payload = struct.pack(">HH", addr, 0xFF00 if bit_value else 0x0000)
+                    client.request(5, payload)
+                else:
+                    payload = struct.pack(">HH", addr, reg_value)
+                    client.request(6, payload)
+            else:
+                mod = __import__("tcp_ip")
+                client = mod._get_client(device_name)
+                client.enqueue_write({
+                    "mode": "single",
+                    "address_type": address_type,
+                    "address": addr,
+                    "value": bit_value if is_coil else reg_value,
+                })
+            return True
+        except Exception as e:
+            self._log(f"Device write error ({device_name or '?'} {address_type}@{address}): {e}", "#EF4444")
+            return False
 
     def _db_query(self, table: str, key_col: str, key_val: str, fields: list, db) -> bool:
         """Generic single-row lookup, shared by any future DB-reading node."""
@@ -255,7 +436,13 @@ class FlowExecutor:
             return False
 
     def run(self, db=None) -> list:
-        from logic_builder.device_poller import trigger_key
+        from logic_builder.device_poller import node_sources, trigger_key
+
+        def node_matches(cfg: dict) -> bool:
+            """True if ANY of this node's alternative sources matches the device
+            that fired — a Device Trigger node with several sources listed fires
+            the same flow no matter which one of them triggered."""
+            return any(trigger_key(source) == self.trigger_device for source in node_sources(cfg))
 
         state = RUNTIME_STATES[self.cp]
         waiting = state["waiting_scan"]
@@ -265,7 +452,7 @@ class FlowExecutor:
             node = self.nodes.get(waiting)
             if node and node["type"] == "device_trigger":
                 cfg = node.get("config", {})
-                if trigger_key(cfg) == self.trigger_device:
+                if node_matches(cfg):
                     # Device cocok → isi field dan lanjut
                     field_key = cfg.get("fieldKey", "")
                     if field_key:
@@ -288,7 +475,7 @@ class FlowExecutor:
         for node in self.nodes.values():
             if node["type"] == "device_trigger":
                 cfg = node.get("config", {})
-                if trigger_key(cfg) == self.trigger_device:
+                if node_matches(cfg):
                     start_node = node
                     break
 
@@ -442,6 +629,205 @@ class FlowExecutor:
             ok = bool(res["result"])
             self._log(f"Custom Script -> {'OK' if ok else 'NG'}", "#22C55E" if ok else "#EF4444")
             self._follow(outputs, "true" if ok else "false", db)
+            return
+
+        # ─── MULTI-CONDITION GATE: AND-check a list of Internal Variables against
+        #     per-variable custom conditions — all must pass ("true") for the flow
+        #     to continue; any single NG stops it on "false". By default this is a
+        #     single instant snapshot check — for a variable whose value takes time
+        #     to settle (e.g. a Specification Table row's status, which starts at
+        #     "waiting_trigger"/"running" and only becomes PASS/FAIL once the actual
+        #     test finishes), turn on "Wait Until Match" so this node polls instead
+        #     of judging on the very first read. ──
+        if ntype == "multi_condition_gate":
+            cfg = node.get("config", {})
+            conditions = cfg.get("conditions", []) or []
+
+            if not conditions:
+                self._log("Multi-Condition Gate: no conditions configured", "#EF4444")
+                self._follow(outputs, "false", db)
+                return
+
+            def check_once(log_each: bool) -> bool:
+                ok_all = True
+                for cond in conditions:
+                    var_name = cond.get("variable_name", "")
+                    operator = cond.get("operator", "equals")
+                    value = self._read_internal_variable(var_name)
+                    if value is None:
+                        if log_each:
+                            self._log(f"Multi-Condition Gate: variable '{var_name}' not found", "#EF4444")
+                        ok_all = False
+                        continue
+                    ok = self._compare_values(value, operator, cond.get("value", ""), cond.get("value2", ""))
+                    if log_each:
+                        self._log(f"Multi-Condition Gate: {var_name} ({value}) {operator} {cond.get('value', '')} -> {'OK' if ok else 'NG'}", "#22C55E" if ok else "#EF4444")
+                    if not ok:
+                        ok_all = False
+                return ok_all
+
+            def any_condition_failed() -> bool:
+                """Fail-fast: if the real test this is waiting on already settled
+                on a definitive negative result (a Specification Table row's
+                status reads the literal "FAIL"), there's no point burning the
+                rest of the timeout waiting for a PASS that will never come."""
+                return any(
+                    str(self._read_internal_variable(cond.get("variable_name", "")) or "").strip().lower() == "fail"
+                    for cond in conditions
+                )
+
+            if cfg.get("wait_mode") == "poll":
+                import time
+                try:
+                    timeout = min(max(float(cfg.get("timeout_seconds", 10)), 0.5), 120)
+                except (TypeError, ValueError):
+                    timeout = 10.0
+                deadline = time.monotonic() + timeout
+                all_ok = False
+                timed_out = False
+                while True:
+                    if any_condition_failed():
+                        break
+                    all_ok = check_once(log_each=False)
+                    if all_ok:
+                        break
+                    if time.monotonic() >= deadline:
+                        timed_out = True
+                        break
+                    time.sleep(0.2)
+                check_once(log_each=True)  # one final pass just to log the actual per-condition outcome
+                if not all_ok:
+                    self._log(f"Multi-Condition Gate: timed out after {timeout}s waiting for all conditions" if timed_out else "Multi-Condition Gate: stopped early — a condition reported FAIL", "#EF4444")
+            else:
+                all_ok = check_once(log_each=True)
+
+            self._follow(outputs, "true" if all_ok else "false", db)
+            return
+
+        # ─── WRITE OUTPUT: write resolved values to one or several targets — PLC
+        #     coil/register (TCP or RTU) and/or Internal Variables — in a single
+        #     node, typically chained after a check/gate node's true port. Flows
+        #     saved before multi-write support have their single write's fields
+        #     flattened directly onto the node config (no "writes" list); that's
+        #     wrapped into a one-item list here for a uniform execution path. ──
+        if ntype == "write_output":
+            cfg = node.get("config", {})
+            writes = cfg.get("writes")
+            if not isinstance(writes, list) or not writes:
+                writes = [cfg] if cfg.get("target") else []
+
+            if not writes:
+                self._log("Write Output: no writes configured", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
+
+            for w in writes:
+                target = w.get("target", "device")
+                value = self._resolve_source(
+                    w.get("value_source", "static"), w,
+                    static_value=w.get("value", ""), field_key=w.get("value_field_key", ""),
+                )
+
+                if target == "internal":
+                    var_name = w.get("variable_name", "")
+                    ok = self._write_internal_variable(var_name, value)
+                    self._log(f"Write Output: internal variable '{var_name}' = {value}" if ok else f"Write Output failed: '{var_name}'", "#22C55E" if ok else "#EF4444")
+                else:
+                    ok = self._write_device_value(w, value)
+                    self._log(f"Write Output: {w.get('device_name', '?')} {w.get('address_type', '?')}@{w.get('address', '?')} = {value}" if ok else "Write Output failed", "#22C55E" if ok else "#EF4444")
+
+            self._follow(outputs, "next", db)
+            return
+
+        # ─── TIMER: pause execution for a fixed duration, then continue — plain
+        #     fire-and-forget delay, distinct from Multi-Condition Gate's "Wait
+        #     Until Match" (which polls a condition, not a fixed clock). ──
+        if ntype == "timer":
+            cfg = node.get("config", {})
+            try:
+                duration = min(max(float(cfg.get("duration_seconds", 1)), 0), 120)
+            except (TypeError, ValueError):
+                duration = 1.0
+            import time
+            time.sleep(duration)
+            self._log(f"Timer: waited {duration}s", "#3B82F6")
+            self._follow(outputs, "next", db)
+            return
+
+        # ─── RESET: put one or several Internal Variables (or PLC coils/registers)
+        #     back to their idle default — e.g. a trigger flag a Write Output set
+        #     to fire a test needs to drop back down before the next cycle can
+        #     raise it again (Device Trigger / Specification trigger both fire on
+        #     a RISING edge, so a flag stuck "on" never fires a second time). "all"
+        #     mode resets every Internal Variable app-wide; it deliberately never
+        #     touches PLC devices — that would be reaching into hardware state well
+        #     beyond what this flow declared it owns. ──
+        if ntype == "reset_node":
+            cfg = node.get("config", {})
+            mode = cfg.get("mode", "selected")
+            if mode == "all":
+                count = self._reset_all_internal_variables()
+                self._log(f"Reset: {count} internal variable(s) reset to default", "#3B82F6")
+            elif mode == "group":
+                group_name = cfg.get("group_name", "")
+                if not group_name:
+                    self._log("Reset: no group selected", "#EF4444")
+                else:
+                    count = self._reset_internal_variables_by_group(group_name)
+                    self._log(f"Reset: {count} internal variable(s) in group '{group_name}' reset to default", "#3B82F6")
+            else:
+                targets = cfg.get("targets", []) or []
+                if not targets:
+                    self._log("Reset: no targets configured", "#EF4444")
+                for t in targets:
+                    if t.get("kind", "internal") == "internal":
+                        var_name = t.get("variable_name", "")
+                        ok = self._reset_internal_variable(var_name)
+                        self._log(f"Reset: internal variable '{var_name}' -> default" if ok else f"Reset failed: '{var_name}'", "#3B82F6" if ok else "#EF4444")
+                    else:
+                        ok = self._write_device_value(t, "0")
+                        self._log(f"Reset: {t.get('device_name', '?')} {t.get('address_type', '?')}@{t.get('address', '?')} -> 0" if ok else "Reset failed", "#3B82F6" if ok else "#EF4444")
+            self._follow(outputs, "next", db)
+            return
+
+        # ─── GROUP INPUT: the Group's entry point (it never has an incoming
+        #     connection so _flatten_flow's entry-point detection finds it
+        #     naturally). Optionally also reads one value — from an Internal
+        #     Variable or a PLC register — into a field key, the same way a
+        #     Device Trigger can, so nodes further inside the Group have data to
+        #     work with right from the start. ──
+        if ntype == "group_input":
+            cfg = node.get("config", {})
+            read_source = cfg.get("read_source", "none")
+            if read_source in ("internal", "device"):
+                value = self._read_internal_variable(cfg.get("variable_name", "")) if read_source == "internal" else self._resolve_device_value(cfg)
+                field_key = cfg.get("field_key", "")
+                if field_key:
+                    self._set_field(field_key, value if value is not None else "")
+            self._follow(outputs, "next", db)
+            return
+
+        # ─── GROUP OUTPUT: an exit point of the Group — its configured port
+        #     ("next"/"true"/"false") is exactly what _flatten_flow bridges out to
+        #     the Group node's same-named outer port. Optionally also writes one
+        #     value — to an Internal Variable or a PLC register — on its way out,
+        #     the same way a Write Output node would. ──
+        if ntype == "group_output":
+            cfg = node.get("config", {})
+            write_target = cfg.get("write_target", "none")
+            if write_target in ("internal", "device"):
+                value = self._resolve_source(
+                    cfg.get("value_source", "static"), cfg,
+                    static_value=cfg.get("value", ""), field_key=cfg.get("value_field_key", ""),
+                )
+                if write_target == "internal":
+                    var_name = cfg.get("variable_name", "")
+                    ok = self._write_internal_variable(var_name, value)
+                    self._log(f"Group Output: internal variable '{var_name}' = {value}" if ok else f"Group Output failed: '{var_name}'", "#22C55E" if ok else "#EF4444")
+                else:
+                    ok = self._write_device_value(cfg, value)
+                    self._log(f"Group Output: {cfg.get('device_name', '?')} {cfg.get('address_type', '?')}@{cfg.get('address', '?')} = {value}" if ok else "Group Output failed", "#22C55E" if ok else "#EF4444")
+            self._follow(outputs, cfg.get("port", "next"), db)
             return
 
         # ─── (node type lain yang belum dibuat — tambahkan di sini

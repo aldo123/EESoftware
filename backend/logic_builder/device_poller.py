@@ -1,9 +1,9 @@
 """
-device_poller.py — Background poller for Modbus-based "Device Trigger" nodes
-(connection_type "modbus_tcp" / "modbus_rtu"). RS232 triggers are already
-push-based (see rs232.py — the scanner sends bytes, no polling needed) and don't
-touch this file at all; this exists purely for the pull-based Modbus case, where
-nothing tells us a register changed — we have to keep reading it.
+device_poller.py — Background poller for pull-based "Device Trigger" nodes
+(connection_type "modbus_tcp" / "modbus_rtu" / "internal"). RS232 triggers are
+already push-based (see rs232.py — the scanner sends bytes, no polling needed)
+and don't touch this file at all; this exists for the pull-based cases, where
+nothing tells us a register/variable changed — we have to keep reading it.
 
 Mirrors rs232.py's buffer/`/latest`/`/pop` pattern exactly, so the frontend poller
 hook and FlowExecutor need zero awareness of whether a trigger came from a
@@ -31,16 +31,34 @@ _last_values = {}   # trigger_key -> last read value, for rising-edge detection
 def trigger_key(cfg: dict) -> str:
     """The identity a Device Trigger node is matched against in FlowExecutor.run().
     RS232 nodes just use the device name (unchanged from the old scan_input
-    behavior). Modbus nodes don't have a natural single-string identity, so one
-    is derived from the register address — same formula used here and in
-    logic_engine.py, so a node's config always matches its own poller entry."""
+    behavior). Modbus/Internal Variable nodes don't have a natural single-string
+    identity, so one is derived from their config — same formula used here and
+    in logic_engine.py, so a node's config always matches its own poller entry."""
     conn = cfg.get("connection_type", "rs232")
     if conn == "rs232":
         return cfg.get("device", "")
+    if conn == "internal":
+        return f"internal:{cfg.get('variable_name', '')}"
     return f"{conn}:{cfg.get('device_name', '')}:{cfg.get('address_type', 'holding_register')}:{cfg.get('address', '0')}"
 
 
-def _iter_modbus_trigger_nodes():
+def node_sources(cfg: dict) -> list:
+    """A Device Trigger node's list of alternative sources — any one of them
+    reaching its trigger value fires the same flow (OR-trigger). Older flows
+    saved before multi-source support have no "sources" list; their own config
+    dict IS the single source, so it's returned wrapped in a list for a
+    uniform iteration API everywhere else."""
+    sources = cfg.get("sources")
+    if isinstance(sources, list) and sources:
+        return sources
+    return [cfg]
+
+
+def _iter_polled_trigger_nodes():
+    """Yield the config of every individual source (across every Device Trigger
+    node, and every alternative source within a multi-source node) that must be
+    polled (Modbus registers and Internal Variables) — RS232 is push-based and
+    never appears here."""
     if not os.path.isdir(FLOWS_DIR):
         return
     for path in glob.glob(os.path.join(FLOWS_DIR, "cp*.json")):
@@ -53,8 +71,9 @@ def _iter_modbus_trigger_nodes():
             if node.get("type") != "device_trigger":
                 continue
             cfg = node.get("config", {})
-            if cfg.get("connection_type") in ("modbus_tcp", "modbus_rtu"):
-                yield cfg
+            for source in node_sources(cfg):
+                if source.get("connection_type") in ("modbus_tcp", "modbus_rtu", "internal"):
+                    yield source
 
 
 def _read_register(cfg: dict):
@@ -74,6 +93,26 @@ def _read_register(cfg: dict):
     return str(values[0])
 
 
+def _read_internal_variable_raw(cfg: dict):
+    from routes.internal_variable import _connect, _row
+    name = cfg.get("variable_name", "")
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT id, name, data_type, value FROM internal_variables WHERE name = ? COLLATE NOCASE",
+            (name,),
+        ).fetchone()
+    parsed = _row(row)
+    if parsed is None:
+        raise ValueError(f"Internal variable '{name}' not found")
+    return str(parsed["value"])
+
+
+def _read_trigger_source(cfg: dict):
+    if cfg.get("connection_type") == "internal":
+        return _read_internal_variable_raw(cfg)
+    return _read_register(cfg)
+
+
 _poll_count = 0
 _last_errors = {}  # trigger_key -> last exception string (debug visibility)
 
@@ -82,11 +121,11 @@ def _poll_once():
     global _poll_count
     _poll_count += 1
     seen_any = False
-    for cfg in _iter_modbus_trigger_nodes():
+    for cfg in _iter_polled_trigger_nodes():
         seen_any = True
         key = trigger_key(cfg)
         try:
-            value = _read_register(cfg)
+            value = _read_trigger_source(cfg)
             _last_errors.pop(key, None)
         except Exception as e:
             _last_errors[key] = str(e)
@@ -117,7 +156,7 @@ def _poll_loop():
 
 _poll_thread = threading.Thread(target=_poll_loop, daemon=True)
 _poll_thread.start()
-print("[INIT] Device Trigger Modbus poller started")
+print("[INIT] Device Trigger poller started (Modbus + Internal Variable)")
 
 
 device_trigger_bp = Blueprint("device_trigger", __name__)
@@ -132,7 +171,7 @@ def debug_status():
         "last_errors": dict(_last_errors),
         "flows_dir": FLOWS_DIR,
         "flows_dir_exists": os.path.isdir(FLOWS_DIR),
-        "monitored_keys": [trigger_key(cfg) for cfg in _iter_modbus_trigger_nodes()],
+        "monitored_keys": [trigger_key(cfg) for cfg in _iter_polled_trigger_nodes()],
     })
 
 

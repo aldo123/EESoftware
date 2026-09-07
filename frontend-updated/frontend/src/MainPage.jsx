@@ -760,7 +760,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
       case "SN List": return <SNListPage user={user} />;
       case "Reference": return <ReferencePage user={user} />;
       case "CPK Analyzer": return <CpkAnalyzerPage />;
-      case "Dashboard": return <DashboardPage />;
+      case "Dashboard": return <DashboardPage cpNumber={cpNumber} />;
       default:
         return <MainContent />;
     }

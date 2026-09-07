@@ -1,5 +1,26 @@
 {
   "cp": "02",
-  "nodes": [],
+  "nodes": [
+    {
+      "id": "n1788774632149_1",
+      "type": "device_trigger",
+      "x": 357.7578125,
+      "y": 60.73046875,
+      "config": {
+        "sources": [
+          {
+            "connection_type": "rs232",
+            "device": "",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "trigger_value": "1",
+            "variable_name": ""
+          }
+        ],
+        "fieldKey": ""
+      }
+    }
+  ],
   "connections": []
 }

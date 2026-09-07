@@ -5,7 +5,7 @@
         "Control Point Name": "CP01 - Equipment Software",
         "Data Point": "CP01 EE",
         "Interlock ByPass": "No",
-        "Process": "CP01"
+        "Process": "CP02"
     },
     "Documents": {
         "Max Document Size": "10485760"

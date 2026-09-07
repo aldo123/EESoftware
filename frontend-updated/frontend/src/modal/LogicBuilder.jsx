@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from "react";
 import { API } from "../service/api";
 import { ModalBackdrop, ModalPanel } from "../components/motion";
+import { useInternalVariables } from "../hooks/useInternalVariables";
 
 // ── Node type definitions ─────────────────────────────────────────────────────
 // Add new node types here one at a time:
@@ -14,6 +15,13 @@ const NODE_TYPES = [
   { type: "zone_inspect", category: "check", color: "#8B5CF6", icon: "🔍", label: "Zone Inspect", desc: "Inspect a camera ROI (vision engine)" },
   { type: "count_over_time", category: "check", color: "#8B5CF6", icon: "⏱", label: "Count Over Time", desc: "Count detections in a camera ROI over N seconds" },
   { type: "custom_script", category: "check", color: "#F59E0B", icon: "🧩", label: "Custom Script", desc: "Write custom logic for cases no other node covers" },
+  { type: "multi_condition_gate", category: "check", color: "#EAB308", icon: "🚦", label: "Multi-Condition Gate", desc: "AND-check several Internal Variables — all must pass to continue" },
+  { type: "write_output", category: "action", color: "#22C55E", icon: "✍️", label: "Write Output", desc: "Write a value to a PLC coil/register or an Internal Variable" },
+  { type: "reset_node", category: "action", color: "#3B82F6", icon: "🔄", label: "Reset", desc: "Reset trigger flags / variables back to idle — selected ones, or all at once" },
+  { type: "timer", category: "action", color: "#F97316", icon: "⏲", label: "Timer", desc: "Pause for a fixed number of seconds, then continue" },
+  { type: "subflow_call", category: "group", color: "#64748B", icon: "📦", label: "Group", desc: "Bundle several nodes into one, reusable across flows — keeps the main canvas clean" },
+  { type: "group_input", category: "group", color: "#3B82F6", icon: "🔵", label: "Group Input", desc: "Only inside a Group — this is where the trigger from outside enters" },
+  { type: "group_output", category: "group", color: "#EF4444", icon: "🔴", label: "Group Output", desc: "Only inside a Group — sends a result (next/true/false) back out" },
 ];
 
 const CATEGORY_COLORS = {
@@ -21,6 +29,7 @@ const CATEGORY_COLORS = {
   check: "#3B1F1F",
   data: "#2D1B69",
   action: "#14532D",
+  group: "#1E293B",
 };
 
 const CATEGORY_LABELS = {
@@ -28,6 +37,7 @@ const CATEGORY_LABELS = {
   check: "Checks",
   data: "Data",
   action: "Actions",
+  group: "Groups",
 };
 
 let _nid = 1;
@@ -40,8 +50,9 @@ function IconTrash() { return <svg width="12" height="12" viewBox="0 0 24 24" fi
 // Keyed by node `type`. Add one entry per new node type.
 const DEFAULT_NODE_CONFIG = {
   device_trigger: {
-    connection_type: "rs232", device: "",
-    device_name: "", address_type: "holding_register", address: "0", trigger_value: "1",
+    sources: [
+      { connection_type: "rs232", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", variable_name: "" },
+    ],
     fieldKey: "",
   },
   zone_inspect: {
@@ -55,6 +66,52 @@ const DEFAULT_NODE_CONFIG = {
   custom_script: {
     code: "# fields: dict of current field values (read/write)\n# result: set True/False to pick the True/False output\n# log(msg): add a line to the run log\n\nresult = True\n",
   },
+  multi_condition_gate: {
+    conditions: [{ variable_name: "", operator: "equals", value: "", value2: "" }],
+    wait_mode: "instant", // "instant" | "poll"
+    timeout_seconds: "10",
+  },
+  write_output: {
+    writes: [
+      {
+        target: "device",
+        protocol: "tcp",
+        device_name: "", address_type: "holding_register", address: "0",
+        variable_name: "",
+        value_source: "static",
+        value: "1",
+        value_field_key: "",
+      },
+    ],
+  },
+  subflow_call: {
+    template_id: "",
+    template_name: "",
+    expose_check: false,
+  },
+  timer: {
+    duration_seconds: "1",
+  },
+  reset_node: {
+    mode: "selected", // "selected" | "group" | "all"
+    group_name: "",
+    targets: [{ kind: "internal", protocol: "tcp", device_name: "", address_type: "holding_register", address: "0", variable_name: "" }],
+  },
+  group_input: {
+    read_source: "none", // "none" | "internal" | "device"
+    protocol: "tcp", device_name: "", address_type: "holding_register", address: "0",
+    variable_name: "",
+    field_key: "",
+  },
+  group_output: {
+    port: "next",
+    write_target: "none", // "none" | "internal" | "device"
+    protocol: "tcp", device_name: "", address_type: "holding_register", address: "0",
+    variable_name: "",
+    value_source: "static",
+    value: "1",
+    value_field_key: "",
+  },
 };
 
 // ── Node card component ────────────────────────────────────────────────────
@@ -62,28 +119,38 @@ const DEFAULT_NODE_CONFIG = {
 // single generic "next" port. A node type that needs different ports again
 // (e.g. Switch's dynamic per-case ports) should extend this the same way the
 // old version did, keyed off `node.type` — not hardcoded here.
-const NodeCard = memo(function NodeCard({ node, selected, onSelect, onDragStart, onDelete, onPortMouseDown, onPortMouseUp }) {
+const NodeCard = memo(function NodeCard({ node, selected, onSelect, onDragStart, onDelete, onPortMouseDown, onPortMouseUp, onOpenGroup }) {
   const def = NODE_TYPES.find(t => t.type === node.type);
   if (!def) return null;
-  const hasTrue = def.category === "check";
+  const isGroup = node.type === "subflow_call";
+  const hasTrue = def.category === "check" || (isGroup && node.config?.expose_check);
+  const hasInPort = node.type !== "group_input";
+  const hasOutPort = node.type !== "group_output";
 
   return (
     <div
       id={`node-${node.id}`}
-      onClick={e => { e.stopPropagation(); onSelect(node.id); }}
+      onClick={e => { e.stopPropagation(); onSelect(node.id, e.shiftKey || e.ctrlKey || e.metaKey); }}
+      onDoubleClick={e => { if (isGroup) { e.stopPropagation(); onOpenGroup?.(node); } }}
+      title={isGroup ? "Double-click buat buka isi Group" : undefined}
       className="absolute select-none cursor-default"
       style={{ left: node.x, top: node.y, width: 180, zIndex: selected ? 10 : 1 }}
     >
       <div className="rounded-xl overflow-hidden border-2 transition-all shadow-lg" style={{ borderColor: selected ? def.color : "#334155", background: CATEGORY_COLORS[def.category] || "#1E293B", boxShadow: selected ? `0 0 0 2px ${def.color}40` : "none" }}>
         <div className="flex items-center gap-2 px-3 py-2 cursor-grab active:cursor-grabbing" style={{ background: def.color + "22" }} onMouseDown={e => { e.stopPropagation(); onDragStart(e, node.id); }}>
           <span className="text-base leading-none">{def.icon}</span>
-          <span className="text-white text-[11px] font-bold leading-tight flex-1">{def.label}</span>
+          <span className="text-white text-[11px] font-bold leading-tight flex-1 truncate">
+            {isGroup && node.config?.template_name ? node.config.template_name : def.label}
+            {node.type === "group_output" ? ` → ${node.config?.port || "next"}` : ""}
+          </span>
           <button onMouseDown={e => { e.stopPropagation(); onDelete(node.id); }} className="w-5 h-5 rounded flex items-center justify-center text-[#475569] hover:text-[#EF4444] transition-colors"><IconTrash /></button>
         </div>
       </div>
 
-      <div onMouseUp={e => { e.stopPropagation(); onPortMouseUp(node.id, "in"); }} className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 border-[#475569] hover:border-[#22C55E] bg-[#0B1120] cursor-crosshair transition-colors z-20" />
-      {hasTrue ? (
+      {hasInPort && (
+        <div onMouseUp={e => { e.stopPropagation(); onPortMouseUp(node.id, "in"); }} className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full border-2 border-[#475569] hover:border-[#22C55E] bg-[#0B1120] cursor-crosshair transition-colors z-20" />
+      )}
+      {!hasOutPort ? null : hasTrue ? (
         <>
           <div className="absolute -bottom-2 left-1/4 -translate-x-1/2 flex flex-col items-center z-20"><div onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e, node.id, "true"); }} className="w-4 h-4 rounded-full border-2 border-[#22C55E] bg-[#0B1120] cursor-crosshair hover:bg-[#22C55E]/30" /><span className="text-[8px] text-[#22C55E] font-bold mt-0.5">✓</span></div>
           <div className="absolute -bottom-2 left-3/4 -translate-x-1/2 flex flex-col items-center z-20"><div onMouseDown={e => { e.stopPropagation(); onPortMouseDown(e, node.id, "false"); }} className="w-4 h-4 rounded-full border-2 border-[#EF4444] bg-[#0B1120] cursor-crosshair hover:bg-[#EF4444]/30" /><span className="text-[8px] text-[#EF4444] font-bold mt-0.5">✗</span></div>
@@ -214,14 +281,23 @@ function RoiPicker({ cameraId, roi, onChange, thresholdValue }) {
 // No per-type config blocks yet — add one `{node.type === "..." && (<>...</>)}`
 // block per node type as they get rebuilt (see git history for the old patterns:
 // static/field-key/device-register "source" dropdowns, condition rows, etc.)
-const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDevices = [], tcpDevices = [], rtuDevices = [] }) {
+const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDevices = [], tcpDevices = [], rtuDevices = [], templates = [], onCreateTemplate, onOpenGroup }) {
   const [localConfig, setLocalConfig] = useState({});
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [variableGroups, setVariableGroups] = useState([]);
+  const { variables: internalVariables, loading: internalVariablesLoading } = useInternalVariables();
+
+  useEffect(() => {
+    fetch(`${API}/api/internal-variables/groups`).then(r => r.ok ? r.json() : { groups: [] }).then(d => setVariableGroups(d.groups || [])).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLocalConfig(node?.config || {});
     setCheckResult(null);
+    setNewGroupName("");
   }, [node?.id]);
 
   if (!node) return (
@@ -241,9 +317,114 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
     setLocalConfig(prev => ({ ...prev, method_params: { ...(prev.method_params || {}), [key]: val } }));
   };
 
+  const EMPTY_TRIGGER_SOURCE = { connection_type: "rs232", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", variable_name: "" };
+  // Flows saved before multi-source support have their single source's fields
+  // flattened directly onto the node config (no "sources" array) — wrap them
+  // into a one-item list here so old and new flows share the same editor UI.
+  const triggerSources = Array.isArray(c.sources) ? c.sources
+    : c.connection_type ? [{ connection_type: c.connection_type, device: c.device, device_name: c.device_name, address_type: c.address_type, address: c.address, trigger_value: c.trigger_value, variable_name: c.variable_name }]
+    : [EMPTY_TRIGGER_SOURCE];
+  const updateTriggerSource = (idx, patch) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.sources) ? prev.sources : triggerSources;
+      return { ...prev, sources: base.map((s, i) => (i === idx ? { ...s, ...patch } : s)) };
+    });
+  };
+  const addTriggerSource = () => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.sources) ? prev.sources : triggerSources;
+      return { ...prev, sources: [...base, { ...EMPTY_TRIGGER_SOURCE }] };
+    });
+  };
+  const removeTriggerSource = (idx) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.sources) ? prev.sources : triggerSources;
+      return { ...prev, sources: base.filter((_, i) => i !== idx) };
+    });
+  };
+
+  const EMPTY_WRITE_TARGET = { target: "device", protocol: "tcp", device_name: "", address_type: "holding_register", address: "0", variable_name: "", value_source: "static", value: "1", value_field_key: "" };
+  // Flows saved before multi-write support have their single write's fields
+  // flattened directly onto the node config (no "writes" array) — wrap them
+  // into a one-item list here so old and new flows share the same editor UI.
+  const writeTargets = Array.isArray(c.writes) ? c.writes
+    : c.target ? [{ target: c.target, protocol: c.protocol, device_name: c.device_name, address_type: c.address_type, address: c.address, variable_name: c.variable_name, value_source: c.value_source, value: c.value, value_field_key: c.value_field_key }]
+    : [EMPTY_WRITE_TARGET];
+  const updateWriteTarget = (idx, patch) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.writes) ? prev.writes : writeTargets;
+      return { ...prev, writes: base.map((w, i) => (i === idx ? { ...w, ...patch } : w)) };
+    });
+  };
+  const addWriteTarget = () => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.writes) ? prev.writes : writeTargets;
+      return { ...prev, writes: [...base, { ...EMPTY_WRITE_TARGET }] };
+    });
+  };
+  const removeWriteTarget = (idx) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.writes) ? prev.writes : writeTargets;
+      return { ...prev, writes: base.filter((_, i) => i !== idx) };
+    });
+  };
+
+  const EMPTY_RESET_TARGET = { kind: "internal", protocol: "tcp", device_name: "", address_type: "holding_register", address: "0", variable_name: "" };
+  const resetTargets = Array.isArray(c.targets) ? c.targets : [EMPTY_RESET_TARGET];
+  const updateResetTarget = (idx, patch) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.targets) ? prev.targets : resetTargets;
+      return { ...prev, targets: base.map((t, i) => (i === idx ? { ...t, ...patch } : t)) };
+    });
+  };
+  const addResetTarget = () => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.targets) ? prev.targets : resetTargets;
+      return { ...prev, targets: [...base, { ...EMPTY_RESET_TARGET }] };
+    });
+  };
+  const removeResetTarget = (idx) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.targets) ? prev.targets : resetTargets;
+      return { ...prev, targets: base.filter((_, i) => i !== idx) };
+    });
+  };
+
+  const conditions = Array.isArray(c.conditions) ? c.conditions : [];
+  const updateCondition = (idx, patch) => {
+    setLocalConfig(prev => ({
+      ...prev,
+      conditions: (prev.conditions || []).map((cond, i) => (i === idx ? { ...cond, ...patch } : cond)),
+    }));
+  };
+  const addCondition = () => {
+    setLocalConfig(prev => ({
+      ...prev,
+      conditions: [...(prev.conditions || []), { variable_name: "", operator: "equals", value: "", value2: "" }],
+    }));
+  };
+  const removeCondition = (idx) => {
+    setLocalConfig(prev => ({ ...prev, conditions: (prev.conditions || []).filter((_, i) => i !== idx) }));
+  };
+
   const applyChanges = () => {
     onChange({ ...node, config: localConfig });
     if (onApply) onApply();
+  };
+
+  const createGroup = async () => {
+    const name = newGroupName.trim();
+    if (!name || !onCreateTemplate) return;
+    setCreatingGroup(true);
+    try {
+      const created = await onCreateTemplate(name);
+      if (created?.id) {
+        setLocalConfig(prev => ({ ...prev, template_id: created.id, template_name: created.name || name }));
+        setNewGroupName("");
+      }
+    } finally {
+      setCreatingGroup(false);
+    }
   };
 
   const runCheck = async () => {
@@ -270,36 +451,77 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
 
       <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-3" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
         {node.type === "device_trigger" && (<>
-          <Field label="Connection Type">
-            <Select value={c.connection_type || "rs232"} onChange={v => setLocal("connection_type", v)} options={[
-              { value: "rs232", label: "RS232 (Scanner)" },
-              { value: "modbus_tcp", label: "Modbus TCP" },
-              { value: "modbus_rtu", label: "Modbus RTU (RS485)" },
-            ]} />
-          </Field>
+          {triggerSources.map((src, idx) => (
+            <div key={idx} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-soft)] p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Source {idx + 1}</span>
+                {triggerSources.length > 1 && (
+                  <button type="button" onClick={() => removeTriggerSource(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove source">
+                    <IconTrash />
+                  </button>
+                )}
+              </div>
 
-          {(c.connection_type || "rs232") === "rs232" && (
-            <Field label="Scanner Device">
-              <Select value={c.device} onChange={v => setLocal("device", v)} options={[{ value: "", label: "Select device…" }, ...commDevices.map(d => ({ value: d.name, label: `${d.name} (${d.port || ""})` }))]} />
-            </Field>
-          )}
+              <Field label="Connection Type">
+                <Select value={src.connection_type || "rs232"} onChange={v => updateTriggerSource(idx, { connection_type: v })} options={[
+                  { value: "rs232", label: "RS232 (Scanner)" },
+                  { value: "modbus_tcp", label: "Modbus TCP" },
+                  { value: "modbus_rtu", label: "Modbus RTU (RS485)" },
+                  { value: "internal", label: "Internal Variable" },
+                ]} />
+              </Field>
 
-          {(c.connection_type === "modbus_tcp" || c.connection_type === "modbus_rtu") && (<>
-            <Field label="Device Name">
-              <Select value={c.device_name} onChange={v => setLocal("device_name", v)} options={[{ value: "", label: "Select device…" }, ...((c.connection_type === "modbus_rtu" ? rtuDevices : tcpDevices) || []).map(d => ({ value: d.name, label: d.name }))]} />
-            </Field>
-            <Field label="Address Type">
-              <Select value={c.address_type || "holding_register"} onChange={v => setLocal("address_type", v)} options={[
-                { value: "coil", label: "Coil" },
-                { value: "discrete_input", label: "Discrete Input" },
-                { value: "holding_register", label: "Holding Register" },
-                { value: "input_register", label: "Input Register" },
-              ]} />
-            </Field>
-            <Field label="Address"><Input value={c.address} onChange={v => setLocal("address", v)} placeholder="0" /></Field>
-            <Field label="Trigger Value (fires once when reached)"><Input value={c.trigger_value} onChange={v => setLocal("trigger_value", v)} placeholder="1" /></Field>
-            <p className="text-[var(--text-muted)] text-[9px] mt-1">Register ini dibaca terus-menerus di background (tiap 0.3 detik). Flow jalan sekali tiap kali nilainya BARU mencapai Trigger Value (naik dari nilai lain), bukan tiap kali dibaca.</p>
-          </>)}
+              {(src.connection_type || "rs232") === "rs232" && (
+                <Field label="Scanner Device">
+                  <Select value={src.device} onChange={v => updateTriggerSource(idx, { device: v })} options={[{ value: "", label: "Select device…" }, ...commDevices.map(d => ({ value: d.name, label: `${d.name} (${d.port || ""})` }))]} />
+                </Field>
+              )}
+
+              {(src.connection_type === "modbus_tcp" || src.connection_type === "modbus_rtu") && (<>
+                <Field label="Device Name">
+                  <Select value={src.device_name} onChange={v => updateTriggerSource(idx, { device_name: v })} options={[{ value: "", label: "Select device…" }, ...((src.connection_type === "modbus_rtu" ? rtuDevices : tcpDevices) || []).map(d => ({ value: d.name, label: d.name }))]} />
+                </Field>
+                <Field label="Address Type">
+                  <Select value={src.address_type || "holding_register"} onChange={v => updateTriggerSource(idx, { address_type: v })} options={[
+                    { value: "coil", label: "Coil" },
+                    { value: "discrete_input", label: "Discrete Input" },
+                    { value: "holding_register", label: "Holding Register" },
+                    { value: "input_register", label: "Input Register" },
+                  ]} />
+                </Field>
+                <Field label="Address"><Input value={src.address} onChange={v => updateTriggerSource(idx, { address: v })} placeholder="0" /></Field>
+                <Field label="Trigger Value (fires once when reached)"><Input value={src.trigger_value} onChange={v => updateTriggerSource(idx, { trigger_value: v })} placeholder="1" /></Field>
+              </>)}
+
+              {src.connection_type === "internal" && (<>
+                <Field label="Internal Variable">
+                  <select
+                    value={src.variable_name || ""}
+                    onChange={e => updateTriggerSource(idx, { variable_name: e.target.value })}
+                    className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60"
+                  >
+                    <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
+                    {internalVariables.map(v => (
+                      <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Trigger Value (fires once when reached)"><Input value={src.trigger_value} onChange={v => updateTriggerSource(idx, { trigger_value: v })} placeholder="1" /></Field>
+              </>)}
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={addTriggerSource}
+            className="w-full h-8 rounded-lg border border-[#3B82F6]/60 text-[#3B82F6] hover:bg-[#3B82F6]/10 font-bold text-[10px] transition-colors"
+          >
+            + Add Source
+          </button>
+
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">
+            Semua source di atas OR — <b>salah satu</b> aja yang mencapai Trigger Value-nya, flow ini langsung jalan (source lain diabaikan buat siklus itu). Berguna kalau lo mau satu flow bisa dipicu dari beberapa device/register/variable berbeda tanpa bikin banyak node Device Trigger.
+          </p>
 
           <Field label="Store value in field key"><Input value={c.fieldKey} onChange={v => setLocal("fieldKey", v)} placeholder="e.g. product_sn" /></Field>
         </>)}
@@ -488,6 +710,463 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
             Escape hatch buat logic yang gak cocok di node manapun. Script baca/tulis dict <code>fields</code>, set <code>result</code> (True/False) buat pilih output, dan bisa panggil <code>log("...")</code>. Gak ada akses file/OS/import — cuma operasi Python dasar + <code>math</code>.
           </p>
         </>)}
+
+        {node.type === "multi_condition_gate" && (<>
+          {conditions.map((cond, idx) => (
+            <div key={idx} className="flex flex-col gap-1 rounded-lg border border-[var(--border-soft)] p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Condition {idx + 1}</span>
+                <button type="button" onClick={() => removeCondition(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove condition">
+                  <IconTrash />
+                </button>
+              </div>
+
+              <Field label="Internal Variable">
+                <select
+                  value={cond.variable_name || ""}
+                  onChange={e => updateCondition(idx, { variable_name: e.target.value })}
+                  className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60"
+                >
+                  <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
+                  {internalVariables.map(v => (
+                    <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Operator">
+                <Select value={cond.operator || "equals"} onChange={v => updateCondition(idx, { operator: v })} options={[
+                  { value: "equals", label: "Equals (=)" },
+                  { value: "not_equals", label: "Not Equals (≠)" },
+                  { value: "greater_than", label: "Greater Than (>)" },
+                  { value: "less_than", label: "Less Than (<)" },
+                  { value: "greater_equal", label: "Greater or Equal (≥)" },
+                  { value: "less_equal", label: "Less or Equal (≤)" },
+                  { value: "between", label: "Between (range)" },
+                  { value: "contains", label: "Contains" },
+                ]} />
+              </Field>
+
+              {cond.operator === "between" ? (
+                <Field label="Value Min / Max">
+                  <div className="grid grid-cols-2 gap-1">
+                    <Input value={cond.value} onChange={v => updateCondition(idx, { value: v })} placeholder="min" />
+                    <Input value={cond.value2} onChange={v => updateCondition(idx, { value2: v })} placeholder="max" />
+                  </div>
+                </Field>
+              ) : (
+                <Field label="Value">
+                  <Input value={cond.value} onChange={v => updateCondition(idx, { value: v })} placeholder="e.g. PASS" />
+                </Field>
+              )}
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={addCondition}
+            className="w-full h-8 rounded-lg border border-[#EAB308]/60 text-[#EAB308] hover:bg-[#EAB308]/10 font-bold text-[10px] transition-colors"
+          >
+            + Add Condition
+          </button>
+
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">
+            Semua kondisi dicek dengan AND — kalau <b>semua</b> Internal Variable memenuhi kondisinya → <b style={{ color: "#22C55E" }}>Green (True)</b>, lanjut ke node berikutnya. Kalau <b>salah satu</b> NG (atau variable-nya tidak ditemukan) → <b style={{ color: "#EF4444" }}>Red (False)</b>.
+            <br />Status tiap baris Specification Table otomatis muncul di sini sebagai <code>Spec_&lt;nama_spesifikasi&gt;_Step&lt;nomor_baris&gt;_Status</code> (isinya PASS/FAIL/waiting_trigger/running). Baris ke-1 di tabel = Step1, baris ke-2 = Step2, dst.
+          </p>
+
+          <Field label="Timing">
+            <Select value={c.wait_mode || "instant"} onChange={v => setLocal("wait_mode", v)} options={[
+              { value: "instant", label: "Cek sekali, langsung (instant)" },
+              { value: "poll", label: "Tunggu sampai terpenuhi (Wait Until Match)" },
+            ]} />
+          </Field>
+
+          {c.wait_mode === "poll" && (
+            <Field label="Timeout (detik)">
+              <Input value={c.timeout_seconds} onChange={v => setLocal("timeout_seconds", v)} placeholder="10" />
+            </Field>
+          )}
+
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">
+            {c.wait_mode === "poll" ? (
+              <>Node ini bakal <b>ngecek berulang tiap 0.2 detik</b> sampai semua kondisi terpenuhi, atau sampai Timeout abis (baru dianggap NG). Pakai mode ini kalau variable yang dicek butuh waktu buat berubah (misal status Specification Table yang mulai dari <code>waiting_trigger</code>/<code>running</code> dan baru jadi PASS/FAIL setelah test-nya beneran selesai) — biar gate-nya gak keburu ambil keputusan pas test-nya baru mulai.</>
+            ) : (
+              <>Mode instant cuma ngecek SEKALI, pas node ini dijalankan — cocok kalau variable-nya udah pasti punya nilai final saat itu juga. Kalau variable-nya (misal status test) baru mulai berubah SETELAH node sebelumnya (misal Write Output yang mulai test), pakai mode "Wait Until Match" di atas, jangan instant.</>
+            )}
+          </p>
+        </>)}
+
+        {node.type === "write_output" && (<>
+          {writeTargets.map((w, idx) => (
+            <div key={idx} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-soft)] p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Write {idx + 1}</span>
+                {writeTargets.length > 1 && (
+                  <button type="button" onClick={() => removeWriteTarget(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove write">
+                    <IconTrash />
+                  </button>
+                )}
+              </div>
+
+              <Field label="Write To">
+                <Select value={w.target || "device"} onChange={v => updateWriteTarget(idx, { target: v })} options={[
+                  { value: "device", label: "PLC (Modbus TCP/RTU)" },
+                  { value: "internal", label: "Internal Variable" },
+                ]} />
+              </Field>
+
+              {(w.target || "device") === "device" && (<>
+                <Field label="Protocol">
+                  <Select value={w.protocol || "tcp"} onChange={v => updateWriteTarget(idx, { protocol: v })} options={[
+                    { value: "tcp", label: "Modbus TCP" },
+                    { value: "rtu", label: "Modbus RTU (RS485)" },
+                  ]} />
+                </Field>
+                <Field label="Device Name">
+                  <Select value={w.device_name} onChange={v => updateWriteTarget(idx, { device_name: v })} options={[{ value: "", label: "Select device…" }, ...((w.protocol === "rtu" ? rtuDevices : tcpDevices) || []).map(d => ({ value: d.name, label: d.name }))]} />
+                </Field>
+                <Field label="Address Type">
+                  <Select value={w.address_type || "holding_register"} onChange={v => updateWriteTarget(idx, { address_type: v })} options={[
+                    { value: "coil", label: "Coil" },
+                    { value: "holding_register", label: "Holding Register" },
+                  ]} />
+                </Field>
+                <Field label="Address"><Input value={w.address} onChange={v => updateWriteTarget(idx, { address: v })} placeholder="0" /></Field>
+              </>)}
+
+              {w.target === "internal" && (
+                <Field label="Internal Variable">
+                  <select
+                    value={w.variable_name || ""}
+                    onChange={e => updateWriteTarget(idx, { variable_name: e.target.value })}
+                    className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60"
+                  >
+                    <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
+                    {internalVariables.map(v => (
+                      <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
+              <Field label="Value Source">
+                <Select value={w.value_source || "static"} onChange={v => updateWriteTarget(idx, { value_source: v })} options={[
+                  { value: "static", label: "Fixed Value" },
+                  { value: "field_key", label: "From Field Key" },
+                ]} />
+              </Field>
+
+              {(w.value_source || "static") === "static" ? (
+                <Field label="Value"><Input value={w.value} onChange={v => updateWriteTarget(idx, { value: v })} placeholder="e.g. 1" /></Field>
+              ) : (
+                <Field label="Field Key"><Input value={w.value_field_key} onChange={v => updateWriteTarget(idx, { value_field_key: v })} placeholder="e.g. zone1_value" /></Field>
+              )}
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={addWriteTarget}
+            className="w-full h-8 rounded-lg border border-[#22C55E]/60 text-[#22C55E] hover:bg-[#22C55E]/10 font-bold text-[10px] transition-colors"
+          >
+            + Add Write
+          </button>
+
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">
+            Semua "Write" di atas dijalankan sekaligus tiap kali node ini fire — cocok buat nulis ke beberapa Internal Variable/PLC bersamaan (mis. set 3 internal variable buat mulai 3 step test sekaligus). Sambungkan dari port <b style={{ color: "#22C55E" }}>✓ True</b> node Check/Gate (mis. Multi-Condition Gate) kalau mau nulis cuma pas kondisinya lolos. Coil nerima 1/0/true/false, Holding Register nerima angka 0-65535.
+          </p>
+        </>)}
+
+        {node.type === "timer" && (<>
+          <Field label="Duration (detik)">
+            <Input value={c.duration_seconds} onChange={v => setLocal("duration_seconds", v)} placeholder="1" />
+          </Field>
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">
+            Node ini cuma diam selama sekian detik (maks 120s), terus lanjut ke node berikutnya lewat port <b>next</b>. Beda sama "Wait Until Match" di Multi-Condition Gate (yang nunggu sampai kondisi tertentu terpenuhi) — Timer cuma delay tetap, gak ngecek apa-apa.
+          </p>
+        </>)}
+
+        {node.type === "reset_node" && (<>
+          <Field label="Mode">
+            <Select value={c.mode || "selected"} onChange={v => setLocal("mode", v)} options={[
+              { value: "selected", label: "Reset yang dipilih" },
+              { value: "group", label: "Reset per Group" },
+              { value: "all", label: "Reset SEMUA Internal Variable" },
+            ]} />
+          </Field>
+
+          {c.mode === "all" && (
+            <p className="text-[var(--text-muted)] text-[9px] mt-1">
+              Semua Internal Variable di aplikasi bakal di-reset ke default-nya masing-masing (string → kosong, number → 0, boolean → false). <b style={{ color: "#EF4444" }}>Ini nyentuh SEMUA variable</b>, gak cuma yang lo pakai di flow ini — pakai hati-hati. Perangkat PLC/device gak ikut ke-reset di mode ini.
+            </p>
+          )}
+
+          {c.mode === "group" && (<>
+            <Field label="Group">
+              <select
+                value={c.group_name || ""}
+                onChange={e => setLocal("group_name", e.target.value)}
+                className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#3B82F6]/60"
+              >
+                <option value="">Select group…</option>
+                {variableGroups.map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </Field>
+            <p className="text-[var(--text-muted)] text-[9px] mt-1">
+              Reset semua Internal Variable yang di-tag Group ini aja (di-set lewat menu Internal Variable manager, field "Group"). Cocok buat batasin reset cuma ke variable punya CP/flow ini, gak ikut kesenggol variable CP lain. Kalau dropdown-nya kosong, berarti belum ada variable yang di-tag Group manapun — buka menu Internal Variable dulu buat ngasih tag.
+            </p>
+          </>)}
+
+          {c.mode === "selected" && (<>
+            {resetTargets.map((t, idx) => (
+              <div key={idx} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-soft)] p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Target {idx + 1}</span>
+                  {resetTargets.length > 1 && (
+                    <button type="button" onClick={() => removeResetTarget(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove target">
+                      <IconTrash />
+                    </button>
+                  )}
+                </div>
+
+                <Field label="Kind">
+                  <Select value={t.kind || "internal"} onChange={v => updateResetTarget(idx, { kind: v })} options={[
+                    { value: "internal", label: "Internal Variable" },
+                    { value: "device", label: "PLC (Modbus TCP/RTU)" },
+                  ]} />
+                </Field>
+
+                {t.kind === "internal" && (
+                  <Field label="Internal Variable">
+                    <select
+                      value={t.variable_name || ""}
+                      onChange={e => updateResetTarget(idx, { variable_name: e.target.value })}
+                      className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60"
+                    >
+                      <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
+                      {internalVariables.map(v => (
+                        <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
+
+                {t.kind === "device" && (<>
+                  <Field label="Protocol">
+                    <Select value={t.protocol || "tcp"} onChange={v => updateResetTarget(idx, { protocol: v })} options={[
+                      { value: "tcp", label: "Modbus TCP" },
+                      { value: "rtu", label: "Modbus RTU (RS485)" },
+                    ]} />
+                  </Field>
+                  <Field label="Device Name">
+                    <Select value={t.device_name} onChange={v => updateResetTarget(idx, { device_name: v })} options={[{ value: "", label: "Select device…" }, ...((t.protocol === "rtu" ? rtuDevices : tcpDevices) || []).map(d => ({ value: d.name, label: d.name }))]} />
+                  </Field>
+                  <Field label="Address Type">
+                    <Select value={t.address_type || "holding_register"} onChange={v => updateResetTarget(idx, { address_type: v })} options={[
+                      { value: "coil", label: "Coil" },
+                      { value: "holding_register", label: "Holding Register" },
+                    ]} />
+                  </Field>
+                  <Field label="Address"><Input value={t.address} onChange={v => updateResetTarget(idx, { address: v })} placeholder="0" /></Field>
+                </>)}
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={addResetTarget}
+              className="w-full h-8 rounded-lg border border-[#3B82F6]/60 text-[#3B82F6] hover:bg-[#3B82F6]/10 font-bold text-[10px] transition-colors"
+            >
+              + Add Target
+            </button>
+
+            <p className="text-[var(--text-muted)] text-[9px] mt-1">
+              Internal Variable direset ke default sesuai tipenya (boolean → false, number → 0, string → kosong). PLC coil/register direset ke 0. Cocok ditaruh di akhir flow (setelah Lampu nyala, atau setelah gagal) buat balikin trigger flag (mis. <code>Hipotstep1</code>) ke idle, biar siklus berikutnya bisa nge-trigger lagi dari rising edge.
+            </p>
+          </>)}
+        </>)}
+
+        {node.type === "group_input" && (<>
+          <p className="text-[var(--text-muted)] text-[9px]">
+            Ini titik masuk Group ini. Begitu Group dipicu dari luar, eksekusi mulai dari sini — sambungkan port di bawah ke node pertama yang mau dijalankan. Cukup 1 Group Input per Group.
+          </p>
+
+          <Field label="Read Value From (opsional)">
+            <Select value={c.read_source || "none"} onChange={v => setLocal("read_source", v)} options={[
+              { value: "none", label: "— Gak baca apa-apa —" },
+              { value: "internal", label: "Internal Variable" },
+              { value: "device", label: "PLC (Modbus TCP/RTU)" },
+            ]} />
+          </Field>
+
+          {c.read_source === "internal" && (
+            <Field label="Internal Variable">
+              <select
+                value={c.variable_name || ""}
+                onChange={e => setLocal("variable_name", e.target.value)}
+                className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60"
+              >
+                <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
+                {internalVariables.map(v => (
+                  <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {c.read_source === "device" && (<>
+            <Field label="Protocol">
+              <Select value={c.protocol || "tcp"} onChange={v => setLocal("protocol", v)} options={[
+                { value: "tcp", label: "Modbus TCP" },
+                { value: "rtu", label: "Modbus RTU (RS485)" },
+              ]} />
+            </Field>
+            <Field label="Device Name">
+              <Select value={c.device_name} onChange={v => setLocal("device_name", v)} options={[{ value: "", label: "Select device…" }, ...((c.protocol === "rtu" ? rtuDevices : tcpDevices) || []).map(d => ({ value: d.name, label: d.name }))]} />
+            </Field>
+            <Field label="Address Type">
+              <Select value={c.address_type || "holding_register"} onChange={v => setLocal("address_type", v)} options={[
+                { value: "coil", label: "Coil" },
+                { value: "discrete_input", label: "Discrete Input" },
+                { value: "holding_register", label: "Holding Register" },
+                { value: "input_register", label: "Input Register" },
+              ]} />
+            </Field>
+            <Field label="Address"><Input value={c.address} onChange={v => setLocal("address", v)} placeholder="0" /></Field>
+          </>)}
+
+          {c.read_source !== "none" && (
+            <Field label="Store value in field key"><Input value={c.field_key} onChange={v => setLocal("field_key", v)} placeholder="e.g. input_value" /></Field>
+          )}
+        </>)}
+
+        {node.type === "group_output" && (<>
+          <Field label="Maps to Group's outer port">
+            <Select value={c.port || "next"} onChange={v => setLocal("port", v)} options={[
+              { value: "next", label: "next (aksi biasa)" },
+              { value: "true", label: "true (✓ kalau Group di-set \"Expose as Check\")" },
+              { value: "false", label: "false (✗ kalau Group di-set \"Expose as Check\")" },
+            ]} />
+          </Field>
+          <p className="text-[var(--text-muted)] text-[9px]">
+            Sambungkan node terakhir di dalam Group ke sini buat nentuin ke port MANA hasilnya keluar di canvas luar Group. Bisa taruh beberapa Group Output sekaligus (misal satu buat "true", satu buat "false").
+          </p>
+
+          <Field label="Write Value To (opsional)">
+            <Select value={c.write_target || "none"} onChange={v => setLocal("write_target", v)} options={[
+              { value: "none", label: "— Gak nulis apa-apa —" },
+              { value: "internal", label: "Internal Variable" },
+              { value: "device", label: "PLC (Modbus TCP/RTU)" },
+            ]} />
+          </Field>
+
+          {c.write_target === "device" && (<>
+            <Field label="Protocol">
+              <Select value={c.protocol || "tcp"} onChange={v => setLocal("protocol", v)} options={[
+                { value: "tcp", label: "Modbus TCP" },
+                { value: "rtu", label: "Modbus RTU (RS485)" },
+              ]} />
+            </Field>
+            <Field label="Device Name">
+              <Select value={c.device_name} onChange={v => setLocal("device_name", v)} options={[{ value: "", label: "Select device…" }, ...((c.protocol === "rtu" ? rtuDevices : tcpDevices) || []).map(d => ({ value: d.name, label: d.name }))]} />
+            </Field>
+            <Field label="Address Type">
+              <Select value={c.address_type || "holding_register"} onChange={v => setLocal("address_type", v)} options={[
+                { value: "coil", label: "Coil" },
+                { value: "holding_register", label: "Holding Register" },
+              ]} />
+            </Field>
+            <Field label="Address"><Input value={c.address} onChange={v => setLocal("address", v)} placeholder="0" /></Field>
+          </>)}
+
+          {c.write_target === "internal" && (
+            <Field label="Internal Variable">
+              <select
+                value={c.variable_name || ""}
+                onChange={e => setLocal("variable_name", e.target.value)}
+                className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60"
+              >
+                <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
+                {internalVariables.map(v => (
+                  <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {c.write_target !== "none" && (<>
+            <Field label="Value Source">
+              <Select value={c.value_source || "static"} onChange={v => setLocal("value_source", v)} options={[
+                { value: "static", label: "Fixed Value" },
+                { value: "field_key", label: "From Field Key" },
+              ]} />
+            </Field>
+            {(c.value_source || "static") === "static" ? (
+              <Field label="Value"><Input value={c.value} onChange={v => setLocal("value", v)} placeholder="e.g. 1" /></Field>
+            ) : (
+              <Field label="Field Key"><Input value={c.value_field_key} onChange={v => setLocal("value_field_key", v)} placeholder="e.g. zone1_value" /></Field>
+            )}
+          </>)}
+        </>)}
+
+        {node.type === "subflow_call" && (<>
+          <Field label="Group Template">
+            <Select
+              value={c.template_id || ""}
+              onChange={v => {
+                const found = templates.find(t => t.id === v);
+                setLocal("template_id", v);
+                setLocal("template_name", found?.name || v);
+              }}
+              options={[{ value: "", label: "— pilih Group —" }, ...templates.map(t => ({ value: t.id, label: `${t.name} (${t.node_count} node)` }))]}
+            />
+          </Field>
+
+          <div className="flex items-center gap-1.5">
+            <input
+              value={newGroupName}
+              onChange={e => setNewGroupName(e.target.value)}
+              placeholder="Nama Group baru…"
+              className="flex-1 h-8 px-2 rounded border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-primary)] text-[10px] outline-none focus:border-[#64748B]/60"
+            />
+            <button
+              type="button"
+              onClick={createGroup}
+              disabled={!newGroupName.trim() || creatingGroup}
+              className="h-8 px-3 rounded-lg border border-[#64748B]/60 text-[#94A3B8] hover:bg-[#64748B]/10 font-bold text-[10px] transition-colors disabled:opacity-40"
+            >
+              {creatingGroup ? "…" : "+ Bikin"}
+            </button>
+          </div>
+
+          <button
+            type="button"
+            disabled={!c.template_id}
+            onClick={() => onOpenGroup?.(c.template_id, c.template_name)}
+            className="w-full h-8 rounded-lg bg-[#374151] hover:bg-[#4B5563] text-white font-bold text-[10px] transition-colors disabled:opacity-40"
+          >
+            📦 Buka Isi Group →
+          </button>
+
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" checked={!!c.expose_check} onChange={e => setLocal("expose_check", e.target.checked)} className="w-3.5 h-3.5 accent-[#64748B]" />
+            <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Expose as Check (True/False output)</span>
+          </label>
+
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">
+            Group nampung sekumpulan node (Device Trigger, Check, Write Output, Group lain, dll — sebanyak apapun) di dalam SATU node di canvas utama. Isi node-node di dalam Group diedit terpisah (klik "Buka Isi Group" atau double-click node-nya di canvas).
+            <br /><br />
+            <b>Input:</b> node di dalam Group yang gak punya sambungan masuk dari node lain di dalamnya = titik masuk (bisa lebih dari satu, semua dijalankan).
+            <br /><br />
+            <b>Output:</b> node di dalam Group yang port keluarnya nggak disambung ke node lain di dalam Group = otomatis nyambung ke port Group ini di canvas luar (bisa lebih dari satu port menggantung, semua ikut ke luar).
+            {c.expose_check ? (
+              <> Karena "Expose as Check" nyala, Group ini punya port <b style={{ color: "#22C55E" }}>✓ True</b> / <b style={{ color: "#EF4444" }}>✗ False</b> di luar — dangling <code>true</code> di dalam nyambung ke luar True, dangling <code>false</code> nyambung ke luar False. Cocok kalau isi Group-nya diakhiri node Check/Gate yang hasilnya perlu dipakai di luar Group.</>
+            ) : (
+              <> Sekarang Group ini cuma punya 1 port <b>next</b> di luar — kalau isi dalamnya ada node Check/Gate yang dangling True/False-nya, dua-duanya bakal ketumpuk ke port next yang sama. Nyalain "Expose as Check" di atas kalau True/False itu perlu dibedain di luar Group.</>
+            )}
+          </p>
+        </>)}
       </div>
 
       <div className="p-3 border-t border-[var(--border-soft)] shrink-0">
@@ -498,7 +1177,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
 });
 
 // ── SVG connection lines ──────────────────────────────────────────────────────
-function ConnectionLines({ connections, nodes, draggingConnection, onSelectEdge }) {
+function ConnectionLines({ connections, nodes, draggingConnection, selectedEdge, onSelectEdge }) {
   const getPortPos = (nodeId, portType) => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return { x: 0, y: 0 };
@@ -510,7 +1189,7 @@ function ConnectionLines({ connections, nodes, draggingConnection, onSelectEdge 
   };
 
   return (
-    <svg className="absolute inset-0" style={{ width: "100%", height: "100%", overflow: "visible" }}>
+    <svg className="absolute inset-0" style={{ width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
       <defs>
         <marker id="arrow-gray" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#94A3B8" /></marker>
         <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#22C55E" /></marker>
@@ -523,9 +1202,17 @@ function ConnectionLines({ connections, nodes, draggingConnection, onSelectEdge 
         const color = conn.fromPort === "true" ? "#22C55E" : conn.fromPort === "false" ? "#EF4444" : "#94A3B8";
         const arrow = conn.fromPort === "true" ? "url(#arrow-green)" : conn.fromPort === "false" ? "url(#arrow-red)" : "url(#arrow-gray)";
         const d = `M${from.x},${from.y} C${from.x},${from.y + dx} ${to.x},${to.y - dx} ${to.x},${to.y}`;
-        return <path key={conn.id} d={d} fill="none" stroke={color} strokeWidth="2" strokeDasharray={conn.fromPort === "false" ? "6 3" : "none"} markerEnd={arrow} opacity="0.8"
-          className="cursor-pointer hover:stroke-[3px]"
-          onClick={(e) => { e.stopPropagation(); onSelectEdge(conn.id); }} />;
+        const isSelected = conn.id === selectedEdge;
+        return (
+          <g key={conn.id}>
+            {isSelected && (
+              <path d={d} fill="none" stroke="#FBBF24" strokeWidth="6" opacity="0.35" style={{ pointerEvents: "none" }} />
+            )}
+            <path d={d} fill="none" stroke={isSelected ? "#FBBF24" : color} strokeWidth={isSelected ? 3 : 2} strokeDasharray={conn.fromPort === "false" ? "6 3" : "none"} markerEnd={arrow} opacity={isSelected ? 1 : 0.8}
+              className="cursor-pointer hover:stroke-[3px]" style={{ pointerEvents: "visiblePainted" }}
+              onClick={(e) => { e.stopPropagation(); onSelectEdge(conn.id); }} />
+          </g>
+        );
       })}
       {draggingConnection && (<path d={`M${draggingConnection.x1},${draggingConnection.y1} C${draggingConnection.x1},${draggingConnection.y1 + 50} ${draggingConnection.x2},${draggingConnection.y2 - 50} ${draggingConnection.x2},${draggingConnection.y2}`} fill="none" stroke="#22C55E" strokeWidth="2" strokeDasharray="4 2" opacity="0.6" />)}
     </svg>
@@ -533,12 +1220,15 @@ function ConnectionLines({ connections, nodes, draggingConnection, onSelectEdge 
 }
 
 // ════════════════════════════════════════════════════════════════
-// MAIN LOGIC BUILDER MODAL
+// FLOW EDITOR — the canvas/palette/config-panel UI, reusable for both the
+// main per-CP flow and a Group's own contents. `source` says which one:
+//   { kind: "cp", cpNumber }             -> GET/POST /api/logic-config/<cp>
+//   { kind: "template", templateId }     -> GET/POST /api/logic-templates/<id>
 // ════════════════════════════════════════════════════════════════
-export default function LogicBuilder({ cpNumber, onClose }) {
-  const [nodes, setNodes] = useState([]);
-  const [connections, setConnections] = useState([]);
-  const [selected, setSelected] = useState(null);
+function FlowEditor({ source, onClose, onBack, commDevices, tcpDevices, rtuDevices, templates, onCreateTemplate, onOpenGroup }) {
+  const [nodes, setNodesRaw] = useState([]);
+  const [connections, setConnectionsRaw] = useState([]);
+  const [selected, setSelected] = useState([]); // array of selected node ids (multi-select)
   const [selectedEdge, setSelectedEdge] = useState(null);
   const [dragInfo, setDragInfo] = useState(null);
   const [draggingConn, setDraggingConn] = useState(null);
@@ -547,23 +1237,95 @@ export default function LogicBuilder({ cpNumber, onClose }) {
   const [saveMsg, setSaveMsg] = useState("");
   const [applyMsg, setApplyMsg] = useState("");
   const [paletteSearch, setPaletteSearch] = useState("");
+  const [clipboard, setClipboard] = useState(null); // { nodes, connections } deep-cloned
+  const [marquee, setMarquee] = useState(null); // { x, y, w, h } for the visual box
+  const marqueeRef = useRef(null); // live drag data: { startX, startY, additive, baseSelected }
+  const justMarqueedRef = useRef(false);
   const canvasRef = useRef(null);
 
   const [canvasSize, setCanvasSize] = useState({ width: 1400, height: 900 });
 
-  const [commDevices, setCommDevices] = useState([]); // RS232
-  const [tcpDevices, setTcpDevices] = useState([]);    // Modbus TCP
-  const [rtuDevices, setRtuDevices] = useState([]);    // Modbus RTU
+  const [templateMeta, setTemplateMeta] = useState({ name: "", description: "" });
 
-  // ── Load flow for this CP ──────────────────────────────────
+  // ── Undo/redo history ───────────────────────────────────────
+  const undoStackRef = useRef([]);
+  const redoStackRef = useRef([]);
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
+
+  const syncUndoRedoFlags = useCallback(() => {
+    setCanUndo(undoStackRef.current.length > 0);
+    setCanRedo(redoStackRef.current.length > 0);
+  }, []);
+
+  // Snapshots the state *before* a mutation. Call this before applying a
+  // change you want to be undoable.
+  const pushHistory = useCallback(() => {
+    undoStackRef.current.push({ nodes, connections });
+    if (undoStackRef.current.length > 100) undoStackRef.current.shift();
+    redoStackRef.current = [];
+    syncUndoRedoFlags();
+  }, [nodes, connections, syncUndoRedoFlags]);
+
+  const setNodes = useCallback((updater, opts) => {
+    if (!opts?.skipHistory) pushHistory();
+    setNodesRaw(updater);
+  }, [pushHistory]);
+
+  const setConnections = useCallback((updater, opts) => {
+    if (!opts?.skipHistory) pushHistory();
+    setConnectionsRaw(updater);
+  }, [pushHistory]);
+
+  // Combined nodes+connections mutation as a single undo step (e.g. delete,
+  // paste — both arrays change together and should undo together).
+  const commitFlow = useCallback((nodesUpdater, connsUpdater) => {
+    pushHistory();
+    if (nodesUpdater) setNodesRaw(nodesUpdater);
+    if (connsUpdater) setConnectionsRaw(connsUpdater);
+  }, [pushHistory]);
+
+  const undo = useCallback(() => {
+    if (!undoStackRef.current.length) return;
+    const prev = undoStackRef.current.pop();
+    redoStackRef.current.push({ nodes, connections });
+    if (redoStackRef.current.length > 100) redoStackRef.current.shift();
+    setNodesRaw(prev.nodes);
+    setConnectionsRaw(prev.connections);
+    setSelected([]);
+    setSelectedEdge(null);
+    syncUndoRedoFlags();
+  }, [nodes, connections, syncUndoRedoFlags]);
+
+  const redo = useCallback(() => {
+    if (!redoStackRef.current.length) return;
+    const next = redoStackRef.current.pop();
+    undoStackRef.current.push({ nodes, connections });
+    if (undoStackRef.current.length > 100) undoStackRef.current.shift();
+    setNodesRaw(next.nodes);
+    setConnectionsRaw(next.connections);
+    setSelected([]);
+    setSelectedEdge(null);
+    syncUndoRedoFlags();
+  }, [nodes, connections, syncUndoRedoFlags]);
+
+  const loadUrl = source.kind === "template" ? `${API}/api/logic-templates/${encodeURIComponent(source.templateId)}` : `${API}/api/logic-config/${source.cpNumber}`;
+  const saveUrl = loadUrl;
+  const flowKey = source.kind === "template" ? `template:${source.templateId}` : `cp:${source.cpNumber}`;
+
+  // ── Load flow (CP flow or Group template) ──────────────────
   useEffect(() => {
-    fetch(`${API}/api/logic-config/${cpNumber}`)
+    setLoading(true);
+    fetch(loadUrl)
       .then(r => r.ok ? r.json() : { nodes: [], connections: [] })
       .then(d => {
         const loadedNodes = d.nodes || [];
-        setNodes(loadedNodes);
-        setConnections(d.connections || []);
+        setNodesRaw(loadedNodes);
+        setConnectionsRaw(d.connections || []);
         setLoading(false);
+        if (source.kind === "template") {
+          setTemplateMeta({ name: d.name || source.templateId, description: d.description || "" });
+        }
         if (loadedNodes.length) {
           const margin = 300;
           const maxX = Math.max(...loadedNodes.map(n => n.x || 0)) + 180 + margin;
@@ -574,34 +1336,13 @@ export default function LogicBuilder({ cpNumber, onClose }) {
         }
       })
       .catch(() => setLoading(false));
-  }, [cpNumber]);
-
-  // ── Device lists for the Device Trigger node's config panel ──
-  useEffect(() => {
-    fetch(`${API}/api/rs232/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setCommDevices(d.devices || [])).catch(() => {});
-    fetch(`${API}/api/tcp/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setTcpDevices(d.devices || [])).catch(() => {});
-    fetch(`${API}/api/rtu/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setRtuDevices(d.devices || [])).catch(() => {});
-  }, []);
-
-  // ── Delete key ────────────────────────────────────────────
-  useEffect(() => {
-    const h = e => {
-      if ((e.key === "Delete" || e.key === "Backspace") && !["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) {
-        if (selectedEdge) {
-          setConnections(cs => cs.filter(c => c.id !== selectedEdge));
-          setSelectedEdge(null);
-          return;
-        }
-        if (selected) {
-          setNodes(ns => ns.filter(n => n.id !== selected));
-          setConnections(cs => cs.filter(c => c.fromId !== selected && c.toId !== selected));
-          setSelected(null);
-        }
-      }
-    };
-    window.addEventListener("keydown", h);
-    return () => window.removeEventListener("keydown", h);
-  }, [selected, selectedEdge]);
+    setSelected([]);
+    setSelectedEdge(null);
+    setClipboard(null);
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+    syncUndoRedoFlags();
+  }, [flowKey]);
 
   const ensureCanvasSize = useCallback((x, y, nodeWidth = 180, nodeHeight = 80) => {
     const margin = 300;
@@ -617,6 +1358,104 @@ export default function LogicBuilder({ cpNumber, onClose }) {
     });
   }, []);
 
+  // ── Selection helpers ────────────────────────────────────────
+  const clearSelection = useCallback(() => { setSelected([]); setSelectedEdge(null); }, []);
+  const selectOnly = useCallback((id) => { setSelected([id]); setSelectedEdge(null); }, []);
+  const toggleSelect = useCallback((id, additive) => {
+    setSelectedEdge(null);
+    setSelected(sel => {
+      if (!additive) return [id];
+      return sel.includes(id) ? sel.filter(s => s !== id) : [...sel, id];
+    });
+  }, []);
+  const selectAll = useCallback(() => { setSelected(nodes.map(n => n.id)); setSelectedEdge(null); }, [nodes]);
+  // Selecting an edge and selecting node(s) are mutually exclusive — otherwise
+  // Delete silently deletes whichever one deleteSelection checks first while
+  // the *other* still looks selected on screen.
+  const selectEdge = useCallback((id) => { setSelectedEdge(id); setSelected([]); }, []);
+
+  const deleteSelection = useCallback(() => {
+    if (selectedEdge) {
+      commitFlow(null, cs => cs.filter(c => c.id !== selectedEdge));
+      setSelectedEdge(null);
+      return;
+    }
+    if (selected.length) {
+      const ids = new Set(selected);
+      commitFlow(
+        ns => ns.filter(n => !ids.has(n.id)),
+        cs => cs.filter(c => !ids.has(c.fromId) && !ids.has(c.toId)),
+      );
+      setSelected([]);
+    }
+  }, [selected, selectedEdge, commitFlow]);
+
+  // ── Copy / cut / paste ───────────────────────────────────────
+  const copySelection = useCallback(() => {
+    if (!selected.length) return;
+    const ids = new Set(selected);
+    setClipboard({
+      nodes: nodes.filter(n => ids.has(n.id)).map(n => structuredClone(n)),
+      connections: connections.filter(c => ids.has(c.fromId) && ids.has(c.toId)).map(c => structuredClone(c)),
+    });
+  }, [selected, nodes, connections]);
+
+  const pasteClipboard = useCallback(() => {
+    if (!clipboard?.nodes?.length) return;
+    const OFFSET = 40;
+    const idMap = {};
+    const newNodes = clipboard.nodes.map(n => {
+      const newId = nid();
+      idMap[n.id] = newId;
+      return { ...structuredClone(n), id: newId, x: (n.x || 0) + OFFSET, y: (n.y || 0) + OFFSET };
+    });
+    const newConns = clipboard.connections.map(c => ({
+      ...structuredClone(c), id: nid(), fromId: idMap[c.fromId], toId: idMap[c.toId],
+    }));
+    commitFlow(ns => [...ns, ...newNodes], cs => [...cs, ...newConns]);
+    newNodes.forEach(n => ensureCanvasSize(n.x, n.y));
+    setSelected(newNodes.map(n => n.id));
+    setSelectedEdge(null);
+  }, [clipboard, commitFlow, ensureCanvasSize]);
+
+  const cutSelection = useCallback(() => {
+    if (!selected.length) return;
+    copySelection();
+    deleteSelection();
+  }, [selected, copySelection, deleteSelection]);
+
+  // ── Keyboard shortcuts: Delete, Undo/Redo, Copy/Cut/Paste, Select All ──
+  useEffect(() => {
+    const h = e => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName) || document.activeElement?.isContentEditable) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if ((e.key === "Delete" || e.key === "Backspace")) {
+        e.preventDefault();
+        deleteSelection();
+      } else if (mod && !e.shiftKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        undo();
+      } else if (mod && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))) {
+        e.preventDefault();
+        redo();
+      } else if (mod && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        copySelection();
+      } else if (mod && e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        cutSelection();
+      } else if (mod && e.key.toLowerCase() === "v") {
+        e.preventDefault();
+        pasteClipboard();
+      } else if (mod && e.key.toLowerCase() === "a") {
+        e.preventDefault();
+        selectAll();
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [deleteSelection, undo, redo, copySelection, cutSelection, pasteClipboard, selectAll]);
+
   // ── Drop from palette ─────────────────────────────────────
   const handleDrop = useCallback(e => {
     e.preventDefault();
@@ -628,36 +1467,87 @@ export default function LogicBuilder({ cpNumber, onClose }) {
     const y = Math.max(0, e.clientY - rect.top - 40);
     setNodes(ns => [...ns, { id, type, x, y, config: { ...DEFAULT_NODE_CONFIG[type] } }]);
     ensureCanvasSize(x, y);
-    setSelected(id);
-  }, [ensureCanvasSize]);
+    selectOnly(id);
+  }, [ensureCanvasSize, selectOnly, setNodes]);
 
-  // ── Node drag ─────────────────────────────────────────────
+  // ── Node drag (moves the whole selection together when the dragged
+  //    node is part of a multi-selection) ─────────────────────
   const startNodeDrag = useCallback((e, id) => {
     if (e.button !== 0) return;
-    const el = document.getElementById(`node-${id}`);
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setDragInfo({ id, offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top });
-  }, []);
+    const groupIds = selected.includes(id) ? selected : [id];
+    if (groupIds !== selected) selectOnly(id);
+    const startPositions = {};
+    nodes.forEach(n => { if (groupIds.includes(n.id)) startPositions[n.id] = { x: n.x, y: n.y }; });
+    setDragInfo({ id, startClientX: e.clientX, startClientY: e.clientY, startPositions });
+  }, [nodes, selected, selectOnly]);
 
   useEffect(() => {
     if (!dragInfo) return;
+    let historyPushed = false;
     const onMove = e => {
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const mouseX = e.clientX - rect.left - dragInfo.offsetX;
-      const mouseY = e.clientY - rect.top - dragInfo.offsetY;
-      let newX = Math.max(0, mouseX);
-      let newY = Math.max(0, mouseY);
-
-      setNodes(ns => ns.map(n => n.id === dragInfo.id ? { ...n, x: newX, y: newY } : n));
-      ensureCanvasSize(newX, newY);
+      const dxTotal = e.clientX - dragInfo.startClientX;
+      const dyTotal = e.clientY - dragInfo.startClientY;
+      if (!historyPushed) { pushHistory(); historyPushed = true; }
+      setNodes(ns => ns.map(n => {
+        const start = dragInfo.startPositions[n.id];
+        if (!start) return n;
+        return { ...n, x: Math.max(0, start.x + dxTotal), y: Math.max(0, start.y + dyTotal) };
+      }), { skipHistory: true });
+      // Grow the canvas for every dragged node, not just the one grabbed —
+      // otherwise a grouped node that ends up further out than the anchor
+      // node gets stranded outside the visible/scrollable canvas.
+      Object.values(dragInfo.startPositions).forEach(start => {
+        ensureCanvasSize(Math.max(0, start.x + dxTotal), Math.max(0, start.y + dyTotal));
+      });
     };
     const onUp = () => setDragInfo(null);
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [dragInfo, ensureCanvasSize]);
+  }, [dragInfo, ensureCanvasSize, pushHistory]);
+
+  // ── Marquee (box) select ───────────────────────────────────
+  const startMarquee = useCallback((e) => {
+    if (e.button !== 0 || e.target !== canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    marqueeRef.current = {
+      startX: e.clientX - rect.left,
+      startY: e.clientY - rect.top,
+      additive: e.shiftKey,
+      baseSelected: e.shiftKey ? selected : [],
+    };
+    justMarqueedRef.current = false;
+  }, [selected]);
+
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!marqueeRef.current || !canvasRef.current) return;
+      const rect = canvasRef.current.getBoundingClientRect();
+      const curX = e.clientX - rect.left;
+      const curY = e.clientY - rect.top;
+      const { startX, startY, additive, baseSelected } = marqueeRef.current;
+      const x = Math.min(startX, curX), y = Math.min(startY, curY);
+      const w = Math.abs(curX - startX), h = Math.abs(curY - startY);
+      if (w < 3 && h < 3) return;
+      justMarqueedRef.current = true;
+      setMarquee({ x, y, w, h });
+      const hitIds = nodes.filter(n => {
+        const el = document.getElementById(`node-${n.id}`);
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        const nx = r.left - rect.left, ny = r.top - rect.top;
+        return nx < x + w && nx + r.width > x && ny < y + h && ny + r.height > y;
+      }).map(n => n.id);
+      setSelected(additive ? Array.from(new Set([...baseSelected, ...hitIds])) : hitIds);
+      setSelectedEdge(null);
+    };
+    const onUp = () => {
+      if (marqueeRef.current) { marqueeRef.current = null; setMarquee(null); }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [nodes]);
 
   // ── Port connection drag ──────────────────────────────────
   const startPortDrag = useCallback((e, fromId, fromPort) => {
@@ -687,13 +1577,16 @@ export default function LogicBuilder({ cpNumber, onClose }) {
     const dup = connections.find(c => c.fromId === draggingConn.fromId && c.fromPort === draggingConn.fromPort && c.toId === toId);
     if (!dup) setConnections(cs => [...cs, { id: nid(), fromId: draggingConn.fromId, fromPort: draggingConn.fromPort, toId }]);
     setDraggingConn(null);
-  }, [draggingConn, connections]);
+  }, [draggingConn, connections, setConnections]);
 
-  // ── Save ──────────────────────────────────────────────────
+  // ── Save (CP flow or Group template, depending on `source`) ──
   const save = async () => {
     setSaving(true); setSaveMsg("");
     try {
-      const r = await fetch(`${API}/api/logic-config/${cpNumber}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nodes, connections }) });
+      const body = source.kind === "template"
+        ? { name: templateMeta.name, description: templateMeta.description, nodes, connections }
+        : { nodes, connections };
+      const r = await fetch(saveUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json();
       setSaveMsg(d.success ? "✓ Saved!" : "✗ Failed");
     } catch { setSaveMsg("✗ Network error"); }
@@ -703,13 +1596,25 @@ export default function LogicBuilder({ cpNumber, onClose }) {
 
   const updateNode = useCallback((updated) => {
     setNodes(ns => ns.map(n => n.id === updated.id ? updated : n));
-  }, []);
+  }, [setNodes]);
 
-  const selectedNode = useMemo(() => nodes.find(n => n.id === selected) || null, [nodes, selected]);
+  const openGroupNode = useCallback((node) => {
+    const templateId = node?.config?.template_id;
+    if (!templateId) return;
+    onOpenGroup?.(templateId, node.config?.template_name);
+  }, [onOpenGroup]);
+
+  const selectedNode = useMemo(() => (selected.length === 1 ? nodes.find(n => n.id === selected[0]) || null : null), [nodes, selected]);
+  // Group Input/Output only make sense while editing a Group's own contents —
+  // they'd be meaningless (and undraggable-in-practice, but hide them anyway)
+  // on the main per-CP canvas.
+  const isInsideGroup = source.kind === "template";
   const filteredPalette = useMemo(() => {
     const q = paletteSearch.toLowerCase();
-    return NODE_TYPES.filter(t => t.label.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q));
-  }, [paletteSearch]);
+    return NODE_TYPES
+      .filter(t => isInsideGroup || (t.type !== "group_input" && t.type !== "group_output"))
+      .filter(t => t.label.toLowerCase().includes(q) || t.desc.toLowerCase().includes(q));
+  }, [paletteSearch, isInsideGroup]);
   const categories = useMemo(() => {
     const cats = {};
     filteredPalette.forEach(t => { if (!cats[t.category]) cats[t.category] = []; cats[t.category].push(t); });
@@ -721,67 +1626,170 @@ export default function LogicBuilder({ cpNumber, onClose }) {
     setTimeout(() => setApplyMsg(""), 2000);
   }, []);
 
-  // ── Render ────────────────────────────────────────────────
+  const titleBadge = source.kind === "template" ? `📦 ${templateMeta.name || source.templateId}` : `CP${String(source.cpNumber).padStart(2, "0")}`;
+
+  // ── Render (content only — ModalBackdrop/ModalPanel live in the LogicBuilder wrapper) ──
+  return (
+    <>
+      <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
+        <div className="flex items-center gap-3">
+          {onBack && (
+            <button onClick={onBack} className="h-7 px-2.5 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-[10px] font-bold transition-colors flex items-center gap-1">← Back</button>
+          )}
+          <span className="text-[#22C55E] font-black text-lg tracking-tighter">WIK</span>
+          <div className="w-px h-5 bg-[var(--border)]" />
+          <span className="text-[var(--text-primary)] font-bold text-sm">Logic Builder</span>
+          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[#3B82F6]/15 text-[#3B82F6] border border-[#3B82F6]/30">{titleBadge}</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {applyMsg && (
+            <span className="text-[11px] font-bold px-3 py-1 rounded-full text-[#22C55E] bg-[#22C55E]/10">
+              {applyMsg}
+            </span>
+          )}
+          {saveMsg && (
+            <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saveMsg.startsWith("✓") ? "text-[#22C55E] bg-[#22C55E]/10" : "text-[#EF4444] bg-[#EF4444]/10"}`}>
+              {saveMsg}
+            </span>
+          )}
+          <div className="flex items-center gap-1">
+            <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="w-7 h-7 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center text-xs">↶</button>
+            <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" className="w-7 h-7 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center text-xs">↷</button>
+            <button onClick={copySelection} disabled={!selected.length} title="Copy (Ctrl+C)" className="w-7 h-7 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center text-xs">⧉</button>
+            <button onClick={pasteClipboard} disabled={!clipboard?.nodes?.length} title="Paste (Ctrl+V)" className="w-7 h-7 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center text-xs">📋</button>
+          </div>
+          <div className="w-px h-5 bg-[var(--border)]" />
+          <button onClick={() => { commitFlow(() => [], () => []); setSelected([]); }} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-[10px] font-bold transition-colors">Clear</button>
+          <button onClick={save} disabled={saving} className="h-7 px-4 rounded-lg bg-[#3B82F6] hover:bg-[#2563EB] text-white font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Flow"}</button>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"><IconX /></button>
+        </div>
+      </div>
+      <div className="flex flex-1 overflow-hidden min-h-0">
+        <div className="w-48 shrink-0 border-r border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
+          <div className="px-3 pt-3 pb-2 shrink-0"><p className="text-[#3B82F6] text-[9px] font-bold uppercase tracking-widest mb-2">Logic Nodes</p><input value={paletteSearch} onChange={e => setPaletteSearch(e.target.value)} placeholder="Search…" className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded-lg px-2 h-7 outline-none placeholder-[var(--text-faint)] focus:border-[#3B82F6]/50" /></div>
+          <div className="flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-3" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
+            {NODE_TYPES.length === 0 && (
+              <p className="text-[var(--text-faint)] text-[10px] px-1">No node types yet — add them in LogicBuilder.jsx.</p>
+            )}
+            {Object.entries(categories).map(([cat, items]) => (
+              <div key={cat}>
+                <p className="text-[8px] font-bold uppercase tracking-widest px-1 mb-1" style={{ color: items[0] ? NODE_TYPES.find(t => t.category === cat)?.color : "var(--text-muted)" }}>{CATEGORY_LABELS[cat]}</p>
+                <div className="flex flex-col gap-1">{items.map(node => (<div key={node.type} draggable onDragStart={e => e.dataTransfer.setData("node-type", node.type)} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[var(--border-soft)] hover:border-opacity-50 cursor-grab active:cursor-grabbing transition-colors" onMouseEnter={e => e.currentTarget.style.borderColor = node.color + "60"} onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border-soft)"}><span className="text-sm w-5 text-center shrink-0">{node.icon}</span><div className="flex flex-col min-w-0"><span className="text-[var(--text-primary)] text-[10px] font-semibold leading-tight">{node.label}</span><span className="text-[var(--text-muted)] text-[8px] leading-tight truncate">{node.desc}</span></div></div>))}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto min-h-0 relative" style={{ background: "var(--bg-surface-2)", scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
+          {loading ? (<div className="flex items-center justify-center h-full gap-2 text-[#3B82F6] text-xs"><div className="w-4 h-4 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin" /> Loading flow…</div>) : (
+            <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleDrop}
+                 onMouseDown={startMarquee}
+                 onClick={(e) => {
+                   if (e.target !== e.currentTarget) return;
+                   if (justMarqueedRef.current) { justMarqueedRef.current = false; return; }
+                   clearSelection();
+                 }} className="relative"
+                 style={{ width: canvasSize.width, height: canvasSize.height, background: "var(--bg-surface-2)", backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
+              {nodes.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-5xl opacity-10 mb-3">⚡</span><p className="text-[var(--text-faint)] text-sm font-mono">Drag logic nodes here to build your flow</p></div>)}
+              <ConnectionLines connections={connections} nodes={nodes} draggingConnection={draggingConn} selectedEdge={selectedEdge} onSelectEdge={selectEdge} />
+              {nodes.map(node => (<NodeCard key={node.id} node={node} selected={selected.includes(node.id)} onSelect={toggleSelect} onDragStart={startNodeDrag} onDelete={id => { commitFlow(ns => ns.filter(n => n.id !== id), cs => cs.filter(c => c.fromId !== id && c.toId !== id)); setSelected(sel => sel.filter(s => s !== id)); }} onPortMouseDown={startPortDrag} onPortMouseUp={finishConnection} onOpenGroup={openGroupNode} />))}
+              {marquee && (
+                <div className="absolute border-2 border-dashed border-[#3B82F6] bg-[#3B82F6]/10 pointer-events-none z-30"
+                     style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />
+              )}
+            </div>
+          )}
+        </div>
+        <div className="w-64 shrink-0 border-l border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
+          <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} commDevices={commDevices} tcpDevices={tcpDevices} rtuDevices={rtuDevices} templates={templates} onCreateTemplate={onCreateTemplate} onOpenGroup={onOpenGroup} />
+        </div>
+      </div>
+      <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
+        <span className="text-[var(--text-faint)] text-[9px] font-mono">{nodes.length} node{nodes.length !== 1 ? "s" : ""} · {connections.length} connection{connections.length !== 1 ? "s" : ""}</span>
+        <span className="text-[var(--text-faint)] text-[9px] font-mono">Del = delete · Ctrl+Z/Y = undo/redo · Ctrl+C/X/V = copy/cut/paste · Ctrl+A = select all · drag box = multi-select · drag port → port to connect · double-click Group = buka isinya</span>
+      </div>
+    </>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// MAIN LOGIC BUILDER MODAL — owns the modal chrome and the "group stack"
+// (which flow is currently being edited: the CP's own flow, or drilled into
+// a Group's contents, possibly nested). Device lists and the Group template
+// list are fetched once here and shared by every level of the stack.
+// ════════════════════════════════════════════════════════════════
+export default function LogicBuilder({ cpNumber, onClose }) {
+  const [groupStack, setGroupStack] = useState([]); // [{ templateId, templateName }, ...]
+  const [commDevices, setCommDevices] = useState([]); // RS232
+  const [tcpDevices, setTcpDevices] = useState([]);    // Modbus TCP
+  const [rtuDevices, setRtuDevices] = useState([]);    // Modbus RTU
+  const [templates, setTemplates] = useState([]);      // Group templates (id/name/node_count)
+
+  const refreshTemplates = useCallback(() => {
+    fetch(`${API}/api/logic-templates`).then(r => r.ok ? r.json() : { templates: [] }).then(d => setTemplates(d.templates || [])).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API}/api/rs232/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setCommDevices(d.devices || [])).catch(() => {});
+    fetch(`${API}/api/tcp/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setTcpDevices(d.devices || [])).catch(() => {});
+    fetch(`${API}/api/rtu/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setRtuDevices(d.devices || [])).catch(() => {});
+    refreshTemplates();
+  }, [refreshTemplates]);
+
+  const createTemplate = useCallback(async (name) => {
+    try {
+      const r = await fetch(`${API}/api/logic-templates`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+      const d = await r.json();
+      if (d.success) {
+        // Seed every new Group with an explicit Input -> Output pair pre-wired,
+        // so opening it for the first time shows the interface instead of a
+        // blank canvas — the user just inserts their real logic in between.
+        try {
+          await fetch(`${API}/api/logic-templates/${encodeURIComponent(d.id)}`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: d.name, description: "",
+              nodes: [
+                { id: "gi", type: "group_input", x: 60, y: 40, config: { ...DEFAULT_NODE_CONFIG.group_input } },
+                { id: "go", type: "group_output", x: 60, y: 220, config: { ...DEFAULT_NODE_CONFIG.group_output } },
+              ],
+              connections: [{ id: "gi_go", fromId: "gi", fromPort: "next", toId: "go" }],
+            }),
+          });
+        } catch { /* seeding is a convenience — an empty Group still works fine */ }
+        refreshTemplates();
+        return { id: d.id, name: d.name };
+      }
+    } catch { /* ignore — button just won't populate a new template */ }
+    return null;
+  }, [refreshTemplates]);
+
+  const openGroup = useCallback((templateId, templateName) => {
+    setGroupStack(stack => [...stack, { templateId, templateName }]);
+  }, []);
+
+  const backOneLevel = useCallback(() => {
+    setGroupStack(stack => stack.slice(0, -1));
+  }, []);
+
+  const top = groupStack[groupStack.length - 1];
+  const source = top ? { kind: "template", templateId: top.templateId } : { kind: "cp", cpNumber };
+
   return (
     <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm font-sans">
       <ModalPanel className="flex flex-col rounded-2xl overflow-hidden border border-[var(--border)] shadow-2xl" style={{ width: "min(98vw, 1700px)", height: "min(96vh, 900px)", background: "var(--bg-surface)" }}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
-          <div className="flex items-center gap-3">
-            <span className="text-[#22C55E] font-black text-lg tracking-tighter">WIK</span>
-            <div className="w-px h-5 bg-[var(--border)]" />
-            <span className="text-[var(--text-primary)] font-bold text-sm">Logic Builder</span>
-            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-[#3B82F6]/15 text-[#3B82F6] border border-[#3B82F6]/30">CP{String(cpNumber).padStart(2, "0")}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {applyMsg && (
-              <span className="text-[11px] font-bold px-3 py-1 rounded-full text-[#22C55E] bg-[#22C55E]/10">
-                {applyMsg}
-              </span>
-            )}
-            {saveMsg && (
-              <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saveMsg.startsWith("✓") ? "text-[#22C55E] bg-[#22C55E]/10" : "text-[#EF4444] bg-[#EF4444]/10"}`}>
-                {saveMsg}
-              </span>
-            )}
-            <button onClick={() => { setNodes([]); setConnections([]); setSelected(null); }} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-[10px] font-bold transition-colors">Clear</button>
-            <button onClick={save} disabled={saving} className="h-7 px-4 rounded-lg bg-[#3B82F6] hover:bg-[#2563EB] text-white font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Flow"}</button>
-            <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"><IconX /></button>
-          </div>
-        </div>
-        <div className="flex flex-1 overflow-hidden min-h-0">
-          <div className="w-48 shrink-0 border-r border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
-            <div className="px-3 pt-3 pb-2 shrink-0"><p className="text-[#3B82F6] text-[9px] font-bold uppercase tracking-widest mb-2">Logic Nodes</p><input value={paletteSearch} onChange={e => setPaletteSearch(e.target.value)} placeholder="Search…" className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded-lg px-2 h-7 outline-none placeholder-[var(--text-faint)] focus:border-[#3B82F6]/50" /></div>
-            <div className="flex-1 overflow-y-auto px-2 pb-3 flex flex-col gap-3" style={{ scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
-              {NODE_TYPES.length === 0 && (
-                <p className="text-[var(--text-faint)] text-[10px] px-1">No node types yet — add them in LogicBuilder.jsx.</p>
-              )}
-              {Object.entries(categories).map(([cat, items]) => (
-                <div key={cat}>
-                  <p className="text-[8px] font-bold uppercase tracking-widest px-1 mb-1" style={{ color: items[0] ? NODE_TYPES.find(t => t.category === cat)?.color : "var(--text-muted)" }}>{CATEGORY_LABELS[cat]}</p>
-                  <div className="flex flex-col gap-1">{items.map(node => (<div key={node.type} draggable onDragStart={e => e.dataTransfer.setData("node-type", node.type)} className="flex items-center gap-2 px-2 py-1.5 rounded-lg border border-[var(--border-soft)] hover:border-opacity-50 cursor-grab active:cursor-grabbing transition-colors" onMouseEnter={e => e.currentTarget.style.borderColor = node.color + "60"} onMouseLeave={e => e.currentTarget.style.borderColor = "var(--border-soft)"}><span className="text-sm w-5 text-center shrink-0">{node.icon}</span><div className="flex flex-col min-w-0"><span className="text-[var(--text-primary)] text-[10px] font-semibold leading-tight">{node.label}</span><span className="text-[var(--text-muted)] text-[8px] leading-tight truncate">{node.desc}</span></div></div>))}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="flex-1 overflow-auto min-h-0 relative" style={{ background: "var(--bg-surface-2)", scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
-            {loading ? (<div className="flex items-center justify-center h-full gap-2 text-[#3B82F6] text-xs"><div className="w-4 h-4 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin" /> Loading flow…</div>) : (
-              <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleDrop} onClick={(e) => { if (e.target === e.currentTarget) { setSelected(null); setSelectedEdge(null); } }} className="relative"
-                   style={{ width: canvasSize.width, height: canvasSize.height, background: "var(--bg-surface-2)", backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
-                {nodes.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-5xl opacity-10 mb-3">⚡</span><p className="text-[var(--text-faint)] text-sm font-mono">Drag logic nodes here to build your flow</p></div>)}
-                <ConnectionLines connections={connections} nodes={nodes} draggingConnection={draggingConn} onSelectEdge={setSelectedEdge} />
-                {nodes.map(node => (<NodeCard key={node.id} node={node} selected={node.id === selected} onSelect={setSelected} onDragStart={startNodeDrag} onDelete={id => { setNodes(ns => ns.filter(n => n.id !== id)); setConnections(cs => cs.filter(c => c.fromId !== id && c.toId !== id)); if (selected === id) setSelected(null); }} onPortMouseDown={startPortDrag} onPortMouseUp={finishConnection} />))}
-              </div>
-            )}
-          </div>
-          <div className="w-64 shrink-0 border-l border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
-            <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} commDevices={commDevices} tcpDevices={tcpDevices} rtuDevices={rtuDevices} />
-          </div>
-        </div>
-        <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
-          <span className="text-[var(--text-faint)] text-[9px] font-mono">{nodes.length} node{nodes.length !== 1 ? "s" : ""} · {connections.length} connection{connections.length !== 1 ? "s" : ""}</span>
-          <span className="text-[var(--text-faint)] text-[9px] font-mono">Del = delete node · drag port → port to connect</span>
-        </div>
+        <FlowEditor
+          key={top ? `template:${top.templateId}` : `cp:${cpNumber}`}
+          source={source}
+          onClose={onClose}
+          onBack={top ? backOneLevel : undefined}
+          commDevices={commDevices}
+          tcpDevices={tcpDevices}
+          rtuDevices={rtuDevices}
+          templates={templates}
+          onCreateTemplate={createTemplate}
+          onOpenGroup={openGroup}
+        />
       </ModalPanel>
     </ModalBackdrop>
   );

@@ -140,9 +140,9 @@ const RANGE_PRESETS = [
   { label: "30 Days", days: 29 },
 ];
 
-export default function DashboardPage() {
+export default function DashboardPage({ cpNumber } = {}) {
   const [cps, setCps] = useState([]);
-  const [cp, setCp] = useState("");
+  const [cp, setCp] = useState(cpNumber || "");
   const [dateFrom, setDateFrom] = useState(fmtDate(new Date()));
   const [dateTo, setDateTo] = useState(fmtDate(new Date()));
   const [activePreset, setActivePreset] = useState("Today");
