@@ -881,8 +881,42 @@ export default function DynamicCPPage({ cpNumber, user }) {
       const valueKey = String(converted);
       const writeKey = `${destination}:${valueKey}`;
 
-      // 50 ms polling must not write the same value to the DB repeatedly.
-      if (inputDataWriteRef.current[widgetKey] === writeKey) return;
+      /*
+       * INPUT DATA SCAN RETRY FIX
+       *
+       * Do not reject a second scan only because it has the same value as
+       * the previous scan. The destination variable may have been reset
+       * between scans.
+       *
+       * Example:
+       *   Scan #1 -> SN123 -> destination = SN123
+       *   destination reset -> 0
+       *   Scan #2 -> SN123 -> MUST write SN123 again
+       *
+       * Therefore the duplicate guard checks the CURRENT destination value.
+       * A write is skipped only when the destination already contains the
+       * value we are trying to write.
+       */
+      let currentDestinationValue;
+      try {
+        currentDestinationValue = await getInternalValue(destination);
+      } catch {
+        currentDestinationValue = undefined;
+      }
+
+      const destinationAlreadyHasValue =
+        currentDestinationValue !== undefined &&
+        currentDestinationValue !== null &&
+        String(currentDestinationValue) === valueKey;
+
+      if (destinationAlreadyHasValue) {
+        inputDataWriteRef.current[widgetKey] = writeKey;
+        return;
+      }
+
+      // Destination was reset/changed, so the same scanned value is allowed
+      // to be written again.
+      inputDataWriteRef.current[widgetKey] = null;
 
       try {
         await setInternalValue(destination, converted);
@@ -924,10 +958,30 @@ export default function DynamicCPPage({ cpNumber, user }) {
         if (mode === "static") return fallback;
 
         if (mode === "inputdata") {
-          const acceptedValue = inputDataValues[String(widget.id)];
-          return acceptedValue !== undefined && acceptedValue !== null
-            ? acceptedValue
-            : fallback;
+          // INPUT DATA ONLY:
+          // The TextBox displays the CURRENT Destination Internal Variable.
+          // Empty string means return to the configured default TextBox text.
+          const destinationVariable = String(
+            p.inputDataDestinationVariable || ""
+          ).trim();
+
+          if (!destinationVariable) return fallback;
+
+          const destinationValue = getInternalValue(destinationVariable);
+
+          // IMPORTANT:
+          // "" -> default text
+          // 0  -> remains 0 (must NOT be treated as empty)
+          if (
+            destinationValue === undefined ||
+            destinationValue === null ||
+            (typeof destinationValue === "string" &&
+              destinationValue.trim() === "")
+          ) {
+            return p.defaultText ?? p.text ?? fallback;
+          }
+
+          return destinationValue;
         }
 
         if (mode === "calculation") {
