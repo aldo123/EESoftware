@@ -259,7 +259,7 @@
         "calculationInputs": [],
         "calculationResultVariable": "",
         "cornerSize": 10,
-        "dataType": "number",
+        "dataType": "text",
         "defaultText": "PRODUCT SN",
         "device": "PLC",
         "fontSize": 20,
@@ -283,11 +283,12 @@
         "iconSize": 20,
         "iconVerticalAlign": "center",
         "innerGlow": false,
-        "inputDataDestinationVariable": "ProductSN",
+        "inputDataDestinationVariable": "ProductSNHPT",
         "inputDataTriggerAddress": "1",
         "inputDataTriggerAddressType": "holding_register",
         "inputDataTriggerDevice": "PLC",
-        "inputDataTriggerSource": "plc",
+        "inputDataTriggerSource": "internal",
+        "inputDataTriggerVariable": "Start",
         "inputSource": "com",
         "inputType": "realtime",
         "padding": 8,
@@ -303,7 +304,7 @@
         "scanSpeed": 2,
         "showFrameAccent": false,
         "showFrameDots": false,
-        "sourceDevice": "Part",
+        "sourceDevice": "Product",
         "text": "TEXT",
         "textAlign": "center",
         "textColor": "#0c610a",
@@ -378,7 +379,7 @@
         "scanSpeed": 2,
         "showFrameAccent": false,
         "showFrameDots": false,
-        "sourceDevice": "Product",
+        "sourceDevice": "",
         "text": "TEXT",
         "textAlign": "center",
         "textColor": "#0c610a",
@@ -453,7 +454,7 @@
         "scanSpeed": 2,
         "showFrameAccent": false,
         "showFrameDots": false,
-        "sourceDevice": "Product",
+        "sourceDevice": "",
         "text": "TEXT",
         "textAlign": "center",
         "textColor": "#0c610a",
@@ -1266,6 +1267,32 @@
       "props": {
         "address": "",
         "addressType": "holding_register",
+        "badgeStates": [
+          {
+            "color": "#ededed",
+            "fontColor": "#000000",
+            "label": "WAITING",
+            "value": 0
+          },
+          {
+            "color": "#ff0000",
+            "fontColor": "#000000",
+            "label": "FAIL",
+            "value": 1
+          },
+          {
+            "color": "#00fa2a",
+            "fontColor": "#000000",
+            "label": "PASS",
+            "value": 2
+          },
+          {
+            "color": "#ffd500",
+            "fontColor": "#000000",
+            "label": "TESTING",
+            "value": 3
+          }
+        ],
         "builderState": 0,
         "device": "",
         "displayMode": "badge",
@@ -1285,7 +1312,7 @@
         },
         "valueOff": 0,
         "valueOn": 1,
-        "variable": "",
+        "variable": "ResultHpt",
         "visual": {
           "accentColor": "var(--accent-cyan)",
           "backgroundColor": "var(--panel-canvas)",
@@ -1320,84 +1347,92 @@
         "resetLabel": "RESET",
         "resetTargets": [
           {
-            "type": "internal",
-            "variable": "HPTStep1",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788764866635_mjfsv"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788764866635_mjfsv",
+            "type": "internal",
+            "variable": "HPTStep1"
           },
           {
-            "type": "internal",
-            "variable": "HPTStep2",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788764867339_408p9"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788764867339_408p9",
+            "type": "internal",
+            "variable": "HPTStep2"
           },
           {
-            "type": "internal",
-            "variable": "HPTStep3",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788764867978_xs2e2"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788764867978_xs2e2",
+            "type": "internal",
+            "variable": "HPTStep3"
           },
           {
-            "type": "internal",
-            "variable": "ResultS1",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788764871377_7qpix"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788764871377_7qpix",
+            "type": "internal",
+            "variable": "ResultS1"
           },
           {
-            "type": "internal",
-            "variable": "ResultS2",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788764871983_wve1y"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788764871983_wve1y",
+            "type": "internal",
+            "variable": "ResultS2"
           },
           {
-            "type": "internal",
-            "variable": "ResultS3",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788764872534_hxzxr"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788764872534_hxzxr",
+            "type": "internal",
+            "variable": "ResultS3"
           },
           {
-            "type": "internal",
-            "variable": "S1Status",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788764873064_8z2wb"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788764873064_8z2wb",
+            "type": "internal",
+            "variable": "S1Status"
           },
           {
-            "type": "internal",
-            "variable": "S2Status",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788764905255_r5nj2"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788764905255_r5nj2",
+            "type": "internal",
+            "variable": "S2Status"
           },
           {
-            "type": "internal",
-            "variable": "S3Status",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788764905891_rmktn"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788764905891_rmktn",
+            "type": "internal",
+            "variable": "S3Status"
           },
           {
-            "type": "internal",
-            "variable": "Start",
-            "device": "",
-            "addressType": "holding_register",
             "address": "",
-            "id": "reset_1788765303015_g9x44"
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788765303015_g9x44",
+            "type": "internal",
+            "variable": "Start"
+          },
+          {
+            "address": "",
+            "addressType": "holding_register",
+            "device": "",
+            "id": "reset_1788778231964_2pq3n",
+            "type": "internal",
+            "variable": "ResultHpt"
           }
         ],
         "simulation": {
@@ -1437,7 +1472,11 @@
         "borderColor": "#1E3A4D",
         "borderRadius": 8,
         "borderWidth": 1,
-        "filter": "all",
+        "filter": [
+          "com",
+          "tcp",
+          "internal"
+        ],
         "fontSize": 11,
         "height": 235,
         "lineHeight": 1.45,
@@ -5204,7 +5243,7 @@
             "calculationInputs": [],
             "calculationResultVariable": "",
             "cornerSize": 10,
-            "dataType": "number",
+            "dataType": "text",
             "defaultText": "PRODUCT SN",
             "device": "PLC",
             "fontSize": 20,
@@ -5228,11 +5267,12 @@
             "iconSize": 20,
             "iconVerticalAlign": "center",
             "innerGlow": false,
-            "inputDataDestinationVariable": "ProductSN",
+            "inputDataDestinationVariable": "ProductSNHPT",
             "inputDataTriggerAddress": "1",
             "inputDataTriggerAddressType": "holding_register",
             "inputDataTriggerDevice": "PLC",
-            "inputDataTriggerSource": "plc",
+            "inputDataTriggerSource": "internal",
+            "inputDataTriggerVariable": "Start",
             "inputSource": "com",
             "inputType": "realtime",
             "padding": 8,
@@ -5248,7 +5288,7 @@
             "scanSpeed": 2,
             "showFrameAccent": false,
             "showFrameDots": false,
-            "sourceDevice": "Part",
+            "sourceDevice": "Product",
             "text": "TEXT",
             "textAlign": "center",
             "textColor": "#0c610a",
@@ -5323,7 +5363,7 @@
             "scanSpeed": 2,
             "showFrameAccent": false,
             "showFrameDots": false,
-            "sourceDevice": "Product",
+            "sourceDevice": "",
             "text": "TEXT",
             "textAlign": "center",
             "textColor": "#0c610a",
@@ -5398,7 +5438,7 @@
             "scanSpeed": 2,
             "showFrameAccent": false,
             "showFrameDots": false,
-            "sourceDevice": "Product",
+            "sourceDevice": "",
             "text": "TEXT",
             "textAlign": "center",
             "textColor": "#0c610a",
@@ -6211,6 +6251,32 @@
           "props": {
             "address": "",
             "addressType": "holding_register",
+            "badgeStates": [
+              {
+                "color": "#ededed",
+                "fontColor": "#000000",
+                "label": "WAITING",
+                "value": 0
+              },
+              {
+                "color": "#ff0000",
+                "fontColor": "#000000",
+                "label": "FAIL",
+                "value": 1
+              },
+              {
+                "color": "#00fa2a",
+                "fontColor": "#000000",
+                "label": "PASS",
+                "value": 2
+              },
+              {
+                "color": "#ffd500",
+                "fontColor": "#000000",
+                "label": "TESTING",
+                "value": 3
+              }
+            ],
             "builderState": 0,
             "device": "",
             "displayMode": "badge",
@@ -6230,7 +6296,7 @@
             },
             "valueOff": 0,
             "valueOn": 1,
-            "variable": "",
+            "variable": "ResultHpt",
             "visual": {
               "accentColor": "var(--accent-cyan)",
               "backgroundColor": "var(--panel-canvas)",
@@ -6265,84 +6331,92 @@
             "resetLabel": "RESET",
             "resetTargets": [
               {
-                "type": "internal",
-                "variable": "HPTStep1",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788764866635_mjfsv"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788764866635_mjfsv",
+                "type": "internal",
+                "variable": "HPTStep1"
               },
               {
-                "type": "internal",
-                "variable": "HPTStep2",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788764867339_408p9"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788764867339_408p9",
+                "type": "internal",
+                "variable": "HPTStep2"
               },
               {
-                "type": "internal",
-                "variable": "HPTStep3",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788764867978_xs2e2"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788764867978_xs2e2",
+                "type": "internal",
+                "variable": "HPTStep3"
               },
               {
-                "type": "internal",
-                "variable": "ResultS1",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788764871377_7qpix"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788764871377_7qpix",
+                "type": "internal",
+                "variable": "ResultS1"
               },
               {
-                "type": "internal",
-                "variable": "ResultS2",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788764871983_wve1y"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788764871983_wve1y",
+                "type": "internal",
+                "variable": "ResultS2"
               },
               {
-                "type": "internal",
-                "variable": "ResultS3",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788764872534_hxzxr"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788764872534_hxzxr",
+                "type": "internal",
+                "variable": "ResultS3"
               },
               {
-                "type": "internal",
-                "variable": "S1Status",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788764873064_8z2wb"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788764873064_8z2wb",
+                "type": "internal",
+                "variable": "S1Status"
               },
               {
-                "type": "internal",
-                "variable": "S2Status",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788764905255_r5nj2"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788764905255_r5nj2",
+                "type": "internal",
+                "variable": "S2Status"
               },
               {
-                "type": "internal",
-                "variable": "S3Status",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788764905891_rmktn"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788764905891_rmktn",
+                "type": "internal",
+                "variable": "S3Status"
               },
               {
-                "type": "internal",
-                "variable": "Start",
-                "device": "",
-                "addressType": "holding_register",
                 "address": "",
-                "id": "reset_1788765303015_g9x44"
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788765303015_g9x44",
+                "type": "internal",
+                "variable": "Start"
+              },
+              {
+                "address": "",
+                "addressType": "holding_register",
+                "device": "",
+                "id": "reset_1788778231964_2pq3n",
+                "type": "internal",
+                "variable": "ResultHpt"
               }
             ],
             "simulation": {
@@ -6382,7 +6456,11 @@
             "borderColor": "#1E3A4D",
             "borderRadius": 8,
             "borderWidth": 1,
-            "filter": "all",
+            "filter": [
+              "com",
+              "tcp",
+              "internal"
+            ],
             "fontSize": 11,
             "height": 235,
             "lineHeight": 1.45,

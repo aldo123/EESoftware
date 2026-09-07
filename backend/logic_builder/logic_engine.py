@@ -336,27 +336,133 @@ class FlowExecutor:
             self._log(f"Reset error '{name}': {e}", "#EF4444")
             return False
 
+    def _collect_group_internal_variables(self, group_name: str, depth: int = 0) -> set:
+        """Collect Internal Variable names referenced by a Logic Builder Group.
+
+        Logic Builder Groups are saved templates, not a `group_name` column in
+        the Internal Variable table. Resolve the selected template and inspect
+        its node configurations instead.
+        """
+        if depth >= MAX_SUBFLOW_DEPTH:
+            return set()
+
+        wanted = str(group_name or "").strip()
+        if not wanted:
+            return set()
+
+        template = _load_template(wanted)
+
+        # Also accept the Group display name, not only its template id.
+        if not template.get("nodes"):
+            try:
+                filenames = os.listdir(TEMPLATES_DIR)
+            except Exception:
+                filenames = []
+
+            for fname in filenames:
+                if not fname.endswith(".json"):
+                    continue
+                try:
+                    with open(os.path.join(TEMPLATES_DIR, fname), "r", encoding="utf-8") as f:
+                        candidate = json.load(f)
+                    if (
+                        str(candidate.get("id", "")).strip().lower() == wanted.lower()
+                        or str(candidate.get("name", "")).strip().lower() == wanted.lower()
+                    ):
+                        template = candidate
+                        break
+                except Exception:
+                    continue
+
+        names = set()
+
+        def collect(value):
+            if isinstance(value, dict):
+                for key in (
+                    "variable_name",
+                    "variableName",
+                    "internal_variable",
+                    "internalVariable",
+                ):
+                    value_ref = value.get(key)
+                    if isinstance(value_ref, str) and value_ref.strip():
+                        names.add(value_ref.strip())
+
+                for child in value.values():
+                    collect(child)
+            elif isinstance(value, list):
+                for child in value:
+                    collect(child)
+
+        collect(template.get("nodes", []))
+
+        # Include variables referenced by nested Logic Builder Groups.
+        for node in template.get("nodes", []) or []:
+            if node.get("type") != "subflow_call":
+                continue
+            cfg = node.get("config", {}) or {}
+            nested_id = cfg.get("template_id", "")
+            if nested_id:
+                names.update(
+                    self._collect_group_internal_variables(nested_id, depth + 1)
+                )
+
+        return names
+
     def _reset_internal_variables_by_group(self, group_name: str) -> int:
-        """Reset every Internal Variable tagged with the given Group (see the
-        "Group" field in the Internal Variable manager) to its data type's
-        default. Lets a Reset node touch only the variables that belong to one
-        CP/flow instead of the whole app's Internal Variable pool."""
+        """Reset Internal Variables used by the selected Logic Builder Group.
+
+        number -> 0
+        boolean -> false
+        string -> empty
+        """
         from routes.internal_variable import _connect
 
-        defaults = {"number": "0", "boolean": "false", "string": ""}
+        names = self._collect_group_internal_variables(group_name)
+
+        if not names:
+            self._log(
+                f"Reset Group '{group_name}': no Internal Variable reference found in this Logic Builder Group",
+                "#F59E0B",
+            )
+            return 0
+
+        defaults = {
+            "number": "0",
+            "boolean": "false",
+            "string": "",
+        }
+        count = 0
+
         try:
             with _connect() as conn:
-                rows = conn.execute(
-                    "SELECT id, data_type FROM internal_variables WHERE group_name = ? COLLATE NOCASE",
-                    (group_name,),
-                ).fetchall()
-                for row in rows:
+                for name in sorted(names):
+                    row = conn.execute(
+                        "SELECT id, data_type FROM internal_variables "
+                        "WHERE name = ? COLLATE NOCASE",
+                        (name,),
+                    ).fetchone()
+
+                    if row is None:
+                        self._log(
+                            f"Reset Group '{group_name}': Internal Variable '{name}' not found",
+                            "#EF4444",
+                        )
+                        continue
+
+                    data_type = str(row["data_type"] or "string").strip().lower()
+                    default_value = defaults.get(data_type, "")
+
                     conn.execute(
-                        "UPDATE internal_variables SET value=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
-                        (defaults.get(row["data_type"], ""), row["id"]),
+                        "UPDATE internal_variables "
+                        "SET value=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (default_value, row["id"]),
                     )
+                    count += 1
+
                 conn.commit()
-            return len(rows)
+            return count
+
         except Exception as e:
             self._log(f"Reset Group '{group_name}' error: {e}", "#EF4444")
             return 0
@@ -774,7 +880,7 @@ class FlowExecutor:
                     self._log("Reset: no group selected", "#EF4444")
                 else:
                     count = self._reset_internal_variables_by_group(group_name)
-                    self._log(f"Reset: {count} internal variable(s) in group '{group_name}' reset to default", "#3B82F6")
+                    self._log(f"Reset: {count} Internal Variable(s) used by Logic Builder Group '{group_name}' reset to default", "#3B82F6")
             else:
                 targets = cfg.get("targets", []) or []
                 if not targets:

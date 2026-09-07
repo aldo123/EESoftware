@@ -2,25 +2,116 @@
   "cp": "02",
   "nodes": [
     {
-      "id": "n1788774632149_1",
-      "type": "device_trigger",
-      "x": 357.7578125,
-      "y": 60.73046875,
       "config": {
+        "fieldKey": "",
         "sources": [
           {
-            "connection_type": "rs232",
-            "device": "",
-            "device_name": "",
-            "address_type": "holding_register",
             "address": "0",
+            "address_type": "holding_register",
+            "connection_type": "modbus_tcp",
+            "device": "",
+            "device_name": "PLC",
             "trigger_value": "1",
             "variable_name": ""
           }
-        ],
-        "fieldKey": ""
-      }
+        ]
+      },
+      "id": "n1788774632149_1",
+      "type": "device_trigger",
+      "x": 276.7578125,
+      "y": 98.73046875
+    },
+    {
+      "config": {
+        "expose_check": false,
+        "template_id": "1",
+        "template_name": "1"
+      },
+      "id": "n1788776020868_31",
+      "type": "subflow_call",
+      "x": 531.7578125,
+      "y": 257.5078125
+    },
+    {
+      "config": {
+        "duration_seconds": "2"
+      },
+      "id": "n1788776742731_9",
+      "type": "timer",
+      "x": 406.7578125,
+      "y": 404.7578125
+    },
+    {
+      "config": {
+        "group_name": "1",
+        "mode": "group",
+        "targets": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "HPTStep1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "HPTStep2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "HPTStep3"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "Start"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultHpt"
+          }
+        ]
+      },
+      "id": "n1788776776848_14",
+      "type": "reset_node",
+      "x": 357.7578125,
+      "y": 502.7578125
     }
   ],
-  "connections": []
+  "connections": [
+    {
+      "fromId": "n1788776020868_31",
+      "fromPort": "next",
+      "id": "n1788776746837_11",
+      "toId": "n1788776742731_9"
+    },
+    {
+      "fromId": "n1788776742731_9",
+      "fromPort": "next",
+      "id": "n1788776780834_16",
+      "toId": "n1788776776848_14"
+    },
+    {
+      "id": "n1788781240659_28",
+      "fromId": "n1788774632149_1",
+      "fromPort": "next",
+      "toId": "n1788776020868_31"
+    }
+  ]
 }

@@ -1,0 +1,72 @@
+{
+  "id": "scanner",
+  "name": "Scanner",
+  "description": "",
+  "nodes": [
+    {
+      "config": {
+        "address": "0",
+        "address_type": "holding_register",
+        "device_name": "",
+        "field_key": "",
+        "protocol": "tcp",
+        "read_source": "none",
+        "variable_name": ""
+      },
+      "id": "gi",
+      "type": "group_input",
+      "x": 60,
+      "y": 40
+    },
+    {
+      "config": {
+        "address": "0",
+        "address_type": "holding_register",
+        "device_name": "",
+        "port": "true",
+        "protocol": "tcp",
+        "value": "1",
+        "value_field_key": "",
+        "value_source": "static",
+        "variable_name": "",
+        "write_target": "none"
+      },
+      "id": "go",
+      "type": "group_output",
+      "x": 69,
+      "y": 397
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "not_equals",
+            "value": "0",
+            "value2": "",
+            "variable_name": "ProductSNHPT"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "instant"
+      },
+      "id": "n1788780947527_14",
+      "type": "multi_condition_gate",
+      "x": 52.7578125,
+      "y": 161.5078125
+    }
+  ],
+  "connections": [
+    {
+      "fromId": "gi",
+      "fromPort": "next",
+      "id": "n1788780950133_16",
+      "toId": "n1788780947527_14"
+    },
+    {
+      "fromId": "n1788780947527_14",
+      "fromPort": "true",
+      "id": "n1788781001092_18",
+      "toId": "go"
+    }
+  ]
+}
