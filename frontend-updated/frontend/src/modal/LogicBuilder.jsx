@@ -281,14 +281,14 @@ function RoiPicker({ cameraId, roi, onChange, thresholdValue }) {
 // No per-type config blocks yet — add one `{node.type === "..." && (<>...</>)}`
 // block per node type as they get rebuilt (see git history for the old patterns:
 // static/field-key/device-register "source" dropdowns, condition rows, etc.)
-const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDevices = [], tcpDevices = [], rtuDevices = [], templates = [], onCreateTemplate, onOpenGroup }) {
+const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDevices = [], tcpDevices = [], rtuDevices = [], templates = [], onCreateTemplate, onOpenGroup, cpNumber = "" }) {
   const [localConfig, setLocalConfig] = useState({});
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
   const [newGroupName, setNewGroupName] = useState("");
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [variableGroups, setVariableGroups] = useState([]);
-  const { variables: internalVariables, loading: internalVariablesLoading } = useInternalVariables();
+  const { variables: internalVariables, loading: internalVariablesLoading } = useInternalVariables(cpNumber || undefined);
 
   useEffect(() => {
     fetch(`${API}/api/internal-variables/groups`).then(r => r.ok ? r.json() : { groups: [] }).then(d => setVariableGroups(d.groups || [])).catch(() => {});
@@ -1225,7 +1225,7 @@ function ConnectionLines({ connections, nodes, draggingConnection, selectedEdge,
 //   { kind: "cp", cpNumber }             -> GET/POST /api/logic-config/<cp>
 //   { kind: "template", templateId }     -> GET/POST /api/logic-templates/<id>
 // ════════════════════════════════════════════════════════════════
-function FlowEditor({ source, onClose, onBack, commDevices, tcpDevices, rtuDevices, templates, onCreateTemplate, onOpenGroup }) {
+function FlowEditor({ source, cpNumber, onClose, onBack, commDevices, tcpDevices, rtuDevices, templates, onCreateTemplate, onOpenGroup }) {
   const [nodes, setNodesRaw] = useState([]);
   const [connections, setConnectionsRaw] = useState([]);
   const [selected, setSelected] = useState([]); // array of selected node ids (multi-select)
@@ -1701,7 +1701,7 @@ function FlowEditor({ source, onClose, onBack, commDevices, tcpDevices, rtuDevic
           )}
         </div>
         <div className="w-64 shrink-0 border-l border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
-          <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} commDevices={commDevices} tcpDevices={tcpDevices} rtuDevices={rtuDevices} templates={templates} onCreateTemplate={onCreateTemplate} onOpenGroup={onOpenGroup} />
+          <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} commDevices={commDevices} tcpDevices={tcpDevices} rtuDevices={rtuDevices} templates={templates} onCreateTemplate={onCreateTemplate} onOpenGroup={onOpenGroup} cpNumber={cpNumber} />
         </div>
       </div>
       <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
@@ -1781,6 +1781,7 @@ export default function LogicBuilder({ cpNumber, onClose }) {
         <FlowEditor
           key={top ? `template:${top.templateId}` : `cp:${cpNumber}`}
           source={source}
+          cpNumber={cpNumber}
           onClose={onClose}
           onBack={top ? backOneLevel : undefined}
           commDevices={commDevices}

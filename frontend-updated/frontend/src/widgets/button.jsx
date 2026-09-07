@@ -252,6 +252,30 @@ const normalizeResetTargets = (targets) =>
       }))
     : [];
 
+const getInternalVariableResetValue = (variable) => {
+  const dataType = String(
+    variable?.data_type ??
+      variable?.dataType ??
+      variable?.type ??
+      "string"
+  ).trim().toLowerCase();
+
+  if (
+    dataType === "number" ||
+    dataType === "float" ||
+    dataType === "integer" ||
+    dataType === "int"
+  ) {
+    return 0;
+  }
+
+  if (dataType === "boolean" || dataType === "bool") {
+    return false;
+  }
+
+  return "";
+};
+
 const createResetTarget = (type = "internal") => ({
   id: `reset_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
   type,
@@ -1191,6 +1215,7 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
     p.writeTarget === "internal" ? "internal" : "tcp";
 
   const {
+    variables: internalVariables = [],
     getValue: getInternalValue,
     setValue: setInternalValue,
   } = useInternalVariables();
@@ -1313,7 +1338,18 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
               throw new Error("Internal reset target has no variable.");
             }
 
-            await setInternalValue(variableName, 0);
+            const variable = internalVariables.find(
+              (item) => String(item?.name || "").trim() === variableName
+            );
+
+            if (!variable) {
+              throw new Error(
+                `Internal Variable '${variableName}' was not found.`
+              );
+            }
+
+            const resetValue = getInternalVariableResetValue(variable);
+            await setInternalValue(variableName, resetValue);
           } else if (target.type === "tcp") {
             await writeTcpZero(target);
           } else {
@@ -1331,7 +1367,7 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
           `${successCount}/${resetTargets.length} reset. ${errors.join(" | ")}`
         );
       } else {
-        setResetMessage(`${successCount} target(s) reset to 0.`);
+        setResetMessage(`${successCount} target(s) reset.`);
       }
     } finally {
       setResetting(false);
