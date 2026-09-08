@@ -11,12 +11,13 @@ import { useInternalVariables } from "../hooks/useInternalVariables";
 // then give it a default config below and a config panel block in <ConfigPanel>.
 // "check" category nodes get true/false output ports (see NodeCard's `hasTrue`).
 const NODE_TYPES = [
-  { type: "device_trigger", category: "trigger", color: "#3B82F6", icon: "📡", label: "Device Trigger", desc: "Start a flow from RS232 / Modbus TCP / Modbus RTU" },
+  { type: "device_trigger", category: "trigger", color: "#3B82F6", icon: "📡", label: "Device Trigger", desc: "Start a flow from Modbus TCP / Modbus RTU / Internal Variable" },
   { type: "zone_inspect", category: "check", color: "#8B5CF6", icon: "🔍", label: "Zone Inspect", desc: "Inspect a camera ROI (vision engine)" },
   { type: "count_over_time", category: "check", color: "#8B5CF6", icon: "⏱", label: "Count Over Time", desc: "Count detections in a camera ROI over N seconds" },
   { type: "custom_script", category: "check", color: "#F59E0B", icon: "🧩", label: "Custom Script", desc: "Write custom logic for cases no other node covers" },
   { type: "multi_condition_gate", category: "check", color: "#EAB308", icon: "🚦", label: "Multi-Condition Gate", desc: "AND-check several Internal Variables — all must pass to continue" },
   { type: "write_output", category: "action", color: "#22C55E", icon: "✍️", label: "Write Output", desc: "Write a value to a PLC coil/register or an Internal Variable" },
+  { type: "write_sn_list", category: "action", color: "#06B6D4", icon: "📝", label: "Write SN List", desc: "Write Internal Variables to SN List columns" },
   { type: "reset_node", category: "action", color: "#3B82F6", icon: "🔄", label: "Reset", desc: "Reset trigger flags / variables back to idle — selected ones, or all at once" },
   { type: "timer", category: "action", color: "#F97316", icon: "⏲", label: "Timer", desc: "Pause for a fixed number of seconds, then continue" },
   { type: "subflow_call", category: "group", color: "#64748B", icon: "📦", label: "Group", desc: "Bundle several nodes into one, reusable across flows — keeps the main canvas clean" },
@@ -51,7 +52,7 @@ function IconTrash() { return <svg width="12" height="12" viewBox="0 0 24 24" fi
 const DEFAULT_NODE_CONFIG = {
   device_trigger: {
     sources: [
-      { connection_type: "rs232", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", variable_name: "" },
+      { connection_type: "modbus_tcp", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", variable_name: "" },
     ],
     fieldKey: "",
   },
@@ -83,7 +84,12 @@ const DEFAULT_NODE_CONFIG = {
         value_field_key: "",
       },
     ],
+  },  write_sn_list: {
+    mappings: [
+      { variable_name: "", column_key: "" },
+    ],
   },
+
   subflow_call: {
     template_id: "",
     template_name: "",
@@ -281,7 +287,7 @@ function RoiPicker({ cameraId, roi, onChange, thresholdValue }) {
 // No per-type config blocks yet — add one `{node.type === "..." && (<>...</>)}`
 // block per node type as they get rebuilt (see git history for the old patterns:
 // static/field-key/device-register "source" dropdowns, condition rows, etc.)
-const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDevices = [], tcpDevices = [], rtuDevices = [], templates = [], onCreateTemplate, onOpenGroup, cpNumber = "", activeGroupName = "" }) {
+const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevices = [], rtuDevices = [], templates = [], onCreateTemplate, onOpenGroup, cpNumber = "", activeGroupName = "" }) {
   const [localConfig, setLocalConfig] = useState({});
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
@@ -290,6 +296,8 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
   // Groups shown in Reset -> Reset per Group are the actual
   // Logic Builder Groups (logic templates), not Internal Variable groups.
   const { variables: internalVariables, loading: internalVariablesLoading } = useInternalVariables(cpNumber || undefined);
+  const [snListColumns, setSnListColumns] = useState([]);
+  const [snListColumnsLoading, setSnListColumnsLoading] = useState(false);
 
   const logicBuilderGroups = useMemo(() => {
     const names = (templates || [])
@@ -311,6 +319,24 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
     setNewGroupName("");
   }, [node?.id]);
 
+  useEffect(() => {
+    if (!cpNumber || node?.type !== "write_sn_list") {
+      setSnListColumns([]);
+      setSnListColumnsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setSnListColumnsLoading(true);
+    fetch(`${API}/api/snlist/columns?cp=${encodeURIComponent(cpNumber)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(cols => {
+        if (!cancelled) setSnListColumns(Array.isArray(cols) ? cols.filter(c => c?.key && c.key !== "id" && c.key !== "date_time") : []);
+      })
+      .catch(() => { if (!cancelled) setSnListColumns([]); })
+      .finally(() => { if (!cancelled) setSnListColumnsLoading(false); });
+    return () => { cancelled = true; };
+  }, [cpNumber, node?.type]);
+
   if (!node) return (
     <div className="flex flex-col items-center justify-center h-full text-center px-4">
       <span className="text-3xl opacity-20 mb-2">🖱</span>
@@ -328,12 +354,17 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
     setLocalConfig(prev => ({ ...prev, method_params: { ...(prev.method_params || {}), [key]: val } }));
   };
 
-  const EMPTY_TRIGGER_SOURCE = { connection_type: "rs232", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", variable_name: "" };
-  // Flows saved before multi-source support have their single source's fields
-  // flattened directly onto the node config (no "sources" array) — wrap them
-  // into a one-item list here so old and new flows share the same editor UI.
-  const triggerSources = Array.isArray(c.sources) ? c.sources
-    : c.connection_type ? [{ connection_type: c.connection_type, device: c.device, device_name: c.device_name, address_type: c.address_type, address: c.address, trigger_value: c.trigger_value, variable_name: c.variable_name }]
+  const EMPTY_TRIGGER_SOURCE = { connection_type: "modbus_tcp", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", variable_name: "" };
+  // Device Trigger supports Modbus TCP, Modbus RTU and Internal Variable only.
+  // Any legacy unsupported source is converted to a blank Modbus TCP source.
+  const normalizeTriggerSource = (src) => {
+    const allowed = ["modbus_tcp", "modbus_rtu", "internal"];
+    return allowed.includes(src?.connection_type)
+      ? { ...src }
+      : { ...EMPTY_TRIGGER_SOURCE };
+  };
+  const triggerSources = Array.isArray(c.sources) ? c.sources.map(normalizeTriggerSource)
+    : c.connection_type ? [normalizeTriggerSource({ connection_type: c.connection_type, device: c.device, device_name: c.device_name, address_type: c.address_type, address: c.address, trigger_value: c.trigger_value, variable_name: c.variable_name })]
     : [EMPTY_TRIGGER_SOURCE];
   const updateTriggerSource = (idx, patch) => {
     setLocalConfig(prev => {
@@ -418,6 +449,31 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
     setLocalConfig(prev => ({ ...prev, conditions: (prev.conditions || []).filter((_, i) => i !== idx) }));
   };
 
+  const snMappings = Array.isArray(c.mappings) && c.mappings.length
+    ? c.mappings
+    : [{ variable_name: c.variable_name || "", column_key: c.column_key || "" }];
+  const updateSnMapping = (idx, patch) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.mappings) && prev.mappings.length
+        ? prev.mappings
+        : [{ variable_name: prev.variable_name || "", column_key: prev.column_key || "" }];
+      return { ...prev, mappings: base.map((m, i) => i === idx ? { ...m, ...patch } : m) };
+    });
+  };
+  const addSnMapping = () => {
+    setLocalConfig(prev => ({
+      ...prev,
+      mappings: [...(Array.isArray(prev.mappings) ? prev.mappings : []), { variable_name: "", column_key: "" }],
+    }));
+  };
+  const removeSnMapping = (idx) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.mappings) ? prev.mappings : [];
+      const next = base.filter((_, i) => i !== idx);
+      return { ...prev, mappings: next.length ? next : [{ variable_name: "", column_key: "" }] };
+    });
+  };
+
   const applyChanges = () => {
     onChange({ ...node, config: localConfig });
     if (onApply) onApply();
@@ -474,19 +530,12 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
               </div>
 
               <Field label="Connection Type">
-                <Select value={src.connection_type || "rs232"} onChange={v => updateTriggerSource(idx, { connection_type: v })} options={[
-                  { value: "rs232", label: "RS232 (Scanner)" },
+                <Select value={src.connection_type || "modbus_tcp"} onChange={v => updateTriggerSource(idx, { connection_type: v })} options={[
                   { value: "modbus_tcp", label: "Modbus TCP" },
                   { value: "modbus_rtu", label: "Modbus RTU (RS485)" },
                   { value: "internal", label: "Internal Variable" },
                 ]} />
               </Field>
-
-              {(src.connection_type || "rs232") === "rs232" && (
-                <Field label="Scanner Device">
-                  <Select value={src.device} onChange={v => updateTriggerSource(idx, { device: v })} options={[{ value: "", label: "Select device…" }, ...commDevices.map(d => ({ value: d.name, label: `${d.name} (${d.port || ""})` }))]} />
-                </Field>
-              )}
 
               {(src.connection_type === "modbus_tcp" || src.connection_type === "modbus_rtu") && (<>
                 <Field label="Device Name">
@@ -533,8 +582,6 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
           <p className="text-[var(--text-muted)] text-[9px] mt-1">
             Semua source di atas OR — <b>salah satu</b> aja yang mencapai Trigger Value-nya, flow ini langsung jalan (source lain diabaikan buat siklus itu). Berguna kalau lo mau satu flow bisa dipicu dari beberapa device/register/variable berbeda tanpa bikin banyak node Device Trigger.
           </p>
-
-          <Field label="Store value in field key"><Input value={c.fieldKey} onChange={v => setLocal("fieldKey", v)} placeholder="e.g. product_sn" /></Field>
         </>)}
 
         {node.type === "zone_inspect" && (<>
@@ -887,6 +934,42 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, commDev
           <p className="text-[var(--text-muted)] text-[9px] mt-1">
             Semua "Write" di atas dijalankan sekaligus tiap kali node ini fire — cocok buat nulis ke beberapa Internal Variable/PLC bersamaan (mis. set 3 internal variable buat mulai 3 step test sekaligus). Sambungkan dari port <b style={{ color: "#22C55E" }}>✓ True</b> node Check/Gate (mis. Multi-Condition Gate) kalau mau nulis cuma pas kondisinya lolos. Coil nerima 1/0/true/false, Holding Register nerima angka 0-65535.
           </p>
+        </>)}
+
+        {node.type === "write_sn_list" && (<>
+          <div className="rounded-lg border border-[#06B6D4]/30 bg-[#06B6D4]/5 px-2.5 py-2 text-[9px] text-[var(--text-muted)]">
+            <b style={{ color: "#06B6D4" }}>CP{String(cpNumber || "").padStart(2, "0")}</b> — menulis ke SN List DB CP ini. Date/Time otomatis saat node dieksekusi.
+          </div>
+
+          {snMappings.map((m, idx) => (
+            <div key={idx} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-soft)] p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Mapping {idx + 1}</span>
+                {snMappings.length > 1 && (
+                  <button type="button" onClick={() => removeSnMapping(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove mapping"><IconTrash /></button>
+                )}
+              </div>
+
+              <Field label="Internal Variable">
+                <select value={m.variable_name || ""} onChange={e => updateSnMapping(idx, { variable_name: e.target.value })} className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#06B6D4]/60">
+                  <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
+                  {internalVariables.map(v => <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>)}
+                </select>
+              </Field>
+
+              <Field label="SN List Column">
+                <select value={m.column_key || ""} onChange={e => updateSnMapping(idx, { column_key: e.target.value })} className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#06B6D4]/60">
+                  <option value="">{snListColumnsLoading ? "Loading columns…" : "Select column…"}</option>
+                  {snListColumns.map(col => <option key={col.key} value={col.key}>{col.label || col.key} ({col.key})</option>)}
+                </select>
+              </Field>
+            </div>
+          ))}
+
+          <button type="button" onClick={addSnMapping} className="w-full h-8 rounded-lg border border-[#06B6D4]/60 text-[#06B6D4] hover:bg-[#06B6D4]/10 font-bold text-[10px] transition-colors">
+            + Add Variable → Column
+          </button>
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">Semua mapping ditulis sebagai <b>1 row</b>. CP otomatis mengikuti flow. <b>date_time</b> dibuat otomatis oleh Logic Engine saat node dieksekusi.</p>
         </>)}
 
         {node.type === "timer" && (<>
@@ -1253,7 +1336,7 @@ function ConnectionLines({ connections, nodes, draggingConnection, selectedEdge,
 //   { kind: "cp", cpNumber }             -> GET/POST /api/logic-config/<cp>
 //   { kind: "template", templateId }     -> GET/POST /api/logic-templates/<id>
 // ════════════════════════════════════════════════════════════════
-function FlowEditor({ source, cpNumber, onClose, onBack, commDevices, tcpDevices, rtuDevices, templates, onCreateTemplate, onOpenGroup }) {
+function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices, templates, onCreateTemplate, onOpenGroup }) {
   const [nodes, setNodesRaw] = useState([]);
   const [connections, setConnectionsRaw] = useState([]);
   const [selected, setSelected] = useState([]); // array of selected node ids (multi-select)
@@ -1729,7 +1812,7 @@ function FlowEditor({ source, cpNumber, onClose, onBack, commDevices, tcpDevices
           )}
         </div>
         <div className="w-64 shrink-0 border-l border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
-          <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} commDevices={commDevices} tcpDevices={tcpDevices} rtuDevices={rtuDevices} templates={templates} onCreateTemplate={onCreateTemplate} onOpenGroup={onOpenGroup} cpNumber={cpNumber} activeGroupName={source.kind === "template" ? (templateMeta.name || source.templateName || source.templateId || "") : ""} />
+          <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} tcpDevices={tcpDevices} rtuDevices={rtuDevices} templates={templates} onCreateTemplate={onCreateTemplate} onOpenGroup={onOpenGroup} cpNumber={cpNumber} activeGroupName={source.kind === "template" ? (templateMeta.name || source.templateName || source.templateId || "") : ""} />
         </div>
       </div>
       <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
@@ -1748,7 +1831,6 @@ function FlowEditor({ source, cpNumber, onClose, onBack, commDevices, tcpDevices
 // ════════════════════════════════════════════════════════════════
 export default function LogicBuilder({ cpNumber, onClose }) {
   const [groupStack, setGroupStack] = useState([]); // [{ templateId, templateName }, ...]
-  const [commDevices, setCommDevices] = useState([]); // RS232
   const [tcpDevices, setTcpDevices] = useState([]);    // Modbus TCP
   const [rtuDevices, setRtuDevices] = useState([]);    // Modbus RTU
   const [templates, setTemplates] = useState([]);      // Group templates (id/name/node_count)
@@ -1758,7 +1840,6 @@ export default function LogicBuilder({ cpNumber, onClose }) {
   }, []);
 
   useEffect(() => {
-    fetch(`${API}/api/rs232/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setCommDevices(d.devices || [])).catch(() => {});
     fetch(`${API}/api/tcp/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setTcpDevices(d.devices || [])).catch(() => {});
     fetch(`${API}/api/rtu/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setRtuDevices(d.devices || [])).catch(() => {});
     refreshTemplates();
@@ -1812,7 +1893,6 @@ export default function LogicBuilder({ cpNumber, onClose }) {
           cpNumber={cpNumber}
           onClose={onClose}
           onBack={top ? backOneLevel : undefined}
-          commDevices={commDevices}
           tcpDevices={tcpDevices}
           rtuDevices={rtuDevices}
           templates={templates}
