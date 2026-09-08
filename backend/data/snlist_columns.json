@@ -23,18 +23,28 @@
             "width": 140
         },
         {
-            "key": "step",
-            "label": "Step1",
+            "key": "sn",
+            "label": "Chassis SN",
+            "width": 140
+        },
+        {
+            "key": "carrier",
+            "label": "Carrier SN",
+            "width": 140
+        },
+        {
+            "key": "step1",
+            "label": "Step 1",
             "width": 140
         },
         {
             "key": "step2",
-            "label": "Step2",
+            "label": "Step 2",
             "width": 140
         },
         {
             "key": "step3",
-            "label": "Step3",
+            "label": "Step 3",
             "width": 140
         },
         {

@@ -18,19 +18,19 @@
       },
       "id": "n1788774632149_1",
       "type": "device_trigger",
-      "x": 276.7578125,
-      "y": 98.73046875
+      "x": 720.7578125,
+      "y": 52.73046875
     },
     {
       "config": {
-        "expose_check": false,
+        "expose_check": true,
         "template_id": "1",
         "template_name": "1"
       },
       "id": "n1788776020868_31",
       "type": "subflow_call",
-      "x": 531.7578125,
-      "y": 257.5078125
+      "x": 716.7578125,
+      "y": 167.5078125
     },
     {
       "config": {
@@ -38,8 +38,8 @@
       },
       "id": "n1788776742731_9",
       "type": "timer",
-      "x": 406.7578125,
-      "y": 404.7578125
+      "x": 337.7578125,
+      "y": 465.7578125
     },
     {
       "config": {
@@ -90,17 +90,131 @@
       },
       "id": "n1788776776848_14",
       "type": "reset_node",
-      "x": 357.7578125,
-      "y": 502.7578125
+      "x": 287.7578125,
+      "y": 574.7578125
+    },
+    {
+      "config": {
+        "mappings": [
+          {
+            "column_key": "sn",
+            "variable_name": "ProductSNHPT"
+          },
+          {
+            "column_key": "step1",
+            "variable_name": "ResultS1"
+          },
+          {
+            "column_key": "step2",
+            "variable_name": "ResultS2"
+          },
+          {
+            "column_key": "step3",
+            "variable_name": "ResultS3"
+          },
+          {
+            "column_key": "carrier",
+            "variable_name": "CarrierSN"
+          },
+          {
+            "column_key": "result",
+            "variable_name": "ResultHPT"
+          }
+        ]
+      },
+      "id": "n1788849637610_2",
+      "type": "write_sn_list",
+      "x": 759.7578125,
+      "y": 538.1328125
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "OK",
+            "value_field_key": "",
+            "value_source": "static",
+            "variable_name": "ResultHPT"
+          }
+        ]
+      },
+      "id": "n1788853301890_31",
+      "type": "write_output",
+      "x": 592.7578125,
+      "y": 351.1328125
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "NG",
+            "value_field_key": "",
+            "value_source": "static",
+            "variable_name": "ResultHPT"
+          }
+        ]
+      },
+      "id": "n1788853306100_32",
+      "type": "write_output",
+      "x": 817.7578125,
+      "y": 329.1328125
+    },
+    {
+      "config": {
+        "group_name": "1",
+        "mode": "selected",
+        "targets": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultHPT"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultS1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultS2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultS3"
+          }
+        ]
+      },
+      "id": "n1788853380847_40",
+      "type": "reset_node",
+      "x": 487.7578125,
+      "y": 579.7578125
     }
   ],
   "connections": [
-    {
-      "fromId": "n1788776020868_31",
-      "fromPort": "next",
-      "id": "n1788776746837_11",
-      "toId": "n1788776742731_9"
-    },
     {
       "fromId": "n1788776742731_9",
       "fromPort": "next",
@@ -108,10 +222,46 @@
       "toId": "n1788776776848_14"
     },
     {
-      "id": "n1788781240659_28",
       "fromId": "n1788774632149_1",
       "fromPort": "next",
+      "id": "n1788781240659_28",
       "toId": "n1788776020868_31"
+    },
+    {
+      "fromId": "n1788849637610_2",
+      "fromPort": "next",
+      "id": "n1788850636407_3",
+      "toId": "n1788776742731_9"
+    },
+    {
+      "fromId": "n1788776020868_31",
+      "fromPort": "false",
+      "id": "n1788853310465_34",
+      "toId": "n1788853306100_32"
+    },
+    {
+      "fromId": "n1788853306100_32",
+      "fromPort": "next",
+      "id": "n1788853312926_35",
+      "toId": "n1788849637610_2"
+    },
+    {
+      "fromId": "n1788776020868_31",
+      "fromPort": "true",
+      "id": "n1788853315285_37",
+      "toId": "n1788853301890_31"
+    },
+    {
+      "fromId": "n1788853301890_31",
+      "fromPort": "next",
+      "id": "n1788853323309_39",
+      "toId": "n1788849637610_2"
+    },
+    {
+      "fromId": "n1788776742731_9",
+      "fromPort": "next",
+      "id": "n1788853384870_41",
+      "toId": "n1788853380847_40"
     }
   ]
 }

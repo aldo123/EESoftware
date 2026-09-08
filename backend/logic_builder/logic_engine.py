@@ -559,10 +559,7 @@ class FlowExecutor:
             if node and node["type"] == "device_trigger":
                 cfg = node.get("config", {})
                 if node_matches(cfg):
-                    # Device cocok → isi field dan lanjut
-                    field_key = cfg.get("fieldKey", "")
-                    if field_key:
-                        self._set_field(field_key, self.scan_value)
+                    # Device cocok → lanjut tanpa fieldKey output.
 
                     state["waiting_scan"] = None
 
@@ -586,13 +583,9 @@ class FlowExecutor:
                     break
 
         if not start_node:
-            self._log(f"No device_trigger node found for device '{self.trigger_device}'", "#EF4444")
             return self.commands
-
-        # Isi field untuk device_trigger pertama
-        field_key = start_node.get("config", {}).get("fieldKey", "")
-        if field_key:
-            self._set_field(field_key, self.scan_value)
+            return self.commands
+        # Device Trigger no longer has a fieldKey output.
 
         # Lanjutkan dari node berikutnya
         self._follow(self._node_outputs(start_node["id"]), "next", db)
@@ -808,6 +801,85 @@ class FlowExecutor:
                 all_ok = check_once(log_each=True)
 
             self._follow(outputs, "true" if all_ok else "false", db)
+            return
+
+        # ─── WRITE SN LIST: write one or more Internal Variables into one
+        #     SN List row for this CP. date_time is generated here at execution.
+        if ntype == "write_sn_list":
+            cfg = node.get("config", {}) or {}
+            mappings = cfg.get("mappings")
+            if not isinstance(mappings, list):
+                mappings = []
+            mappings = [m for m in mappings if isinstance(m, dict)]
+
+            # Backward compatibility for a single-mapping config.
+            if not mappings and (cfg.get("variable_name") or cfg.get("column_key")):
+                mappings = [{
+                    "variable_name": cfg.get("variable_name", ""),
+                    "column_key": cfg.get("column_key", ""),
+                }]
+
+            mappings = [
+                m for m in mappings
+                if str(m.get("variable_name", "")).strip()
+                and str(m.get("column_key", "")).strip()
+            ]
+            if not mappings:
+                self._log("Write SN List: no valid Variable → Column mapping configured", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
+
+            try:
+                from routes.snlist import get_snlist_conn, ensure_table_exists, get_columns_from_table, get_table_name
+                from datetime import datetime
+
+                ensure_table_exists(self.cp)
+                existing_cols = set(get_columns_from_table(self.cp))
+                row = {}
+                seen = set()
+
+                for m in mappings:
+                    variable_name = str(m.get("variable_name", "")).strip()
+                    column_key = str(m.get("column_key", "")).strip()
+
+                    if column_key in ("id", "date_time"):
+                        raise ValueError(f"protected column '{column_key}' cannot be written")
+                    if column_key not in existing_cols:
+                        raise ValueError(f"column '{column_key}' does not exist in CP{self.cp}")
+                    if column_key in seen:
+                        raise ValueError(f"duplicate target column '{column_key}'")
+
+                    value = self._read_internal_variable(variable_name)
+                    if value is None:
+                        raise ValueError(f"Internal Variable '{variable_name}' not found")
+
+                    seen.add(column_key)
+                    row[column_key] = str(value)
+
+                # Always create the timestamp at the exact moment this node writes.
+                row["date_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                # Put date_time first; remaining fields retain the node mapping order.
+                insert_cols = ["date_time"] + [c for c in row.keys() if c != "date_time"]
+                table = get_table_name(self.cp)
+                qtable = '"' + str(table).replace('"', '""') + '"'
+                qcols = ", ".join('"' + c.replace('"', '""') + '"' for c in insert_cols)
+                placeholders = ", ".join("?" for _ in insert_cols)
+
+                with get_snlist_conn() as conn:
+                    cur = conn.execute(
+                        f"INSERT INTO {qtable} ({qcols}) VALUES ({placeholders})",
+                        [row[c] for c in insert_cols],
+                    )
+                    conn.commit()
+                    row_id = cur.lastrowid
+
+                details = ", ".join(f"{m.get('variable_name')} → {m.get('column_key')}" for m in mappings)
+                self._log(f"Write SN List CP{self.cp}: row {row_id} written ({details})", "#06B6D4")
+            except Exception as e:
+                self._log(f"Write SN List error CP{self.cp}: {e}", "#EF4444")
+
+            self._follow(outputs, "next", db)
             return
 
         # ─── WRITE OUTPUT: write resolved values to one or several targets — PLC

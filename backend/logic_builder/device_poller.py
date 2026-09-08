@@ -21,7 +21,7 @@ from flask import Blueprint, request, jsonify
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 FLOWS_DIR = os.path.join(BASE_DIR, "data", "logic_flows")
 
-POLL_INTERVAL = 0.3  # seconds
+POLL_INTERVAL = 0.05  # seconds
 
 _buffers = {}       # trigger_key -> deque of fired values
 _buffers_lock = threading.Lock()

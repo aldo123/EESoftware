@@ -132,8 +132,8 @@
       },
       "id": "n1788775856364_17",
       "type": "multi_condition_gate",
-      "x": 734.7578125,
-      "y": 500.5078125
+      "x": 732.7578125,
+      "y": 512.5078125
     },
     {
       "config": {
@@ -158,7 +158,7 @@
             "value": "3",
             "value_field_key": "",
             "value_source": "static",
-            "variable_name": "ResultHpt"
+            "variable_name": "StatusHPT"
           }
         ]
       },
@@ -177,13 +177,19 @@
             "variable_name": "Start"
           },
           {
-            "variable_name": "ProductSNHPT",
             "operator": "not_equals",
             "value": "",
-            "value2": ""
+            "value2": "",
+            "variable_name": "ProductSNHPT"
+          },
+          {
+            "operator": "not_equals",
+            "value": "",
+            "value2": "",
+            "variable_name": "CarrierSN"
           }
         ],
-        "timeout_seconds": "10",
+        "timeout_seconds": "30",
         "wait_mode": "poll"
       },
       "id": "n1788775933728_26",
@@ -196,18 +202,54 @@
         "address": "0",
         "address_type": "holding_register",
         "device_name": "",
-        "port": "next",
+        "port": "true",
         "protocol": "tcp",
         "value": "2",
         "value_field_key": "",
         "value_source": "static",
-        "variable_name": "ResultHpt",
+        "variable_name": "StatusHPT",
         "write_target": "internal"
       },
       "id": "n1788776960277_20",
       "type": "group_output",
-      "x": 740.7578125,
-      "y": 603.7578125
+      "x": 388.7578125,
+      "y": 681.7578125
+    },
+    {
+      "config": {
+        "address": "0",
+        "address_type": "holding_register",
+        "device_name": "",
+        "port": "false",
+        "protocol": "tcp",
+        "value": "1",
+        "value_field_key": "",
+        "value_source": "static",
+        "variable_name": "StatusHPT",
+        "write_target": "internal"
+      },
+      "id": "n1788852331520_20",
+      "type": "group_output",
+      "x": 934.7578125,
+      "y": 639.7578125
+    },
+    {
+      "config": {
+        "duration_seconds": "0.3"
+      },
+      "id": "n1788871782587_4",
+      "type": "timer",
+      "x": 363.7578125,
+      "y": 576.1328125
+    },
+    {
+      "config": {
+        "duration_seconds": "0.3"
+      },
+      "id": "n1788871819621_10",
+      "type": "timer",
+      "x": 983.7578125,
+      "y": 554.1328125
     }
   ],
   "connections": [
@@ -254,16 +296,46 @@
       "toId": "n1788775840794_14"
     },
     {
+      "fromId": "gi",
+      "fromPort": "next",
+      "id": "n1788781731965_1",
+      "toId": "n1788775897074_21"
+    },
+    {
       "fromId": "n1788775856364_17",
       "fromPort": "true",
-      "id": "n1788779710050_4",
+      "id": "n1788871791433_6",
+      "toId": "n1788871782587_4"
+    },
+    {
+      "fromId": "n1788871782587_4",
+      "fromPort": "next",
+      "id": "n1788871816833_9",
       "toId": "n1788776960277_20"
     },
     {
-      "id": "n1788781731965_1",
-      "fromId": "gi",
+      "fromId": "n1788871819621_10",
       "fromPort": "next",
-      "toId": "n1788775897074_21"
+      "id": "n1788871839319_12",
+      "toId": "n1788852331520_20"
+    },
+    {
+      "fromId": "n1788775856364_17",
+      "fromPort": "false",
+      "id": "n1788871844441_14",
+      "toId": "n1788871819621_10"
+    },
+    {
+      "fromId": "n1788775817917_12",
+      "fromPort": "false",
+      "id": "n1788871847624_15",
+      "toId": "n1788871819621_10"
+    },
+    {
+      "fromId": "n1788775766396_8",
+      "fromPort": "false",
+      "id": "n1788871855498_17",
+      "toId": "n1788871819621_10"
     }
   ]
 }

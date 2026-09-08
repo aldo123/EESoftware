@@ -169,10 +169,40 @@ def get_snlist_columns():
     db_cols = get_columns_from_table(cp)
     config  = load_column_config(cp)
 
+    # IMPORTANT: the UI order is defined by snlist_columns.json, not by
+    # SQLite PRAGMA table_info() order.  The Column Manager sends the exact
+    # order chosen by the user, so always return that order here.
+    #
+    # 1. Start with configured columns in their saved order.
+    # 2. Keep only columns that still exist in the actual DB table.
+    # 3. Append any DB columns that are not yet in the config (for example a
+    #    newly-created/legacy column). This prevents a refresh from shuffling
+    #    existing columns.
+    db_set = set(db_cols)
     result = []
-    for c in db_cols:
-        saved = next((item for item in config if item["key"] == c), None)
-        result.append(saved if saved else {"key": c, "label": c, "width": 150})
+    configured_keys = set()
+
+    for item in config:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key", "")).strip()
+        if not key or key == "id" or key not in db_set or key in configured_keys:
+            continue
+        result.append({
+            "key": key,
+            "label": item.get("label") or key,
+            "width": item.get("width", 150),
+        })
+        configured_keys.add(key)
+
+    # Preserve DB order only for genuinely new columns that have no saved
+    # position yet. Once saved, their position is controlled by config.
+    for key in db_cols:
+        if key == "id" or key in configured_keys:
+            continue
+        result.append({"key": key, "label": key, "width": 150})
+        configured_keys.add(key)
+
     return jsonify(result)
 
 
