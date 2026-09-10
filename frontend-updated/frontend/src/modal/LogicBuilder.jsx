@@ -81,7 +81,11 @@ const DEFAULT_NODE_CONFIG = {
         variable_name: "",
         value_source: "static",
         value: "1",
-        value_field_key: "",
+        value_variable_name: "",
+        value_protocol: "tcp",
+        value_device_name: "",
+        value_address_type: "holding_register",
+        value_address: "0",
       },
     ],
   },  write_sn_list: {
@@ -385,12 +389,40 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
     });
   };
 
-  const EMPTY_WRITE_TARGET = { target: "device", protocol: "tcp", device_name: "", address_type: "holding_register", address: "0", variable_name: "", value_source: "static", value: "1", value_field_key: "" };
+  const EMPTY_WRITE_TARGET = {
+    target: "device",
+    protocol: "tcp",
+    device_name: "",
+    address_type: "holding_register",
+    address: "0",
+    variable_name: "",
+    value_source: "static",
+    value: "1",
+    value_variable_name: "",
+    value_protocol: "tcp",
+    value_device_name: "",
+    value_address_type: "holding_register",
+    value_address: "0",
+  };
   // Flows saved before multi-write support have their single write's fields
   // flattened directly onto the node config (no "writes" array) — wrap them
   // into a one-item list here so old and new flows share the same editor UI.
   const writeTargets = Array.isArray(c.writes) ? c.writes
-    : c.target ? [{ target: c.target, protocol: c.protocol, device_name: c.device_name, address_type: c.address_type, address: c.address, variable_name: c.variable_name, value_source: c.value_source, value: c.value, value_field_key: c.value_field_key }]
+    : c.target ? [{
+      target: c.target,
+      protocol: c.protocol,
+      device_name: c.device_name,
+      address_type: c.address_type,
+      address: c.address,
+      variable_name: c.variable_name,
+      value_source: c.value_source,
+      value: c.value,
+      value_variable_name: c.value_variable_name || "",
+      value_protocol: c.value_protocol || "tcp",
+      value_device_name: c.value_device_name || "",
+      value_address_type: c.value_address_type || "holding_register",
+      value_address: c.value_address ?? "0",
+    }]
     : [EMPTY_WRITE_TARGET];
   const updateWriteTarget = (idx, patch) => {
     setLocalConfig(prev => {
@@ -909,17 +941,63 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
               )}
 
               <Field label="Value Source">
-                <Select value={w.value_source || "static"} onChange={v => updateWriteTarget(idx, { value_source: v })} options={[
-                  { value: "static", label: "Fixed Value" },
-                  { value: "field_key", label: "From Field Key" },
-                ]} />
+                <Select
+                  value={w.value_source || "static"}
+                  onChange={v => updateWriteTarget(idx, { value_source: v })}
+                  options={[
+                    { value: "static", label: "Fixed Value" },
+                    { value: "internal_variable", label: "Internal Variable" },
+                    { value: "tcpip", label: "TCP/IP" },
+                  ]}
+                />
               </Field>
 
-              {(w.value_source || "static") === "static" ? (
-                <Field label="Value"><Input value={w.value} onChange={v => updateWriteTarget(idx, { value: v })} placeholder="e.g. 1" /></Field>
-              ) : (
-                <Field label="Field Key"><Input value={w.value_field_key} onChange={v => updateWriteTarget(idx, { value_field_key: v })} placeholder="e.g. zone1_value" /></Field>
+              {(w.value_source || "static") === "static" && (
+                <Field label="Value">
+                  <Input value={w.value ?? ""} onChange={v => updateWriteTarget(idx, { value: v })} placeholder="e.g. 1" />
+                </Field>
               )}
+
+              {(w.value_source || "static") === "internal_variable" && (
+                <Field label="Source Internal Variable">
+                  <select
+                    value={w.value_variable_name || ""}
+                    onChange={e => updateWriteTarget(idx, { value_variable_name: e.target.value })}
+                    className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60"
+                  >
+                    <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
+                    {internalVariables.map(v => (
+                      <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
+              {(w.value_source || "static") === "tcpip" && (<>
+                <Field label="TCP/IP Device">
+                  <Select
+                    value={w.value_device_name || ""}
+                    onChange={v => updateWriteTarget(idx, { value_device_name: v })}
+                    options={[
+                      { value: "", label: "Select TCP/IP device…" },
+                      ...((tcpDevices || []).map(d => ({ value: d.name, label: d.name }))),
+                    ]}
+                  />
+                </Field>
+                <Field label="Address Type">
+                  <Select
+                    value={w.value_address_type || "holding_register"}
+                    onChange={v => updateWriteTarget(idx, { value_address_type: v })}
+                    options={[
+                      { value: "coil", label: "Coil" },
+                      { value: "holding_register", label: "Holding Register" },
+                    ]}
+                  />
+                </Field>
+                <Field label="Address">
+                  <Input value={w.value_address ?? "0"} onChange={v => updateWriteTarget(idx, { value_address: v })} placeholder="0" />
+                </Field>
+              </>)}
             </div>
           ))}
 
