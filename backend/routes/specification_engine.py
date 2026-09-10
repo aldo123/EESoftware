@@ -256,6 +256,49 @@ def _get_internal_value(name):
     raise ValueError(f"Internal variable '{name}' not found")
 
 
+def _get_dynamic_number(row, variable_key, legacy_key, field_name, required=False):
+    variable_name = str(row.get(variable_key) or "").strip()
+
+    if variable_name:
+        raw = _get_internal_value(variable_name)
+    else:
+        raw = row.get(legacy_key)
+
+    if raw is None or raw == "":
+        if required:
+            raise ValueError(f"{field_name} is required")
+        return None
+
+    try:
+        return float(_to_number(raw))
+    except Exception as exc:
+        raise ValueError(
+            f"{field_name} Internal Variable '{variable_name}' is not numeric"
+        ) from exc
+
+
+def _resolve_spec_settings(row):
+    lower = _get_dynamic_number(
+        row, "lower_limit_variable", "lower_limit", "Lower Limit", False
+    )
+    upper = _get_dynamic_number(
+        row, "upper_limit_variable", "upper_limit", "Upper Limit", False
+    )
+    start = _get_dynamic_number(
+        row, "time_start_variable", "time_start", "Time Start", True
+    )
+    stop = _get_dynamic_number(
+        row, "time_stop_variable", "time_stop", "Time Stop", True
+    )
+
+    if start < 0 or stop < 0:
+        raise ValueError("Time values cannot be negative")
+    if stop < start:
+        raise ValueError("Time Stop must be >= Time Start")
+
+    return lower, upper, start, stop
+
+
 def _read_tcp(device_name, register_type, source):
     if not device_name:
         raise ValueError("TCP Device Source is required")
@@ -689,8 +732,7 @@ class SpecificationRuntime:
 
         result["status"] = "running"
 
-        start = float(row.get("time_start") or 0)
-        stop = float(row.get("time_stop") or 0)
+        lower_limit, upper_limit, start, stop = _resolve_spec_settings(row)
 
         # trigger_time is supplied by the trigger group. Do NOT reset it here.
         # This keeps Time Start/Stop synchronized across rows sharing a trigger.
@@ -740,8 +782,8 @@ class SpecificationRuntime:
 
         passed = _limit_result(
             final_value,
-            row.get("lower_limit"),
-            row.get("upper_limit"),
+            lower_limit,
+            upper_limit,
         )
 
         result["result"] = final_value
@@ -1252,14 +1294,7 @@ def test_source():
         }), 400
 
     try:
-        start = float(row.get("time_start") or 0)
-        stop = float(row.get("time_stop") or 0)
-
-        if start < 0 or stop < 0:
-            raise ValueError("Time values cannot be negative")
-
-        if stop < start:
-            raise ValueError("Time Stop must be >= Time Start")
+        lower_limit, upper_limit, start, stop = _resolve_spec_settings(row)
 
         method = str(row.get("method") or "Avg").strip()
         if method not in {"Avg", "Min", "Max"}:
@@ -1332,4 +1367,4 @@ def runtime_devices():
         return jsonify({
             "success": False,
             "message": str(exc),
-        }), 300
+        }), 50

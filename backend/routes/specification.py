@@ -144,6 +144,26 @@ def init_specification_db():
             """
         )
 
+        # Internal Variable references for dynamic limits and timing.
+        parameter_columns = {
+            row["name"]
+            for row in conn.execute(
+                "PRAGMA table_info(specification_parameters)"
+            ).fetchall()
+        }
+
+        dynamic_columns = {
+            "lower_limit_variable": "TEXT NOT NULL DEFAULT ''",
+            "upper_limit_variable": "TEXT NOT NULL DEFAULT ''",
+            "time_start_variable": "TEXT NOT NULL DEFAULT ''",
+            "time_stop_variable": "TEXT NOT NULL DEFAULT ''",
+        }
+        for column_name, column_def in dynamic_columns.items():
+            if column_name not in parameter_columns:
+                conn.execute(
+                    f"ALTER TABLE specification_parameters ADD COLUMN {column_name} {column_def}"
+                )
+
         # Result output destinations. These are intentionally separate for
         # numeric Value Result and PASS/FAIL Status Result.
         result_columns = {
@@ -155,12 +175,6 @@ def init_specification_db():
             "status_result_device": "TEXT NOT NULL DEFAULT ''",
             "status_result_register_type": "TEXT NOT NULL DEFAULT 'Holding'",
             "status_result": "TEXT NOT NULL DEFAULT ''",
-        }
-        parameter_columns = {
-            row["name"]
-            for row in conn.execute(
-                "PRAGMA table_info(specification_parameters)"
-            ).fetchall()
         }
         for column_name, column_def in result_columns.items():
             if column_name not in parameter_columns:
@@ -234,12 +248,16 @@ def _get_spec(conn, spec_id):
             parameter_test,
             lower_limit,
             upper_limit,
+            lower_limit_variable,
+            upper_limit_variable,
             trigger_start,
             trigger_device,
             trigger_register_type,
             trigger_source,
             time_start,
             time_stop,
+            time_start_variable,
+            time_stop_variable,
             method,
             data_source,
             source_device,
@@ -581,6 +599,30 @@ def update_specification(specification_id):
                     True,
                 )
 
+                lower_limit_variable = str(
+                    row.get("lower_limit_variable") or ""
+                ).strip()
+                upper_limit_variable = str(
+                    row.get("upper_limit_variable") or ""
+                ).strip()
+                time_start_variable = str(
+                    row.get("time_start_variable") or ""
+                ).strip()
+                time_stop_variable = str(
+                    row.get("time_stop_variable") or ""
+                ).strip()
+
+                for field_name, variable_name in (
+                    ("Lower Limit", lower_limit_variable),
+                    ("Upper Limit", upper_limit_variable),
+                    ("Time Start", time_start_variable),
+                    ("Time Stop", time_stop_variable),
+                ):
+                    if not variable_name:
+                        raise ValueError(
+                            f"{field_name} Internal Variable is required"
+                        )
+
                 time_start = _number(
                     row.get("time_start"),
                     "Time Start",
@@ -610,12 +652,16 @@ def update_specification(specification_id):
                         parameter_test,
                         lower_limit,
                         upper_limit,
+                        lower_limit_variable,
+                        upper_limit_variable,
                         trigger_start,
                         trigger_device,
                         trigger_register_type,
                         trigger_source,
                         time_start,
                         time_stop,
+                        time_start_variable,
+                        time_stop_variable,
                         method,
                         data_source,
                         source_device,
@@ -632,9 +678,10 @@ def update_specification(specification_id):
                     )
                     VALUES (
                         ?, ?, ?, ?,
+                        ?, ?,
                         ?, ?, ?, ?,
-                        ?, ?, ?,
                         ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?,
                         ?, ?, ?, ?,
                         ?, ?, ?, ?
                     )
@@ -644,12 +691,16 @@ def update_specification(specification_id):
                         parameter_test,
                         lower_limit,
                         upper_limit,
+                        lower_limit_variable,
+                        upper_limit_variable,
                         trigger_start,
                         trigger_device,
                         trigger_register_type,
                         trigger_source,
                         time_start,
                         time_stop,
+                        time_start_variable,
+                        time_stop_variable,
                         method,
                         data_source,
                         source_device,
