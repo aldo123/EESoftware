@@ -137,68 +137,6 @@
     },
     {
       "config": {
-        "writes": [
-          {
-            "address": "0",
-            "address_type": "holding_register",
-            "device_name": "",
-            "protocol": "tcp",
-            "target": "internal",
-            "value": "1",
-            "value_field_key": "",
-            "value_source": "static",
-            "variable_name": "Start"
-          },
-          {
-            "address": "0",
-            "address_type": "holding_register",
-            "device_name": "",
-            "protocol": "tcp",
-            "target": "internal",
-            "value": "3",
-            "value_field_key": "",
-            "value_source": "static",
-            "variable_name": "StatusHPT"
-          }
-        ]
-      },
-      "id": "n1788775897074_21",
-      "type": "write_output",
-      "x": 141.7578125,
-      "y": 133.5078125
-    },
-    {
-      "config": {
-        "conditions": [
-          {
-            "operator": "equals",
-            "value": "TRUE",
-            "value2": "",
-            "variable_name": "Start"
-          },
-          {
-            "operator": "not_equals",
-            "value": "",
-            "value2": "",
-            "variable_name": "ProductSNHPT"
-          },
-          {
-            "operator": "not_equals",
-            "value": "",
-            "value2": "",
-            "variable_name": "CarrierSN"
-          }
-        ],
-        "timeout_seconds": "30",
-        "wait_mode": "poll"
-      },
-      "id": "n1788775933728_26",
-      "type": "multi_condition_gate",
-      "x": 202.7578125,
-      "y": 261.5078125
-    },
-    {
-      "config": {
         "address": "0",
         "address_type": "holding_register",
         "device_name": "",
@@ -278,28 +216,10 @@
       "toId": "n1788775856364_17"
     },
     {
-      "fromId": "n1788775897074_21",
-      "fromPort": "next",
-      "id": "n1788775936501_28",
-      "toId": "n1788775933728_26"
-    },
-    {
-      "fromId": "n1788775933728_26",
-      "fromPort": "true",
-      "id": "n1788775953765_30",
-      "toId": "n1788775752265_6"
-    },
-    {
       "fromId": "n1788775817917_12",
       "fromPort": "true",
       "id": "n1788779695538_2",
       "toId": "n1788775840794_14"
-    },
-    {
-      "fromId": "gi",
-      "fromPort": "next",
-      "id": "n1788781731965_1",
-      "toId": "n1788775897074_21"
     },
     {
       "fromId": "n1788775856364_17",
@@ -336,6 +256,12 @@
       "fromPort": "false",
       "id": "n1788871855498_17",
       "toId": "n1788871819621_10"
+    },
+    {
+      "id": "n1789057049268_1",
+      "fromId": "gi",
+      "fromPort": "next",
+      "toId": "n1788775752265_6"
     }
   ]
 }

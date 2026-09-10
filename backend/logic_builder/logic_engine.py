@@ -216,12 +216,38 @@ class FlowExecutor:
             return ""
 
     def _resolve_source(self, source: str, cfg: dict, static_value: str = "", field_key: str = "", device_prefix: str = "") -> str:
-        """Resolve a value that can come from a static string, a field key, or a live
-        device register — the three source kinds every 'source' dropdown offers."""
+        """Resolve a configured source value.
+
+        Supported sources:
+          - static: use the configured fixed value
+          - field_key: use a value already stored in the flow fields
+          - device: read a live Modbus value
+          - internal_variable: read the CURRENT Internal Variable value
+
+        Internal Variable must never fall back to the static/default value.
+        The UI stores its selected source in `value_variable_name`.
+        """
         if source == "field_key":
             return self._get_field(field_key)
+
         if source == "device":
             return self._resolve_device_value(cfg, device_prefix)
+
+        if source == "internal_variable":
+            variable_name = str(cfg.get("value_variable_name", "") or "").strip()
+            if not variable_name:
+                raise ValueError("Internal Variable source is selected but no source variable is configured")
+
+            value = self._read_internal_variable(variable_name)
+            if value is None:
+                raise ValueError(f"Internal Variable '{variable_name}' not found")
+
+            self._log(
+                f"Write Output source: Internal Variable '{variable_name}' = {value}",
+                "#06B6D4",
+            )
+            return str(value)
+
         return static_value
 
     def _set_field(self, key: str, value: str):
@@ -559,7 +585,10 @@ class FlowExecutor:
             if node and node["type"] == "device_trigger":
                 cfg = node.get("config", {})
                 if node_matches(cfg):
-                    # Device cocok → lanjut tanpa fieldKey output.
+                    # Device cocok → isi field dan lanjut
+                    field_key = cfg.get("fieldKey", "")
+                    if field_key:
+                        self._set_field(field_key, self.scan_value)
 
                     state["waiting_scan"] = None
 
@@ -583,9 +612,13 @@ class FlowExecutor:
                     break
 
         if not start_node:
+            self._log(f"No device_trigger node configured for device '{self.trigger_device}' — ignored", "#64748B")
             return self.commands
-            return self.commands
-        # Device Trigger no longer has a fieldKey output.
+
+        # Isi field untuk device_trigger pertama
+        field_key = start_node.get("config", {}).get("fieldKey", "")
+        if field_key:
+            self._set_field(field_key, self.scan_value)
 
         # Lanjutkan dari node berikutnya
         self._follow(self._node_outputs(start_node["id"]), "next", db)

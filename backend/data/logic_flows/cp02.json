@@ -29,8 +29,8 @@
       },
       "id": "n1788776020868_31",
       "type": "subflow_call",
-      "x": 716.7578125,
-      "y": 167.5078125
+      "x": 723.7578125,
+      "y": 237.5078125
     },
     {
       "config": {
@@ -205,6 +205,22 @@
             "kind": "internal",
             "protocol": "tcp",
             "variable_name": "ResultS3"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "CarrierSN"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ProductSNHPT"
           }
         ]
       },
@@ -212,6 +228,17 @@
       "type": "reset_node",
       "x": 487.7578125,
       "y": 579.7578125
+    },
+    {
+      "config": {
+        "expose_check": true,
+        "template_id": "check_limit",
+        "template_name": "Check Limit"
+      },
+      "id": "n1789057063630_2",
+      "type": "subflow_call",
+      "x": 704.7578125,
+      "y": 146.5078125
     }
   ],
   "connections": [
@@ -220,12 +247,6 @@
       "fromPort": "next",
       "id": "n1788776780834_16",
       "toId": "n1788776776848_14"
-    },
-    {
-      "fromId": "n1788774632149_1",
-      "fromPort": "next",
-      "id": "n1788781240659_28",
-      "toId": "n1788776020868_31"
     },
     {
       "fromId": "n1788849637610_2",
@@ -262,6 +283,18 @@
       "fromPort": "next",
       "id": "n1788853384870_41",
       "toId": "n1788853380847_40"
+    },
+    {
+      "fromId": "n1788774632149_1",
+      "fromPort": "next",
+      "id": "n1789057074261_3",
+      "toId": "n1789057063630_2"
+    },
+    {
+      "fromId": "n1789057063630_2",
+      "fromPort": "true",
+      "id": "n1789057566951_16",
+      "toId": "n1788776020868_31"
     }
   ]
 }
