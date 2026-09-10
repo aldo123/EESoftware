@@ -16,6 +16,58 @@ export const createTestRow = (index = 0) => ({
   address: "",
 });
 
+
+function normalizeInternalVariableName(value) {
+  return String(value ?? "").trim();
+}
+
+function resolveInternalVariableValue(variables, name) {
+  const target = normalizeInternalVariableName(name);
+  if (!target) return undefined;
+
+  const list = Array.isArray(variables) ? variables : [];
+  const found = list.find((v) => {
+    const variableName = normalizeInternalVariableName(
+      v?.name ?? v?.variable_name ?? v?.variableName
+    );
+    return variableName === target;
+  });
+
+  if (!found) return undefined;
+
+  const raw = found?.value ?? found?.current_value ?? found?.currentValue ?? found?.val;
+  if (raw !== undefined && raw !== null) return raw;
+
+  return found?.data?.value;
+}
+
+function resolveSpecificationNumber(variables, variableName, fallback) {
+  const raw = resolveInternalVariableValue(variables, variableName);
+
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    const n = Number(fallback);
+    return Number.isFinite(n) ? n : undefined;
+  }
+
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function getSpecificationRuntimeLimits(row, variables) {
+  const lower = resolveSpecificationNumber(
+    variables,
+    row?.lower_limit_variable,
+    row?.lower_limit ?? row?.lower
+  );
+  const upper = resolveSpecificationNumber(
+    variables,
+    row?.upper_limit_variable,
+    row?.upper_limit ?? row?.upper
+  );
+
+  return { lower, upper };
+}
+
 export function judgeTestResult(value, lower, upper) {
   if (value === undefined || value === null || String(value).trim() === "") {
     return "WAITING";
@@ -297,7 +349,7 @@ export const testtableDef = {
   },
 };
 
-function TableView({ widget, getValue, rowsOverride, resultMap = {} }) {
+function TableView({ widget, getValue, rowsOverride, resultMap = {}, internalVariables = [] }) {
   const p = normalizeAppearance(widget.props || {});
   const rows = Array.isArray(rowsOverride)
     ? rowsOverride
@@ -403,6 +455,13 @@ function TableView({ widget, getValue, rowsOverride, resultMap = {} }) {
               const runtimeResult = resultMap[String(row?.id)] || resultMap[row?.id];
               const value = runtimeResult?.result ?? (getValue ? getValue(widget, row) : undefined);
 
+              // Specification limits are dynamic Internal Variables.
+              // Resolve them on every render so a changed Internal Variable
+              // immediately affects both the displayed limits and PASS/FAIL.
+              const runtimeLimits = getSpecificationRuntimeLimits(row, internalVariables);
+              const lowerLimit = runtimeLimits.lower;
+              const upperLimit = runtimeLimits.upper;
+
               // UI status is deliberately limited to the three requested states:
               // PASS / FAIL / WAITING.
               // While the backend is waiting/sampling, the row remains WAITING.
@@ -489,7 +548,7 @@ function TableView({ widget, getValue, rowsOverride, resultMap = {} }) {
                     fontFamily: "monospace",
                     borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}`,
                   }}>
-                    {formatLimit(row.lower_limit ?? row.lower)}
+                    {formatLimit(lowerLimit)}
                   </td>
 
                   <td style={{
@@ -499,7 +558,7 @@ function TableView({ widget, getValue, rowsOverride, resultMap = {} }) {
                     fontFamily: "monospace",
                     borderBottom: `${Number(p.gridWidth) || 1}px ${p.rowBorderStyle || "solid"} ${p.gridColor}`,
                   }}>
-                    {formatLimit(row.upper_limit ?? row.upper)}
+                    {formatLimit(upperLimit)}
                   </td>
 
                   <td style={{
@@ -1067,7 +1126,7 @@ export function TestTablePropertyPanel({ p, set, setProps, availableDevices = []
 }
 
 export function RuntimeTestTable({ widget, getValue }) {
-  const { getValue: getInternalValue } = useInternalVariables();
+  const { variables, getValue: getInternalValue } = useInternalVariables();
 
   const specificationVariable =
     String(widget?.props?.specificationVariable || "Specification").trim() ||
@@ -1376,6 +1435,7 @@ export function RuntimeTestTable({ widget, getValue }) {
         getValue={getValue}
         rowsOverride={specRows}
         resultMap={resultMap}
+      internalVariables={variables}
       />
 
       <div

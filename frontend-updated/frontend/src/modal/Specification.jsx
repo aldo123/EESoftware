@@ -6,6 +6,8 @@ const EMPTY_ROW = {
   parameter_test: "",
   lower_limit: "",
   upper_limit: "",
+  lower_limit_variable: "",
+  upper_limit_variable: "",
 
   trigger_start: "TCP",
   trigger_device: "",
@@ -14,6 +16,8 @@ const EMPTY_ROW = {
 
   time_start: 1,
   time_stop: 10,
+  time_start_variable: "",
+  time_stop_variable: "",
   method: "Avg",
 
   data_source: "TCP",
@@ -525,19 +529,14 @@ export default function Specification({ onClose, cpNumber = "" }) {
         return;
       }
 
-      const start = Number(row.time_start);
-      const stop = Number(row.time_stop);
-
-      if (!Number.isFinite(start) || !Number.isFinite(stop)) {
+      if (
+        !row.lower_limit_variable ||
+        !row.upper_limit_variable ||
+        !row.time_start_variable ||
+        !row.time_stop_variable
+      ) {
         setError(
-          `Invalid time for "${row.parameter_test}".`
-        );
-        return;
-      }
-
-      if (stop < start) {
-        setError(
-          `Time Stop must be >= Time Start for "${row.parameter_test}".`
+          `Lower Limit, Upper Limit, Time Start and Time Stop must use Internal Variables for "${row.parameter_test}".`
         );
         return;
       }
@@ -561,6 +560,8 @@ export default function Specification({ onClose, cpNumber = "" }) {
             row.upper_limit === ""
               ? null
               : Number(row.upper_limit),
+          lower_limit_variable: row.lower_limit_variable || "",
+          upper_limit_variable: row.upper_limit_variable || "",
 
           trigger_start: row.trigger_start,
           trigger_device: row.trigger_device,
@@ -569,6 +570,8 @@ export default function Specification({ onClose, cpNumber = "" }) {
 
           time_start: Number(row.time_start),
           time_stop: Number(row.time_stop),
+          time_start_variable: row.time_start_variable || "",
+          time_stop_variable: row.time_stop_variable || "",
           method: row.method,
 
           data_source: row.data_source,
@@ -1070,26 +1073,38 @@ export default function Specification({ onClose, cpNumber = "" }) {
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
-                            <Input
-                              type="number"
-                              value={row.lower_limit}
+                            <Select
+                              value={row.lower_limit_variable}
                               onChange={(value) =>
                                 updateRow(row.id, {
-                                  lower_limit: value,
+                                  lower_limit_variable: value,
                                 })
                               }
+                              options={[
+                                { value: "", label: "Select variable" },
+                                ...internalVariables.map((v) => ({
+                                  value: v.name,
+                                  label: v.name,
+                                })),
+                              ]}
                             />
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
-                            <Input
-                              type="number"
-                              value={row.upper_limit}
+                            <Select
+                              value={row.upper_limit_variable}
                               onChange={(value) =>
                                 updateRow(row.id, {
-                                  upper_limit: value,
+                                  upper_limit_variable: value,
                                 })
                               }
+                              options={[
+                                { value: "", label: "Select variable" },
+                                ...internalVariables.map((v) => ({
+                                  value: v.name,
+                                  label: v.name,
+                                })),
+                              ]}
                             />
                           </td>
 
@@ -1103,26 +1118,38 @@ export default function Specification({ onClose, cpNumber = "" }) {
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
-                            <Input
-                              type="number"
-                              value={row.time_start}
+                            <Select
+                              value={row.time_start_variable}
                               onChange={(value) =>
                                 updateRow(row.id, {
-                                  time_start: value,
+                                  time_start_variable: value,
                                 })
                               }
+                              options={[
+                                { value: "", label: "Select variable" },
+                                ...internalVariables.map((v) => ({
+                                  value: v.name,
+                                  label: v.name,
+                                })),
+                              ]}
                             />
                           </td>
 
                           <td className="border border-[var(--border-soft)] p-1">
-                            <Input
-                              type="number"
-                              value={row.time_stop}
+                            <Select
+                              value={row.time_stop_variable}
                               onChange={(value) =>
                                 updateRow(row.id, {
-                                  time_stop: value,
+                                  time_stop_variable: value,
                                 })
                               }
+                              options={[
+                                { value: "", label: "Select variable" },
+                                ...internalVariables.map((v) => ({
+                                  value: v.name,
+                                  label: v.name,
+                                })),
+                              ]}
                             />
                           </td>
 
