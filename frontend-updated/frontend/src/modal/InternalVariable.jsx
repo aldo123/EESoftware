@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { ModalBackdrop, ModalPanel } from "../components/motion";
 import { API } from "../service/api";
 
-const EMPTY_FORM = { name: "", data_type: "string", value: "" };
+const EMPTY_FORM = { name: "", data_type: "string", value: "", system_key: "" };
 
 export default function InternalVariable({ onClose, cpNumber }) {
   const [variables, setVariables] = useState([]);
@@ -15,6 +15,7 @@ export default function InternalVariable({ onClose, cpNumber }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [systemSources, setSystemSources] = useState([]);
 
   const loadVariables = async () => {
     setLoading(true);
@@ -37,6 +38,32 @@ export default function InternalVariable({ onClose, cpNumber }) {
       }
 
       setVariables(Array.isArray(data.variables) ? data.variables : []);
+      try {
+        fetch(`${API}/api/internal-variables/system-sync`, {
+          method: "POST",
+          cache: "no-store",
+        }).catch(() => {});
+      } catch (_) {}
+      try {
+        const sourceRes = await fetch(`${API}/api/internal-variables/system-sources`, {
+          cache: "no-store",
+        });
+        const sourceText = await sourceRes.text();
+        let sourceData = null;
+        try {
+          sourceData = sourceText ? JSON.parse(sourceText) : null;
+        } catch (_) {
+          // Old backend/proxy may return HTML. Do not break the Internal
+          // Variable page just because the optional System-source endpoint
+          // is unavailable.
+          sourceData = null;
+        }
+        if (sourceData && Array.isArray(sourceData.sources)) {
+          setSystemSources(sourceData.sources);
+        }
+      } catch (_) {
+        // System source list is optional; normal variables still work.
+      }
     } catch (err) {
       setError(err.message || "Failed to load internal variables");
     } finally {
@@ -75,6 +102,7 @@ export default function InternalVariable({ onClose, cpNumber }) {
             ? "true"
             : "false"
           : String(item.value ?? ""),
+      system_key: item.system_key || "",
     });
 
     setError("");
@@ -120,7 +148,8 @@ export default function InternalVariable({ onClose, cpNumber }) {
         name,
         cp_number: currentCP,
         data_type: form.data_type,
-        value: form.value,
+        value: form.data_type === "system" ? "" : form.value,
+        system_key: form.data_type === "system" ? form.system_key : "",
       };
 
       const res = await fetch(url, {
@@ -421,7 +450,13 @@ export default function InternalVariable({ onClose, cpNumber }) {
                             value:
                               e.target.value === "boolean"
                                 ? "false"
+                                : e.target.value === "system"
+                                ? ""
                                 : p.value,
+                            system_key:
+                              e.target.value === "system"
+                                ? (p.system_key || "")
+                                : "",
                           }))
                         }
                         className="w-full h-10 rounded-lg bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] px-3 text-sm outline-none focus:border-[#22C55E]"
@@ -435,6 +470,9 @@ export default function InternalVariable({ onClose, cpNumber }) {
                         <option value="boolean">
                           Boolean
                         </option>
+                        <option value="system">
+                          System
+                        </option>
                       </select>
                     </label>
 
@@ -443,7 +481,30 @@ export default function InternalVariable({ onClose, cpNumber }) {
                         Value
                       </span>
 
-                      {form.data_type === "boolean" ? (
+                      {form.data_type === "system" ? (
+                        <div className="flex flex-col gap-2">
+                          <select
+                            value={form.system_key || ""}
+                            onChange={(e) =>
+                              setForm((p) => ({
+                                ...p,
+                                system_key: e.target.value,
+                              }))
+                            }
+                            className="w-full h-10 rounded-lg bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] px-3 text-sm outline-none focus:border-[#22C55E]"
+                          >
+                            <option value="">Select System Source…</option>
+                            {systemSources.map((source) => (
+                              <option key={source.key} value={source.key}>
+                                {source.label} = {source.value}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="text-[9px] text-[var(--text-muted)]">
+                            Value is automatic String. It is read from setting.json or interlock.json and saved to the Internal Variable.
+                          </div>
+                        </div>
+                      ) : form.data_type === "boolean" ? (
                         <select
                           value={
                             form.value === "true"
@@ -458,12 +519,8 @@ export default function InternalVariable({ onClose, cpNumber }) {
                           }
                           className="w-full h-10 rounded-lg bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] px-3 text-sm outline-none focus:border-[#22C55E]"
                         >
-                          <option value="false">
-                            FALSE
-                          </option>
-                          <option value="true">
-                            TRUE
-                          </option>
+                          <option value="false">FALSE</option>
+                          <option value="true">TRUE</option>
                         </select>
                       ) : (
                         <input
@@ -485,7 +542,7 @@ export default function InternalVariable({ onClose, cpNumber }) {
                               ? "0"
                               : "Value"
                           }
-                          className="w-full h-10 rounded-lg bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] px-3 text-sm font-mono outline-none focus:border-[#22C55E]"
+                          className="w-full h-10 rounded-lg bg-[var(--bg-input)] border border-[var(--border)] text-[var(--text-primary)] px-3 py-2 text-sm font-mono outline-none focus:border-[#22C55E]"
                         />
                       )}
                     </label>
