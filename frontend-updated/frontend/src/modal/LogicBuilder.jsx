@@ -18,6 +18,7 @@ const NODE_TYPES = [
   { type: "multi_condition_gate", category: "check", color: "#EAB308", icon: "🚦", label: "Multi-Condition Gate", desc: "AND-check several Internal Variables — all must pass to continue" },
   { type: "write_output", category: "action", color: "#22C55E", icon: "✍️", label: "Write Output", desc: "Write a value to a PLC coil/register or an Internal Variable" },
   { type: "write_sn_list", category: "action", color: "#06B6D4", icon: "📝", label: "Write SN List", desc: "Write Internal Variables to SN List columns" },
+  { type: "write_sn_database", category: "action", color: "#8B5CF6", icon: "🗄️", label: "Write SN Database", desc: "Send latest SN List row to MySQL database" },
   { type: "reset_node", category: "action", color: "#3B82F6", icon: "🔄", label: "Reset", desc: "Reset trigger flags / variables back to idle — selected ones, or all at once" },
   { type: "timer", category: "action", color: "#F97316", icon: "⏲", label: "Timer", desc: "Pause for a fixed number of seconds, then continue" },
   { type: "subflow_call", category: "group", color: "#64748B", icon: "📦", label: "Group", desc: "Bundle several nodes into one, reusable across flows — keeps the main canvas clean" },
@@ -91,6 +92,12 @@ const DEFAULT_NODE_CONFIG = {
   },  write_sn_list: {
     mappings: [
       { variable_name: "", column_key: "" },
+    ],
+  },
+  write_sn_database: {
+    destination_table: "",
+    mappings: [
+      { source_column: "", destination_column: "" },
     ],
   },
 
@@ -324,7 +331,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
   }, [node?.id]);
 
   useEffect(() => {
-    if (!cpNumber || node?.type !== "write_sn_list") {
+    if (!cpNumber || !["write_sn_list", "write_sn_database"].includes(node?.type)) {
       setSnListColumns([]);
       setSnListColumnsLoading(false);
       return;
@@ -503,6 +510,36 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
       const base = Array.isArray(prev.mappings) ? prev.mappings : [];
       const next = base.filter((_, i) => i !== idx);
       return { ...prev, mappings: next.length ? next : [{ variable_name: "", column_key: "" }] };
+    });
+  };
+  const snDbMappings = Array.isArray(c.mappings) && c.mappings.length
+    ? c.mappings
+    : [{ source_column: "", destination_column: "" }];
+
+  const updateSnDbMapping = (idx, patch) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.mappings) && prev.mappings.length
+        ? prev.mappings
+        : [{ source_column: "", destination_column: "" }];
+      return { ...prev, mappings: base.map((m, i) => i === idx ? { ...m, ...patch } : m) };
+    });
+  };
+
+  const addSnDbMapping = () => {
+    setLocalConfig(prev => ({
+      ...prev,
+      mappings: [
+        ...(Array.isArray(prev.mappings) ? prev.mappings : []),
+        { source_column: "", destination_column: "" },
+      ],
+    }));
+  };
+
+  const removeSnDbMapping = (idx) => {
+    setLocalConfig(prev => {
+      const base = Array.isArray(prev.mappings) ? prev.mappings : [];
+      const next = base.filter((_, i) => i !== idx);
+      return { ...prev, mappings: next.length ? next : [{ source_column: "", destination_column: "" }] };
     });
   };
 
@@ -1011,6 +1048,70 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
 
           <p className="text-[var(--text-muted)] text-[9px] mt-1">
             Semua "Write" di atas dijalankan sekaligus tiap kali node ini fire — cocok buat nulis ke beberapa Internal Variable/PLC bersamaan (mis. set 3 internal variable buat mulai 3 step test sekaligus). Sambungkan dari port <b style={{ color: "#22C55E" }}>✓ True</b> node Check/Gate (mis. Multi-Condition Gate) kalau mau nulis cuma pas kondisinya lolos. Coil nerima 1/0/true/false, Holding Register nerima angka 0-65535.
+          </p>
+        </>)}
+
+        {node.type === "write_sn_database" && (<>
+          <div className="rounded-lg border border-[#8B5CF6]/30 bg-[#8B5CF6]/5 px-2.5 py-2 text-[9px] text-[var(--text-muted)]">
+            <b style={{ color: "#8B5CF6" }}>CP{String(cpNumber || "").padStart(2, "0")}</b> — Source dari SN List, Destination ke MySQL Database.
+          </div>
+
+          <Field label="Destination Database Table">
+            <Input
+              value={c.destination_table || ""}
+              onChange={v => setLocal("destination_table", v)}
+              placeholder={`snlist_cp${String(cpNumber || "").padStart(2, "0")}`}
+            />
+          </Field>
+
+          {snDbMappings.map((m, idx) => (
+            <div key={idx} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-soft)] p-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Mapping {idx + 1}</span>
+                {snDbMappings.length > 1 && (
+                  <button type="button" onClick={() => removeSnDbMapping(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove mapping">
+                    <IconTrash />
+                  </button>
+                )}
+              </div>
+
+              <Field label="Source — SN List">
+                <select
+                  value={m.source_column || ""}
+                  onChange={e => updateSnDbMapping(idx, { source_column: e.target.value })}
+                  className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#8B5CF6]/60"
+                >
+                  <option value="">{snListColumnsLoading ? "Loading columns…" : "Select SN List column…"}</option>
+                  <option value="date_time">Date Time (date_time)</option>
+                  {snListColumns.map(col => (
+                    <option key={col.key} value={col.key}>{col.label || col.key} ({col.key})</option>
+                  ))}
+                </select>
+              </Field>
+
+              <Field label="Destination — Database Column">
+                <Input
+                  value={m.destination_column || ""}
+                  onChange={v => updateSnDbMapping(idx, { destination_column: v })}
+                  placeholder="e.g. sn"
+                />
+              </Field>
+            </div>
+          ))}
+
+          <button
+            type="button"
+            onClick={addSnDbMapping}
+            className="w-full h-8 rounded-lg border border-[#8B5CF6]/60 text-[#8B5CF6] hover:bg-[#8B5CF6]/10 font-bold text-[10px] transition-colors"
+          >
+            + Add Mapping
+          </button>
+
+          <p className="text-[var(--text-muted)] text-[9px] mt-1">
+            Semua field adalah mapping manual. Contoh:
+            <b> date_time → date_time</b>, <b>sn → sn</b>, <b>carrier → carrier</b>.
+            date_time diambil dari row SN List yang sama, bukan dibuat ulang oleh Database.
+            Kolom <b>id</b> tidak perlu dipetakan.
           </p>
         </>)}
 
