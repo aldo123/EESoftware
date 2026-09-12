@@ -371,8 +371,26 @@
       },
       "id": "n1789228256019_1",
       "type": "write_sn_database",
-      "x": 855.7578125,
-      "y": 599.8828125
+      "x": 1048.7578125,
+      "y": 637.8828125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "contains",
+            "value": "No",
+            "value2": "",
+            "variable_name": "BypassHPTInterlock"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "instant"
+      },
+      "id": "n1789232001584_9",
+      "type": "multi_condition_gate",
+      "x": 876.7578125,
+      "y": 552.8828125
     }
   ],
   "connections": [
@@ -425,15 +443,27 @@
       "toId": "n1788776020868_31"
     },
     {
-      "fromId": "n1788849637610_2",
-      "fromPort": "next",
-      "id": "n1789228275834_2",
-      "toId": "n1789228256019_1"
-    },
-    {
       "fromId": "n1789228256019_1",
       "fromPort": "next",
       "id": "n1789228282047_4",
+      "toId": "n1788776742731_9"
+    },
+    {
+      "fromId": "n1788849637610_2",
+      "fromPort": "next",
+      "id": "n1789232002867_11",
+      "toId": "n1789232001584_9"
+    },
+    {
+      "fromId": "n1789232001584_9",
+      "fromPort": "true",
+      "id": "n1789232005394_12",
+      "toId": "n1789228256019_1"
+    },
+    {
+      "fromId": "n1789232001584_9",
+      "fromPort": "false",
+      "id": "n1789232103622_14",
       "toId": "n1788776742731_9"
     }
   ]

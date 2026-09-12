@@ -307,7 +307,9 @@ class FlowExecutor:
         try:
             with _connect() as conn:
                 row = conn.execute(
-                    "SELECT id, name, data_type, value FROM internal_variables WHERE name = ? COLLATE NOCASE",
+                    """SELECT id, name, data_type, value, system_key
+                       FROM internal_variables
+                       WHERE name = ? COLLATE NOCASE""",
                     (name,),
                 ).fetchone()
             parsed = _row(row)
