@@ -119,13 +119,37 @@
           {
             "column_key": "result",
             "variable_name": "ResultHPT"
+          },
+          {
+            "column_key": "step1usl",
+            "variable_name": "USLSTEP1"
+          },
+          {
+            "column_key": "step2usl",
+            "variable_name": "USLSTEP2"
+          },
+          {
+            "column_key": "step3usl",
+            "variable_name": "USLSTEP3"
+          },
+          {
+            "column_key": "step1lsl",
+            "variable_name": "LSLSTEP1"
+          },
+          {
+            "column_key": "step2lsl",
+            "variable_name": "LSLSTEP2"
+          },
+          {
+            "column_key": "step3lsl",
+            "variable_name": "LSLSTEP3"
           }
         ]
       },
       "id": "n1788849637610_2",
       "type": "write_sn_list",
-      "x": 759.7578125,
-      "y": 538.1328125
+      "x": 811.7578125,
+      "y": 475.1328125
     },
     {
       "config": {
@@ -239,6 +263,116 @@
       "type": "subflow_call",
       "x": 704.7578125,
       "y": 146.5078125
+    },
+    {
+      "config": {
+        "db_mappings": [
+          {
+            "destination_column": "sn",
+            "source_column": "sn"
+          },
+          {
+            "destination_column": "carrier",
+            "source_column": "carrier"
+          },
+          {
+            "destination_column": "step1lsl",
+            "source_column": "step1lsl"
+          },
+          {
+            "destination_column": "step1usl",
+            "source_column": "step1usl"
+          },
+          {
+            "destination_column": "step1",
+            "source_column": "step1"
+          },
+          {
+            "destination_column": "step2lsl",
+            "source_column": "step2lsl"
+          },
+          {
+            "destination_column": "step2usl",
+            "source_column": "step2usl"
+          },
+          {
+            "destination_column": "step2",
+            "source_column": "step2"
+          },
+          {
+            "destination_column": "step3lsl",
+            "source_column": "step3lsl"
+          },
+          {
+            "destination_column": "step3usl",
+            "source_column": "step3usl"
+          },
+          {
+            "destination_column": "step3",
+            "source_column": "step3"
+          },
+          {
+            "destination_column": "result",
+            "source_column": "result"
+          }
+        ],
+        "destination_table": "hipot",
+        "mappings": [
+          {
+            "destination_column": "date_time",
+            "source_column": "date_time"
+          },
+          {
+            "destination_column": "sn",
+            "source_column": "sn"
+          },
+          {
+            "destination_column": "step1lsl",
+            "source_column": "step1lsl"
+          },
+          {
+            "destination_column": "step1usl",
+            "source_column": "step1usl"
+          },
+          {
+            "destination_column": "step1",
+            "source_column": "step1"
+          },
+          {
+            "destination_column": "step2lsl",
+            "source_column": "step2lsl"
+          },
+          {
+            "destination_column": "step2usl",
+            "source_column": "step2usl"
+          },
+          {
+            "destination_column": "step2",
+            "source_column": "step2"
+          },
+          {
+            "destination_column": "step3lsl",
+            "source_column": "step3lsl"
+          },
+          {
+            "destination_column": "step3usl",
+            "source_column": "step3usl"
+          },
+          {
+            "destination_column": "step3",
+            "source_column": "step3"
+          },
+          {
+            "destination_column": "result",
+            "source_column": "result"
+          }
+        ],
+        "table_name": "hipot"
+      },
+      "id": "n1789228256019_1",
+      "type": "write_sn_database",
+      "x": 855.7578125,
+      "y": 599.8828125
     }
   ],
   "connections": [
@@ -247,12 +381,6 @@
       "fromPort": "next",
       "id": "n1788776780834_16",
       "toId": "n1788776776848_14"
-    },
-    {
-      "fromId": "n1788849637610_2",
-      "fromPort": "next",
-      "id": "n1788850636407_3",
-      "toId": "n1788776742731_9"
     },
     {
       "fromId": "n1788776020868_31",
@@ -295,6 +423,18 @@
       "fromPort": "true",
       "id": "n1789057566951_16",
       "toId": "n1788776020868_31"
+    },
+    {
+      "fromId": "n1788849637610_2",
+      "fromPort": "next",
+      "id": "n1789228275834_2",
+      "toId": "n1789228256019_1"
+    },
+    {
+      "fromId": "n1789228256019_1",
+      "fromPort": "next",
+      "id": "n1789228282047_4",
+      "toId": "n1788776742731_9"
     }
   ]
 }

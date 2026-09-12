@@ -950,6 +950,95 @@ class FlowExecutor:
             self._follow(outputs, "next", db)
             return
 
+        # ─── WRITE SN DATABASE: copy the latest SN List row into MySQL.
+        #     Source = SN List (SQLite-backed CP table), destination = MySQL table.
+        if ntype == "write_sn_database":
+            cfg = node.get("config", {}) or {}
+            mappings = cfg.get("mappings")
+            if not isinstance(mappings, list):
+                mappings = []
+            mappings = [m for m in mappings if isinstance(m, dict)]
+            mappings = [
+                m for m in mappings
+                if str(m.get("source_column", "")).strip()
+                and str(m.get("destination_column", "")).strip()
+            ]
+            destination_table = str(cfg.get("destination_table", "")).strip()
+
+            if not destination_table:
+                self._log("Write SN Database: destination database table is not configured", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
+            if not mappings:
+                self._log("Write SN Database: no valid Source SN List → Destination Database mapping configured", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
+
+            try:
+                from routes.snlist import get_snlist_conn, get_table_name
+                import re as _re
+
+                if not _re.fullmatch(r"[A-Za-z0-9_]+", destination_table):
+                    raise ValueError("invalid destination database table name")
+
+                # Read the most recently written SN List row for this CP.
+                source_table = str(get_table_name(self.cp))
+                q_source_table = '"' + source_table.replace('"', '""') + '"'
+                with get_snlist_conn() as sn_conn:
+                    source_row = sn_conn.execute(
+                        f"SELECT * FROM {q_source_table} ORDER BY id DESC LIMIT 1"
+                    ).fetchone()
+                if source_row is None:
+                    raise ValueError(f"SN List CP{self.cp} has no row to send")
+
+                # Validate destination columns against the configured MySQL table.
+                dest_meta = db.fetch_all(f"SHOW COLUMNS FROM `{destination_table}`") if db else []
+                if not dest_meta:
+                    raise ValueError(f"destination MySQL table '{destination_table}' not found or database is disconnected")
+                dest_columns = {str(r.get("Field", "")) for r in dest_meta if isinstance(r, dict)}
+
+                insert_columns = []
+                insert_values = []
+                seen = set()
+                details = []
+                for m in mappings:
+                    source_column = str(m.get("source_column", "")).strip()
+                    destination_column = str(m.get("destination_column", "")).strip()
+                    if source_column == "id":
+                        raise ValueError("source column 'id' cannot be copied")
+                    if source_column not in source_row.keys():
+                        raise ValueError(f"SN List source column '{source_column}' does not exist")
+                    if destination_column not in dest_columns:
+                        raise ValueError(f"destination MySQL column '{destination_column}' does not exist")
+                    if destination_column in seen:
+                        raise ValueError(f"duplicate destination MySQL column '{destination_column}'")
+
+                    seen.add(destination_column)
+                    insert_columns.append(destination_column)
+                    insert_values.append(source_row[source_column])
+                    details.append(f"{source_column} → {destination_column}")
+
+                if not insert_columns:
+                    raise ValueError("no columns selected for database insert")
+
+                q_table = "`" + destination_table.replace("`", "``") + "`"
+                q_cols = ", ".join("`" + c.replace("`", "``") + "`" for c in insert_columns)
+                placeholders = ", ".join(["%s"] * len(insert_columns))
+                sql = f"INSERT INTO {q_table} ({q_cols}) VALUES ({placeholders})"
+                affected = db.execute(sql, insert_values)
+                if affected <= 0:
+                    raise ValueError("MySQL INSERT returned 0 affected rows")
+
+                self._log(
+                    f"Write SN Database CP{self.cp}: SN List row → MySQL '{destination_table}' ({', '.join(details)})",
+                    "#0EA5E9",
+                )
+            except Exception as e:
+                self._log(f"Write SN Database error CP{self.cp}: {e}", "#EF4444")
+
+            self._follow(outputs, "next", db)
+            return
+
         # ─── TIMER: pause execution for a fixed duration, then continue — plain
         #     fire-and-forget delay, distinct from Multi-Condition Gate's "Wait
         #     Until Match" (which polls a condition, not a fixed clock). ──

@@ -458,13 +458,41 @@
             "variable_name": "CarrierSN"
           }
         ],
-        "timeout_seconds": "100",
+        "timeout_seconds": "30",
         "wait_mode": "poll"
       },
       "id": "n1789057168369_6",
       "type": "multi_condition_gate",
       "x": 302.7578125,
       "y": 225.5078125
+    },
+    {
+      "config": {
+        "group_name": "",
+        "mode": "selected",
+        "targets": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "Start"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "StatusHPT"
+          }
+        ]
+      },
+      "id": "n1789226613896_1",
+      "type": "reset_node",
+      "x": 839.7578125,
+      "y": 250.5078125
     }
   ],
   "connections": [
@@ -533,6 +561,12 @@
       "fromPort": "true",
       "id": "n1789057270442_13",
       "toId": "n1789055290941_11"
+    },
+    {
+      "fromId": "n1789057168369_6",
+      "fromPort": "false",
+      "id": "n1789226616274_2",
+      "toId": "n1789226613896_1"
     }
   ]
 }

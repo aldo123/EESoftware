@@ -33,13 +33,43 @@
             "width": 140
         },
         {
+            "key": "step1lsl",
+            "label": "Step 1 Lower Limit",
+            "width": 140
+        },
+        {
+            "key": "step1usl",
+            "label": "Step 1 Upper Limit",
+            "width": 140
+        },
+        {
             "key": "step1",
             "label": "Step 1",
             "width": 140
         },
         {
+            "key": "step2lsl",
+            "label": "Step 2 Lower Limit",
+            "width": 140
+        },
+        {
+            "key": "step2usl",
+            "label": "Step 2 Upper Limit",
+            "width": 140
+        },
+        {
             "key": "step2",
             "label": "Step 2",
+            "width": 140
+        },
+        {
+            "key": "step3lsl",
+            "label": "Step 3 Lower Limit",
+            "width": 140
+        },
+        {
+            "key": "step3usl",
+            "label": "Step 3 Upper Limit",
             "width": 140
         },
         {
