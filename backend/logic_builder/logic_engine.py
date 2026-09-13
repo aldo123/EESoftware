@@ -1176,27 +1176,34 @@ class FlowExecutor:
             self._follow(outputs, "next", db)
             return
 
-        # ─── WRITE SN DATABASE: copy the latest SN List row into MySQL.
-        #     Source = SN List (SQLite-backed CP table), destination = MySQL table.
+        # ─── WRITE SN DATABASE: Fresh/New Data or Update existing data.
+        #     New mode: ONLY SN List -> MySQL mappings.
+        #     Update mode: target Primary Key comes from an Internal Variable;
+        #     mapped values can come from Internal Variable or Fixed Value.
         if ntype == "write_sn_database":
             cfg = node.get("config", {}) or {}
             mappings = cfg.get("mappings")
             if not isinstance(mappings, list):
+                mappings = cfg.get("db_mappings")
+            if not isinstance(mappings, list):
                 mappings = []
             mappings = [m for m in mappings if isinstance(m, dict)]
-            mappings = [
-                m for m in mappings
-                if str(m.get("source_column", "")).strip()
-                and str(m.get("destination_column", "")).strip()
-            ]
-            destination_table = str(cfg.get("destination_table", "")).strip()
+
+            destination_table = str(
+                cfg.get("destination_table", cfg.get("table_name", "")) or ""
+            ).strip()
+            write_mode = str(cfg.get("write_mode", "new") or "new").strip().lower()
+            if write_mode not in ("new", "update"):
+                write_mode = "new"
+
+            mappings = [m for m in mappings if str(m.get("destination_column", "")).strip()]
 
             if not destination_table:
                 self._log("Write SN Database: destination database table is not configured", "#EF4444")
                 self._follow(outputs, "next", db)
                 return
             if not mappings:
-                self._log("Write SN Database: no valid Source SN List → Destination Database mapping configured", "#EF4444")
+                self._log("Write SN Database: no valid mapping configured", "#EF4444")
                 self._follow(outputs, "next", db)
                 return
 
@@ -1204,61 +1211,259 @@ class FlowExecutor:
                 from routes.snlist import get_snlist_conn, get_table_name
                 import re as _re
 
+                if not db:
+                    raise ValueError("MySQL database connection is not available")
                 if not _re.fullmatch(r"[A-Za-z0-9_]+", destination_table):
                     raise ValueError("invalid destination database table name")
 
-                # Read the most recently written SN List row for this CP.
-                source_table = str(get_table_name(self.cp))
-                q_source_table = '"' + source_table.replace('"', '""') + '"'
-                with get_snlist_conn() as sn_conn:
-                    source_row = sn_conn.execute(
-                        f"SELECT * FROM {q_source_table} ORDER BY id DESC LIMIT 1"
-                    ).fetchone()
-                if source_row is None:
-                    raise ValueError(f"SN List CP{self.cp} has no row to send")
-
-                # Validate destination columns against the configured MySQL table.
-                dest_meta = db.fetch_all(f"SHOW COLUMNS FROM `{destination_table}`") if db else []
+                dest_meta = db.fetch_all(f"SHOW COLUMNS FROM `{destination_table}`")
                 if not dest_meta:
-                    raise ValueError(f"destination MySQL table '{destination_table}' not found or database is disconnected")
+                    raise ValueError(
+                        f"destination MySQL table '{destination_table}' not found or database is disconnected"
+                    )
                 dest_columns = {str(r.get("Field", "")) for r in dest_meta if isinstance(r, dict)}
 
-                insert_columns = []
-                insert_values = []
-                seen = set()
-                details = []
-                for m in mappings:
-                    source_column = str(m.get("source_column", "")).strip()
-                    destination_column = str(m.get("destination_column", "")).strip()
-                    if source_column == "id":
-                        raise ValueError("source column 'id' cannot be copied")
-                    if source_column not in source_row.keys():
-                        raise ValueError(f"SN List source column '{source_column}' does not exist")
-                    if destination_column not in dest_columns:
-                        raise ValueError(f"destination MySQL column '{destination_column}' does not exist")
-                    if destination_column in seen:
-                        raise ValueError(f"duplicate destination MySQL column '{destination_column}'")
+                target_primary_key_column = str(
+                    cfg.get("target_primary_key_column", "sn") or "sn"
+                ).strip()
+                if not _re.fullmatch(r"[A-Za-z0-9_]+", target_primary_key_column):
+                    raise ValueError("invalid target Primary Key database column")
+                if target_primary_key_column not in dest_columns:
+                    raise ValueError(
+                        f"target Primary Key database column '{target_primary_key_column}' does not exist in MySQL table '{destination_table}'"
+                    )
 
-                    seen.add(destination_column)
-                    insert_columns.append(destination_column)
-                    insert_values.append(source_row[source_column])
-                    details.append(f"{source_column} → {destination_column}")
+                # ==============================================================
+                # FRESH / NEW DATA
+                # ONLY SN LIST is allowed as the source.
+                # ==============================================================
+                if write_mode == "new":
+                    source_table = str(get_table_name(self.cp))
+                    q_source_table = '"' + source_table.replace('"', '""') + '"'
+                    with get_snlist_conn() as sn_conn:
+                        source_row = sn_conn.execute(
+                            f"SELECT * FROM {q_source_table} ORDER BY id DESC LIMIT 1"
+                        ).fetchone()
+                    if source_row is None:
+                        raise ValueError(f"SN List CP{self.cp} has no row to send")
 
-                if not insert_columns:
-                    raise ValueError("no columns selected for database insert")
+                    insert_columns = []
+                    insert_values = []
+                    seen = set()
+                    details = []
+                    for m in mappings:
+                        source_type = str(m.get("source_type", "sn_list") or "sn_list").strip().lower()
+                        destination_column = str(m.get("destination_column", "")).strip()
+                        source_column = str(m.get("source_column", "")).strip()
 
-                q_table = "`" + destination_table.replace("`", "``") + "`"
-                q_cols = ", ".join("`" + c.replace("`", "``") + "`" for c in insert_columns)
-                placeholders = ", ".join(["%s"] * len(insert_columns))
-                sql = f"INSERT INTO {q_table} ({q_cols}) VALUES ({placeholders})"
-                affected = db.execute(sql, insert_values)
-                if affected <= 0:
-                    raise ValueError("MySQL INSERT returned 0 affected rows")
+                        if source_type not in ("sn_list", "", "none"):
+                            raise ValueError(
+                                "Fresh/New Data only supports Source = SN List; Fixed Value/Internal Variable are not allowed"
+                            )
+                        if not source_column:
+                            raise ValueError(
+                                f"SN List source column is not configured for destination '{destination_column}'"
+                            )
+                        if source_column == "id":
+                            raise ValueError("source column 'id' cannot be copied")
+                        if source_column not in source_row.keys():
+                            raise ValueError(f"SN List source column '{source_column}' does not exist")
+                        if destination_column not in dest_columns:
+                            raise ValueError(
+                                f"destination MySQL column '{destination_column}' does not exist"
+                            )
+                        if destination_column in seen:
+                            raise ValueError(f"duplicate destination MySQL column '{destination_column}'")
 
-                self._log(
-                    f"Write SN Database CP{self.cp}: SN List row → MySQL '{destination_table}' ({', '.join(details)})",
-                    "#0EA5E9",
-                )
+                        seen.add(destination_column)
+                        insert_columns.append(destination_column)
+                        insert_values.append(source_row[source_column])
+                        details.append(f"{source_column} → {destination_column}")
+
+                    if target_primary_key_column not in insert_columns:
+                        raise ValueError(
+                            f"Fresh/New Data requires an SN List mapping to destination Primary Key column '{target_primary_key_column}'"
+                        )
+
+                    q_table = "`" + destination_table.replace("`", "``") + "`"
+                    q_cols = ", ".join("`" + c.replace("`", "``") + "`" for c in insert_columns)
+                    placeholders = ", ".join(["%s"] * len(insert_columns))
+                    sql = f"INSERT INTO {q_table} ({q_cols}) VALUES ({placeholders})"
+                    affected = db.execute(sql, insert_values)
+                    if affected <= 0:
+                        raise ValueError("MySQL INSERT returned 0 affected rows")
+
+                    self._log(
+                        f"Write SN Database CP{self.cp}: Fresh/New Data → MySQL '{destination_table}' ({', '.join(details)})",
+                        "#0EA5E9",
+                    )
+
+                # ==============================================================
+                # UPDATE DATA
+                # Target DATABASE COLUMN is the key column (e.g. sn).
+                # Target KEY VALUE is read from the selected Internal Variable.
+                # Mappings can only use Internal Variable or Fixed Value.
+                # ==============================================================
+                else:
+                    # Support both the current Builder key and legacy aliases so
+                    # an existing saved flow is not broken by this feature update.
+                    target_variable = str(
+                        cfg.get("target_primary_key_variable")
+                        or cfg.get("update_target_variable")
+                        or cfg.get("target_internal_variable")
+                        or ""
+                    ).strip()
+                    if not target_variable:
+                        raise ValueError("Update Data requires Primary Key Value → Internal Variable")
+
+                    target_value = self._read_internal_variable(target_variable)
+                    if target_value is None or str(target_value).strip() == "":
+                        raise ValueError(
+                            f"Primary Key value from Internal Variable '{target_variable}' is empty or not found"
+                        )
+                    target_value = str(target_value).strip()
+
+                    self._log(
+                        f"[MYSQL] Update Data target: table={destination_table}, "
+                        f"column={target_primary_key_column}, variable={target_variable}, value={target_value}",
+                        "#8B5CF6",
+                    )
+
+                    update_columns = []
+                    update_values = []
+                    seen = set()
+                    details = []
+
+                    for m in mappings:
+                        source_type = str(
+                            m.get("source_type", "internal_variable") or "internal_variable"
+                        ).strip().lower()
+                        destination_column = str(m.get("destination_column", "")).strip()
+                        if not destination_column:
+                            continue
+
+                        if destination_column.lower() == target_primary_key_column.lower():
+                            raise ValueError(
+                                f"Update Data cannot update Primary Key column '{target_primary_key_column}'"
+                            )
+                        if destination_column not in dest_columns:
+                            raise ValueError(
+                                f"destination MySQL column '{destination_column}' does not exist"
+                            )
+                        if destination_column in seen:
+                            raise ValueError(f"duplicate destination MySQL column '{destination_column}'")
+
+                        if source_type in ("fixed", "fixed_value", "value"):
+                            # Current Builder uses value; fixed_value is kept for
+                            # compatibility with previously saved configurations.
+                            value = m.get("value", m.get("fixed_value", ""))
+                            details.append(f"Fixed Value '{value}' → {destination_column}")
+                        elif source_type in ("internal_variable", "internal"):
+                            variable_name = str(
+                                m.get("variable_name")
+                                or m.get("source_variable")
+                                or ""
+                            ).strip()
+                            if not variable_name:
+                                raise ValueError(
+                                    f"Internal Variable source is not configured for destination '{destination_column}'"
+                                )
+                            value = self._read_internal_variable(variable_name)
+                            if value is None:
+                                raise ValueError(f"Internal Variable '{variable_name}' not found")
+                            details.append(f"{variable_name} → {destination_column}")
+                        else:
+                            raise ValueError(
+                                "Update Data source must be Internal Variable or Fixed Value"
+                            )
+
+                        seen.add(destination_column)
+                        update_columns.append(destination_column)
+                        update_values.append(value)
+
+                    if not update_columns:
+                        raise ValueError("Update Data has no valid database mappings")
+
+                    q_table = "`" + destination_table.replace("`", "``") + "`"
+                    q_key = "`" + target_primary_key_column.replace("`", "``") + "`"
+                    assignments = ", ".join(
+                        "`" + c.replace("`", "``") + "` = %s" for c in update_columns
+                    )
+
+                    # Confirm the target row exists before updating it. This also
+                    # distinguishes 'row not found' from MySQL rowcount=0 because
+                    # the new value is identical to the old value.
+                    check_sql = f"SELECT 1 AS _exists FROM {q_table} WHERE {q_key} = %s LIMIT 1"
+                    existing = db.fetch_one(check_sql, (target_value,))
+                    if not existing:
+                        raise ValueError(
+                            f"Primary Key value '{target_value}' was not found in MySQL table "
+                            f"'{destination_table}' column '{target_primary_key_column}'"
+                        )
+
+                    self._log(
+                        f"[MYSQL] UPDATE {destination_table}: "
+                        f"WHERE {target_primary_key_column}='{target_value}' "
+                        f"SET {dict(zip(update_columns, update_values))}",
+                        "#8B5CF6",
+                    )
+
+                    sql = f"UPDATE {q_table} SET {assignments} WHERE {q_key} = %s"
+                    params = update_values + [target_value]
+
+                    # Do not use DatabaseManager.execute() here because the
+                    # original helper catches SQL exceptions and returns 0.
+                    # Execute directly on the same live MySQL connection so any
+                    # real MySQL error is visible and the transaction is committed.
+                    if not db.is_connected() and not db.connect():
+                        raise RuntimeError("MySQL connection unavailable")
+                    conn = getattr(db, "conn", None)
+                    if conn is None:
+                        raise RuntimeError("MySQL connection object unavailable")
+
+                    cursor = conn.cursor()
+                    try:
+                        cursor.execute(sql, params)
+                        conn.commit()
+                        affected = cursor.rowcount
+                    except Exception:
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        raise
+                    finally:
+                        cursor.close()
+
+                    self._log(
+                        f"[MYSQL] UPDATE affected rows = {affected}",
+                        "#0EA5E9",
+                    )
+
+                    # Read the row back after commit so the operation is verified,
+                    # not merely assumed successful.
+                    verify_sql = f"SELECT * FROM {q_table} WHERE {q_key} = %s LIMIT 1"
+                    verified = db.fetch_one(verify_sql, (target_value,))
+                    if not verified:
+                        raise ValueError("UPDATE committed but target row could not be read back")
+
+                    mismatches = []
+                    for col, wanted in zip(update_columns, update_values):
+                        actual = verified.get(col)
+                        if str(actual if actual is not None else "") != str(wanted if wanted is not None else ""):
+                            mismatches.append(f"{col}: expected={wanted!r}, actual={actual!r}")
+                    if mismatches:
+                        raise ValueError(
+                            "UPDATE did not persist: " + "; ".join(mismatches)
+                        )
+
+                    self._log(
+                        f"Write SN Database CP{self.cp}: Update Data VERIFIED → "
+                        f"'{destination_table}' WHERE {target_primary_key_column}='{target_value}' "
+                        f"({', '.join(details)})",
+                        "#22C55E",
+                    )
+
             except Exception as e:
                 self._log(f"Write SN Database error CP{self.cp}: {e}", "#EF4444")
 

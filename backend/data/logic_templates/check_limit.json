@@ -53,12 +53,12 @@
           }
         ],
         "timeout_seconds": "10",
-        "wait_mode": "poll"
+        "wait_mode": "instant"
       },
       "id": "n1789055165206_4",
       "type": "multi_condition_gate",
-      "x": 67.7578125,
-      "y": 363.5078125
+      "x": 78.7578125,
+      "y": 489.5078125
     },
     {
       "config": {
@@ -71,12 +71,12 @@
           }
         ],
         "timeout_seconds": "10",
-        "wait_mode": "poll"
+        "wait_mode": "instant"
       },
       "id": "n1789055287492_10",
       "type": "multi_condition_gate",
-      "x": 308.7578125,
-      "y": 359.5078125
+      "x": 314.7578125,
+      "y": 479.5078125
     },
     {
       "config": {
@@ -89,12 +89,12 @@
           }
         ],
         "timeout_seconds": "10",
-        "wait_mode": "poll"
+        "wait_mode": "instant"
       },
       "id": "n1789055290941_11",
       "type": "multi_condition_gate",
-      "x": 531.7578125,
-      "y": 360.5078125
+      "x": 551.7578125,
+      "y": 462.5078125
     },
     {
       "config": {
@@ -193,8 +193,8 @@
       },
       "id": "n1789055335703_15",
       "type": "write_output",
-      "x": 66.7578125,
-      "y": 459.5078125
+      "x": 71.7578125,
+      "y": 630.5078125
     },
     {
       "config": {
@@ -293,8 +293,8 @@
       },
       "id": "n1789055649693_26",
       "type": "write_output",
-      "x": 312.7578125,
-      "y": 458.5078125
+      "x": 322.7578125,
+      "y": 605.5078125
     },
     {
       "config": {
@@ -393,8 +393,8 @@
       },
       "id": "n1789055653414_27",
       "type": "write_output",
-      "x": 542.7578125,
-      "y": 453.5078125
+      "x": 569.7578125,
+      "y": 606.5078125
     },
     {
       "config": {
@@ -463,8 +463,8 @@
       },
       "id": "n1789057168369_6",
       "type": "multi_condition_gate",
-      "x": 312.7578125,
-      "y": 124.5078125
+      "x": 594.7578125,
+      "y": 77.5078125
     },
     {
       "config": {
@@ -481,8 +481,8 @@
       },
       "id": "n1789289885051_4",
       "type": "read_sn_database",
-      "x": 75.1328125,
-      "y": 146.5078125
+      "x": 77.1328125,
+      "y": 203.5078125
     },
     {
       "config": {
@@ -499,8 +499,8 @@
       },
       "id": "n1789289891493_6",
       "type": "multi_condition_gate",
-      "x": 83.1328125,
-      "y": 233.5078125
+      "x": 74.1328125,
+      "y": 279.5078125
     },
     {
       "config": {
@@ -540,19 +540,37 @@
             "variable_name": "SNCPdatabase"
           },
           {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
             "kind": "internal",
             "protocol": "tcp",
-            "device_name": "",
-            "address_type": "holding_register",
-            "address": "0",
             "variable_name": "StatusHPT"
           }
         ]
       },
       "id": "n1789290644216_1",
       "type": "reset_node",
-      "x": 827.1328125,
-      "y": 278.5078125
+      "x": 803.1328125,
+      "y": 251.5078125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "equals",
+            "value": "No",
+            "value2": "",
+            "variable_name": "BypassHPTInterlock"
+          }
+        ],
+        "timeout_seconds": "1",
+        "wait_mode": "instant"
+      },
+      "id": "n1789295927206_3",
+      "type": "multi_condition_gate",
+      "x": 318.1328125,
+      "y": 200.5078125
     }
   ],
   "connections": [
@@ -605,12 +623,6 @@
       "toId": "n1789057168369_6"
     },
     {
-      "fromId": "n1789057168369_6",
-      "fromPort": "true",
-      "id": "n1789289887919_5",
-      "toId": "n1789289885051_4"
-    },
-    {
       "fromId": "n1789289885051_4",
       "fromPort": "next",
       "id": "n1789289893596_8",
@@ -645,6 +657,36 @@
       "fromPort": "false",
       "id": "n1789290719537_4",
       "toId": "n1789290644216_1"
+    },
+    {
+      "fromId": "n1789057168369_6",
+      "fromPort": "true",
+      "id": "n1789295937295_4",
+      "toId": "n1789295927206_3"
+    },
+    {
+      "fromId": "n1789295927206_3",
+      "fromPort": "true",
+      "id": "n1789295965667_5",
+      "toId": "n1789289885051_4"
+    },
+    {
+      "fromId": "n1789295927206_3",
+      "fromPort": "false",
+      "id": "n1789295992667_6",
+      "toId": "n1789055165206_4"
+    },
+    {
+      "fromId": "n1789295927206_3",
+      "fromPort": "false",
+      "id": "n1789295995194_7",
+      "toId": "n1789055287492_10"
+    },
+    {
+      "fromId": "n1789295927206_3",
+      "fromPort": "false",
+      "id": "n1789295997564_8",
+      "toId": "n1789055290941_11"
     }
   ]
 }
