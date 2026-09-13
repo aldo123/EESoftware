@@ -96,9 +96,12 @@ const DEFAULT_NODE_CONFIG = {
     ],
   },
   write_sn_database: {
+    write_mode: "new", // "new" = Fresh/New Data, "update" = Update existing row
     destination_table: "",
+    target_primary_key_column: "sn",
+    target_primary_key_variable: "",
     mappings: [
-      { source_column: "", destination_column: "" },
+      { source_column: "", destination_column: "", source_type: "sn_list", value: "", variable_name: "" },
     ],
   },
   read_sn_database: {
@@ -524,13 +527,13 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
   };
   const snDbMappings = Array.isArray(c.mappings) && c.mappings.length
     ? c.mappings
-    : [{ source_column: "", destination_column: "" }];
+    : [{ source_column: "", destination_column: "", source_type: c.write_mode === "update" ? "internal_variable" : "sn_list", value: "", variable_name: "" }];
 
   const updateSnDbMapping = (idx, patch) => {
     setLocalConfig(prev => {
       const base = Array.isArray(prev.mappings) && prev.mappings.length
         ? prev.mappings
-        : [{ source_column: "", destination_column: "" }];
+        : [{ source_column: "", destination_column: "", source_type: prev.write_mode === "update" ? "internal_variable" : "sn_list", value: "", variable_name: "" }];
       return { ...prev, mappings: base.map((m, i) => i === idx ? { ...m, ...patch } : m) };
     });
   };
@@ -540,7 +543,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
       ...prev,
       mappings: [
         ...(Array.isArray(prev.mappings) ? prev.mappings : []),
-        { source_column: "", destination_column: "" },
+        { source_column: "", destination_column: "", source_type: prev.write_mode === "update" ? "internal_variable" : "sn_list", value: "", variable_name: "" },
       ],
     }));
   };
@@ -1097,51 +1100,144 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
 
         {node.type === "write_sn_database" && (<>
           <div className="rounded-lg border border-[#8B5CF6]/30 bg-[#8B5CF6]/5 px-2.5 py-2 text-[9px] text-[var(--text-muted)]">
-            <b style={{ color: "#8B5CF6" }}>CP{String(cpNumber || "").padStart(2, "0")}</b> — Source dari SN List, Destination ke MySQL Database.
+            <b style={{ color: "#8B5CF6" }}>CP{String(cpNumber || "").padStart(2, "0")}</b> — Write SN Database ke MySQL.
           </div>
+
+          <Field label="Write Mode">
+            <Select
+              value={c.write_mode || "new"}
+              onChange={v => {
+                setLocalConfig(prev => ({
+                  ...prev,
+                  write_mode: v,
+                  mappings: (Array.isArray(prev.mappings) && prev.mappings.length ? prev.mappings : [{ source_column: "", destination_column: "" }]).map(m => ({
+                    ...m,
+                    source_type: v === "update" ? (m.source_type === "fixed_value" ? "fixed_value" : "internal_variable") : "sn_list",
+                    source_column: v === "update" ? "" : (m.source_column || ""),
+                    variable_name: v === "update" ? (m.variable_name || "") : "",
+                    value: v === "update" ? (m.value ?? m.fixed_value ?? "") : "",
+                    fixed_value: v === "update" ? (m.fixed_value ?? m.value ?? "") : "",
+                  })),
+                  target_primary_key_column: v === "update" ? (prev.target_primary_key_column || "sn") : (prev.target_primary_key_column || "sn"),
+                  target_primary_key_variable: v === "update" ? (prev.target_primary_key_variable || "") : "",
+                }));
+              }}
+              options={[
+                { value: "new", label: "Fresh Data / New Data" },
+                { value: "update", label: "Update Data" },
+              ]}
+            />
+          </Field>
 
           <Field label="Destination Database Table">
             <Input
               value={c.destination_table || ""}
-              onChange={v => setLocal("destination_table", v)}
-              placeholder={`snlist_cp${String(cpNumber || "").padStart(2, "0")}`}
+              onChange={v => setLocalConfig(prev => ({ ...prev, destination_table: v }))}
+              placeholder="e.g. master_table"
             />
           </Field>
 
-          {snDbMappings.map((m, idx) => (
-            <div key={idx} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-soft)] p-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Mapping {idx + 1}</span>
-                {snDbMappings.length > 1 && (
-                  <button type="button" onClick={() => removeSnDbMapping(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove mapping">
-                    <IconTrash />
-                  </button>
-                )}
-              </div>
-
-              <Field label="Source — SN List">
-                <select
-                  value={m.source_column || ""}
-                  onChange={e => updateSnDbMapping(idx, { source_column: e.target.value })}
-                  className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#8B5CF6]/60"
-                >
-                  <option value="">{snListColumnsLoading ? "Loading columns…" : "Select SN List column…"}</option>
-                  <option value="date_time">Date Time (date_time)</option>
-                  {snListColumns.map(col => (
-                    <option key={col.key} value={col.key}>{col.label || col.key} ({col.key})</option>
+          {String(c.write_mode || "new") === "update" && (<>
+            <Field label="Target Database Column — Primary Key">
+              <Input
+                value={c.target_primary_key_column || "sn"}
+                onChange={v => setLocalConfig(prev => ({ ...prev, target_primary_key_column: v }))}
+                placeholder="e.g. sn"
+              />
+            </Field>
+            <Field label="Primary Key Value — Internal Variable">
+              <select
+                value={c.target_primary_key_variable || ""}
+                onChange={e => setLocalConfig(prev => ({ ...prev, target_primary_key_variable: e.target.value }))}
+                className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#8B5CF6]/60"
+              >
+                <option value="">{internalVariablesLoading ? "Loading variables…" : "Select Internal Variable…"}</option>
+                {internalVariables
+                  .filter(v => String(v?.data_type || "").toLowerCase() !== "system")
+                  .map(v => (
+                    <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
                   ))}
-                </select>
-              </Field>
+              </select>
+            </Field>
+            <p className="text-[var(--text-muted)] text-[9px]">Database column di atas adalah target Primary Key (mis. <b>sn</b>). Nilai Primary Key diambil dari <b>Internal Variable</b> yang dipilih, lalu digunakan untuk mencari row yang akan di-update.</p>
+          </>)}
 
-              <Field label="Destination — Database Column">
-                <Input
-                  value={m.destination_column || ""}
-                  onChange={v => updateSnDbMapping(idx, { destination_column: v })}
-                  placeholder="e.g. sn"
-                />
-              </Field>
-            </div>
-          ))}
+          {snDbMappings.map((m, idx) => {
+            const mode = String(c.write_mode || "new");
+            const sourceType = mode === "update" ? (m.source_type || "internal_variable") : "sn_list";
+            return (
+              <div key={idx} className="flex flex-col gap-1.5 rounded-lg border border-[var(--border-soft)] p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Mapping {idx + 1}</span>
+                  {snDbMappings.length > 1 && (
+                    <button type="button" onClick={() => removeSnDbMapping(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove mapping">
+                      <IconTrash />
+                    </button>
+                  )}
+                </div>
+
+                {mode === "new" ? (
+                  <Field label="Source — SN List">
+                    <select
+                      value={m.source_column || ""}
+                      onChange={e => updateSnDbMapping(idx, { source_column: e.target.value, source_type: "sn_list" })}
+                      className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#8B5CF6]/60"
+                    >
+                      <option value="">{snListColumnsLoading ? "Loading columns…" : "Select SN List column…"}</option>
+                      <option value="date_time">Date Time (date_time)</option>
+                      {snListColumns.map(col => (
+                        <option key={col.key} value={col.key}>{col.label || col.key} ({col.key})</option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : (
+                  <>
+                    <Field label="Source">
+                      <Select
+                        value={sourceType}
+                        onChange={v => updateSnDbMapping(idx, { source_type: v, source_column: v === "internal_variable" ? "" : m.source_column, variable_name: v === "internal_variable" ? (m.variable_name || "") : "", value: v === "fixed_value" ? (m.value ?? "") : (m.value ?? "") })}
+                        options={[
+                          { value: "internal_variable", label: "Internal Variable" },
+                          { value: "fixed_value", label: "Fixed Value" },
+                        ]}
+                      />
+                    </Field>
+
+                    {sourceType === "internal_variable" && (
+                      <Field label="Source Internal Variable">
+                        <select
+                          value={m.variable_name || ""}
+                          onChange={e => updateSnDbMapping(idx, { variable_name: e.target.value })}
+                          className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#8B5CF6]/60"
+                        >
+                          <option value="">{internalVariablesLoading ? "Loading variables…" : "Select Internal Variable…"}</option>
+                          {internalVariables
+                            .filter(v => String(v?.data_type || "").toLowerCase() !== "system")
+                            .map(v => (
+                              <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                            ))}
+                        </select>
+                      </Field>
+                    )}
+
+                    {sourceType === "fixed_value" && (
+                      <Field label="Fixed Value">
+                        <Input value={m.value ?? m.fixed_value ?? ""} onChange={v => updateSnDbMapping(idx, { value: v, fixed_value: v })} placeholder="e.g. 12" />
+                      </Field>
+                    )}
+                  </>
+                )}
+
+                <Field label="Destination — Database Column">
+                  <Input
+                    value={m.destination_column || ""}
+                    onChange={v => updateSnDbMapping(idx, { destination_column: v })}
+                    placeholder="e.g. cp"
+                  />
+                </Field>
+              </div>
+            );
+          })}
 
           <button
             type="button"
@@ -1151,12 +1247,11 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
             + Add Mapping
           </button>
 
-          <p className="text-[var(--text-muted)] text-[9px] mt-1">
-            Semua field adalah mapping manual. Contoh:
-            <b> date_time → date_time</b>, <b>sn → sn</b>, <b>carrier → carrier</b>.
-            date_time diambil dari row SN List yang sama, bukan dibuat ulang oleh Database.
-            Kolom <b>id</b> tidak perlu dipetakan.
-          </p>
+          {String(c.write_mode || "new") === "new" ? (
+            <p className="text-[var(--text-muted)] text-[9px] mt-1">Fresh Data / New Data hanya mengambil data dari <b>SN List</b>. Fixed Value dan Internal Variable tidak tersedia pada mode ini.</p>
+          ) : (
+            <p className="text-[var(--text-muted)] text-[9px] mt-1">Update Data menggunakan <b>Target Database Column</b> sebagai Primary Key dan nilainya diambil dari <b>Internal Variable</b>. Data yang di-update dapat berasal dari <b>Internal Variable</b> atau <b>Fixed Value</b>. Kolom <b>sn</b> dipakai sebagai key dan tidak perlu di-update melalui mapping.</p>
+          )}
         </>)}
 
         {node.type === "read_sn_database" && (<>

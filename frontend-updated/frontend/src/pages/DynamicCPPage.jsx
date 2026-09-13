@@ -285,7 +285,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
   } = useTCPPLC({
     devices: tcpDevices,
     enabled: Boolean(cpNumber),
-    pollInterval: 50,
+    pollInterval: 20,
   });
 
   // cp-scan is handled by a long-lived event listener. Keep the
@@ -1960,10 +1960,16 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       const device = getTCPDevice(p.device);
 
+      // The page configuration can arrive before /api/tcp/devices.
+      // Do not report a false "device not found" warning during that
+      // initial loading window. The effect runs again when tcpDevices
+      // becomes available.
       if (!device) {
-        console.warn(
-          `[DynamicCPPage] Device not found for widget ${widget.id}: ${p.device}`
-        );
+        if (tcpDevices.length > 0) {
+          console.warn(
+            `[DynamicCPPage] Device not found for widget ${widget.id}: ${p.device}`
+          );
+        }
         return;
       }
 

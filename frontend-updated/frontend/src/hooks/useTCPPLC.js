@@ -28,7 +28,9 @@ import { API } from "../service/api";
 // CONFIG
 // ============================================================
 
-const DEFAULT_POLL_INTERVAL = 50;
+const DEFAULT_POLL_INTERVAL = 20;
+const MIN_POLL_INTERVAL = 5;
+const MAX_POLL_INTERVAL = 60000;
 
 
 // ============================================================
@@ -1488,20 +1490,26 @@ export function useTCPPLC({
       poll();
 
       /*
-       * Keep existing behavior but never allow an interval tick
-       * to overlap a previous poll.
+       * High-speed polling.
+       *
+       * Do NOT force a 50 ms minimum here. Dynamic pages can request
+       * sub-50 ms polling (for example 20 ms). The pollBusyRef guard
+       * inside poll() remains the protection against overlapping PLC
+       * requests, so a slow network/PLC response can never create a
+       * queue of concurrent polls.
        */
-      timerRef.current =
-        setInterval(
-          poll,
-          Math.max(
-            50,
-            Number(
-              pollInterval
-            ) ||
-            DEFAULT_POLL_INTERVAL
+      const requestedInterval = Number(pollInterval);
+      const effectiveInterval = Number.isFinite(requestedInterval)
+        ? Math.min(
+            MAX_POLL_INTERVAL,
+            Math.max(MIN_POLL_INTERVAL, requestedInterval)
           )
-        );
+        : DEFAULT_POLL_INTERVAL;
+
+      timerRef.current = setInterval(
+        poll,
+        effectiveInterval
+      );
 
       return () => {
 
