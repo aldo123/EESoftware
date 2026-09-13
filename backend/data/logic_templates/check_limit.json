@@ -15,8 +15,8 @@
       },
       "id": "gi",
       "type": "group_input",
-      "x": 313,
-      "y": 26
+      "x": 82,
+      "y": 16
     },
     {
       "config": {
@@ -433,8 +433,8 @@
       },
       "id": "n1789057119663_4",
       "type": "write_output",
-      "x": 301.7578125,
-      "y": 141.5078125
+      "x": 312.7578125,
+      "y": 39.5078125
     },
     {
       "config": {
@@ -458,13 +458,49 @@
             "variable_name": "CarrierSN"
           }
         ],
-        "timeout_seconds": "30",
+        "timeout_seconds": "10",
         "wait_mode": "poll"
       },
       "id": "n1789057168369_6",
       "type": "multi_condition_gate",
-      "x": 302.7578125,
-      "y": 225.5078125
+      "x": 312.7578125,
+      "y": 124.5078125
+    },
+    {
+      "config": {
+        "mappings": [
+          {
+            "source_column": "cp",
+            "variable_name": "SNCPdatabase"
+          }
+        ],
+        "source_table": "master_table",
+        "target_data_source": "internal_variable",
+        "target_database_column": "sn",
+        "target_internal_variable": "ProductSNHPT"
+      },
+      "id": "n1789289885051_4",
+      "type": "read_sn_database",
+      "x": 75.1328125,
+      "y": 146.5078125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "equals",
+            "value": "10",
+            "value2": "",
+            "variable_name": "SNCPdatabase"
+          }
+        ],
+        "timeout_seconds": "3",
+        "wait_mode": "poll"
+      },
+      "id": "n1789289891493_6",
+      "type": "multi_condition_gate",
+      "x": 83.1328125,
+      "y": 233.5078125
     },
     {
       "config": {
@@ -485,14 +521,38 @@
             "device_name": "",
             "kind": "internal",
             "protocol": "tcp",
+            "variable_name": "ProductSNHPT"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "CarrierSN"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "SNCPdatabase"
+          },
+          {
+            "kind": "internal",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
             "variable_name": "StatusHPT"
           }
         ]
       },
-      "id": "n1789226613896_1",
+      "id": "n1789290644216_1",
       "type": "reset_node",
-      "x": 839.7578125,
-      "y": 250.5078125
+      "x": 827.1328125,
+      "y": 278.5078125
     }
   ],
   "connections": [
@@ -541,32 +601,50 @@
     {
       "fromId": "n1789057119663_4",
       "fromPort": "next",
-      "id": "n1789057170677_7",
+      "id": "n1789289874563_3",
       "toId": "n1789057168369_6"
     },
     {
       "fromId": "n1789057168369_6",
       "fromPort": "true",
-      "id": "n1789057265205_9",
+      "id": "n1789289887919_5",
+      "toId": "n1789289885051_4"
+    },
+    {
+      "fromId": "n1789289885051_4",
+      "fromPort": "next",
+      "id": "n1789289893596_8",
+      "toId": "n1789289891493_6"
+    },
+    {
+      "fromId": "n1789289891493_6",
+      "fromPort": "true",
+      "id": "n1789289895276_9",
       "toId": "n1789055165206_4"
     },
     {
-      "fromId": "n1789057168369_6",
+      "fromId": "n1789289891493_6",
       "fromPort": "true",
-      "id": "n1789057267696_11",
+      "id": "n1789289897406_11",
       "toId": "n1789055287492_10"
     },
     {
-      "fromId": "n1789057168369_6",
+      "fromId": "n1789289891493_6",
       "fromPort": "true",
-      "id": "n1789057270442_13",
+      "id": "n1789289899783_12",
       "toId": "n1789055290941_11"
     },
     {
       "fromId": "n1789057168369_6",
       "fromPort": "false",
-      "id": "n1789226616274_2",
-      "toId": "n1789226613896_1"
+      "id": "n1789290646511_2",
+      "toId": "n1789290644216_1"
+    },
+    {
+      "fromId": "n1789289891493_6",
+      "fromPort": "false",
+      "id": "n1789290719537_4",
+      "toId": "n1789290644216_1"
     }
   ]
 }

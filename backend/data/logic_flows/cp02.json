@@ -245,6 +245,14 @@
             "kind": "internal",
             "protocol": "tcp",
             "variable_name": "ProductSNHPT"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "SNCPdatabase"
           }
         ]
       },

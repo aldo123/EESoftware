@@ -952,6 +952,230 @@ class FlowExecutor:
             self._follow(outputs, "next", db)
             return
 
+        # ─── READ SN DATABASE: read one MySQL row by `sn` and write selected
+        #     database columns into Internal Variables. This node is deliberately
+        #     separate from Write SN Database.
+        if ntype == "read_sn_database":
+            cfg = node.get("config", {}) or {}
+            source_table = str(cfg.get("source_table", "") or "").strip()
+            target_database_column = str(
+                cfg.get("target_database_column", "sn") or "sn"
+            ).strip()
+            target_data_source = str(
+                cfg.get("target_data_source", "internal_variable") or "internal_variable"
+            ).strip().lower()
+            target_internal_variable = str(
+                cfg.get("target_internal_variable", "") or ""
+            ).strip()
+            mappings = cfg.get("mappings")
+
+            if not source_table:
+                self._log("Read SN Database: source database table is not configured", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
+
+            if not target_database_column:
+                self._log("Read SN Database: target database column is not configured", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
+
+            if target_data_source != "internal_variable":
+                self._log(
+                    "Read SN Database: TARGET DATA must be Internal Variable",
+                    "#EF4444",
+                )
+                self._follow(outputs, "next", db)
+                return
+
+            if not target_internal_variable:
+                self._log(
+                    "Read SN Database: target Internal Variable is not configured",
+                    "#EF4444",
+                )
+                self._follow(outputs, "next", db)
+                return
+
+            if not isinstance(mappings, list):
+                mappings = []
+
+            mappings = [
+                m for m in mappings
+                if isinstance(m, dict)
+                and str(m.get("source_column", "")).strip()
+                and str(m.get("variable_name", "")).strip()
+            ]
+
+            if not mappings:
+                self._log(
+                    "Read SN Database: no valid Database Column → Internal Variable mapping configured",
+                    "#EF4444",
+                )
+                self._follow(outputs, "next", db)
+                return
+
+            try:
+                if db is None:
+                    raise ValueError("database is disconnected")
+
+                # Table/column identifiers cannot be bound as SQL parameters,
+                # so validate them strictly before interpolation.
+                if not re.fullmatch(r"[A-Za-z0-9_]+", source_table):
+                    raise ValueError(f"invalid source database table name '{source_table}'")
+
+                source_columns = []
+                destination_variables = []
+                seen_columns = set()
+                seen_variables = set()
+
+                for m in mappings:
+                    source_column = str(m.get("source_column", "")).strip()
+                    variable_name = str(m.get("variable_name", "")).strip()
+
+                    if not re.fullmatch(r"[A-Za-z0-9_]+", source_column):
+                        raise ValueError(f"invalid source database column '{source_column}'")
+
+                    if source_column.lower() == "sn":
+                        raise ValueError("source column 'sn' is the lookup key; choose another column to read")
+
+                    if source_column.lower() in seen_columns:
+                        raise ValueError(f"duplicate source database column '{source_column}'")
+
+                    if variable_name.lower() in seen_variables:
+                        raise ValueError(f"duplicate destination Internal Variable '{variable_name}'")
+
+                    seen_columns.add(source_column.lower())
+                    seen_variables.add(variable_name.lower())
+                    source_columns.append(source_column)
+                    destination_variables.append(variable_name)
+
+                # Validate that the configured table and source columns exist.
+                meta = db.fetch_all(f"SHOW COLUMNS FROM `{source_table}`")
+                if not meta:
+                    raise ValueError(
+                        f"source MySQL table '{source_table}' not found or database is disconnected"
+                    )
+
+                available_columns = {
+                    str(row.get("Field", ""))
+                    for row in meta
+                    if isinstance(row, dict) and row.get("Field")
+                }
+
+                # Target Database Column is configurable (e.g. sn, carrier, etc.).
+                # Resolve its actual spelling case-insensitively.
+                target_column = next(
+                    (
+                        c for c in available_columns
+                        if c.lower() == target_database_column.lower()
+                    ),
+                    None,
+                )
+                if not target_column:
+                    raise ValueError(
+                        f"target database column '{target_database_column}' does not exist in '{source_table}'"
+                    )
+
+                for source_column in source_columns:
+                    if source_column not in available_columns:
+                        raise ValueError(
+                            f"source database column '{source_column}' does not exist in '{source_table}'"
+                        )
+
+                # Check every destination Internal Variable before changing
+                # anything, so a bad mapping cannot leave a partial result.
+                from routes.internal_variable import _connect
+                with _connect() as iv_conn:
+                    iv_rows = {}
+                    for variable_name in destination_variables:
+                        iv_row = iv_conn.execute(
+                            """SELECT id, name, data_type
+                               FROM internal_variables
+                               WHERE name = ? COLLATE NOCASE""",
+                            (variable_name,),
+                        ).fetchone()
+
+                        if iv_row is None:
+                            raise ValueError(
+                                f"Internal Variable '{variable_name}' not found"
+                            )
+
+                        if str(iv_row["data_type"] or "").strip().lower() == "system":
+                            raise ValueError(
+                                f"Internal Variable '{variable_name}' is System and cannot be written"
+                            )
+
+                        iv_rows[variable_name.lower()] = iv_row
+
+                target_value = self._read_internal_variable(target_internal_variable)
+                if target_value is None:
+                    raise ValueError(
+                        f"Internal Variable '{target_internal_variable}' not found"
+                    )
+
+                q_table = "`" + source_table.replace("`", "``") + "`"
+                q_target = "`" + target_column.replace("`", "``") + "`"
+                q_cols = ", ".join(
+                    "`" + col.replace("`", "``") + "`"
+                    for col in source_columns
+                )
+
+                # date_time is optional.
+                # - If the table has date_time, duplicate target values use the newest row.
+                # - If the table has no date_time (for example master_table), do not fail;
+                #   simply return one matching row.
+                date_time_column = next(
+                    (c for c in available_columns if c.lower() == "date_time"),
+                    None,
+                )
+
+                sql = (
+                    f"SELECT {q_cols} FROM {q_table} "
+                    f"WHERE {q_target} = %s "
+                )
+                if date_time_column:
+                    q_date_time = "`" + date_time_column.replace("`", "``") + "`"
+                    sql += f"ORDER BY {q_date_time} DESC LIMIT 1"
+                else:
+                    # No date_time: table is treated as a simple lookup table.
+                    sql += "LIMIT 1"
+                row = db.fetch_one(sql, (str(target_value),))
+
+                if not row:
+                    self._log(
+                        f"Read SN Database: {target_database_column} '{target_value}' not found in table '{source_table}'",
+                        "#EF4444",
+                    )
+                    self._follow(outputs, "next", db)
+                    return
+
+                # Only write after the row has been found and all mappings
+                # have been validated.
+                for source_column, variable_name in zip(
+                    source_columns, destination_variables
+                ):
+                    value = row.get(source_column, "")
+                    if value is None:
+                        value = ""
+
+                    ok = self._write_internal_variable(variable_name, value)
+
+                    self._log(
+                        (
+                            f"Read SN Database: '{source_table}' "
+                            f"{target_database_column} '{target_value}' {source_column} → "
+                            f"{variable_name} = {value}"
+                        )
+                        if ok
+                        else f"Read SN Database failed: '{variable_name}'",
+                        "#A855F7" if ok else "#EF4444",
+                    )
+
+            except Exception as e:
+                self._log(f"Read SN Database error CP{self.cp}: {e}", "#EF4444")
+
+            self._follow(outputs, "next", db)
+            return
+
         # ─── WRITE SN DATABASE: copy the latest SN List row into MySQL.
         #     Source = SN List (SQLite-backed CP table), destination = MySQL table.
         if ntype == "write_sn_database":
