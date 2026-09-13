@@ -15,7 +15,7 @@ const NODE_TYPES = [
   { type: "zone_inspect", category: "check", color: "#8B5CF6", icon: "🔍", label: "Zone Inspect", desc: "Inspect a camera ROI (vision engine)" },
   { type: "count_over_time", category: "check", color: "#8B5CF6", icon: "⏱", label: "Count Over Time", desc: "Count detections in a camera ROI over N seconds" },
   { type: "custom_script", category: "check", color: "#F59E0B", icon: "🧩", label: "Custom Script", desc: "Write custom logic for cases no other node covers" },
-  { type: "multi_condition_gate", category: "check", color: "#EAB308", icon: "🚦", label: "Multi-Condition Gate", desc: "AND-check several Internal Variables — all must pass to continue" },
+  { type: "multi_condition_gate", category: "check", color: "#EAB308", icon: "🚦", label: "Multi-Condition Gate", desc: "AND-check Internal Variable, TCP/IP, SN List or Database conditions" },
   { type: "write_output", category: "action", color: "#22C55E", icon: "✍️", label: "Write Output", desc: "Write a value to a PLC coil/register or an Internal Variable" },
   { type: "write_sn_list", category: "action", color: "#06B6D4", icon: "📝", label: "Write SN List", desc: "Write Internal Variables to SN List columns" },
   { type: "write_sn_database", category: "action", color: "#8B5CF6", icon: "🗄️", label: "Write SN Database", desc: "Send latest SN List row to MySQL database" },
@@ -70,7 +70,20 @@ const DEFAULT_NODE_CONFIG = {
     code: "# fields: dict of current field values (read/write)\n# result: set True/False to pick the True/False output\n# log(msg): add a line to the run log\n\nresult = True\n",
   },
   multi_condition_gate: {
-    conditions: [{ variable_name: "", operator: "equals", value: "", value2: "" }],
+    conditions: [{
+      source_type: "internal_variable",
+      variable_name: "",
+      operator: "equals",
+      value: "",
+      value2: "",
+      device_name: "",
+      address_type: "holding_register",
+      address: "0",
+      sn_variable_name: "",
+      data_column: "",
+      table_name: "",
+      sn_column: "sn",
+    }],
     wait_mode: "instant", // "instant" | "poll"
     timeout_seconds: "10",
   },
@@ -344,7 +357,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
   }, [node?.id]);
 
   useEffect(() => {
-    if (!cpNumber || !["write_sn_list", "write_sn_database"].includes(node?.type)) {
+    if (!cpNumber || !["write_sn_list", "write_sn_database", "multi_condition_gate"].includes(node?.type)) {
       setSnListColumns([]);
       setSnListColumnsLoading(false);
       return;
@@ -484,17 +497,65 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
     });
   };
 
-  const conditions = Array.isArray(c.conditions) ? c.conditions : [];
+  const conditions = Array.isArray(c.conditions) && c.conditions.length
+    ? c.conditions
+    : [{ source_type: "internal_variable", variable_name: "", operator: "equals", value: "", value2: "" }];
+
   const updateCondition = (idx, patch) => {
     setLocalConfig(prev => ({
       ...prev,
       conditions: (prev.conditions || []).map((cond, i) => (i === idx ? { ...cond, ...patch } : cond)),
     }));
   };
+
+  const setConditionSource = (idx, sourceType) => {
+    const rowOnlyOperators = ["exists", "not_exists", "duplicate", "not_duplicate"];
+    setLocalConfig(prev => ({
+      ...prev,
+      conditions: (prev.conditions || []).map((cond, i) => (
+        i === idx
+          ? {
+              ...cond,
+              source_type: sourceType,
+              operator: (
+                ["internal_variable", "tcpip"].includes(sourceType) && rowOnlyOperators.includes(cond.operator)
+              ) ? "equals" : (cond.operator || "equals"),
+              ...(sourceType === "internal_variable" ? {
+                variable_name: cond.variable_name || "",
+              } : {}),
+              ...(sourceType === "tcpip" ? {
+                device_name: cond.device_name || "",
+                address_type: cond.address_type || "holding_register",
+                address: cond.address ?? "0",
+              } : {}),
+              ...(sourceType === "sn_list" ? {
+                sn_variable_name: cond.sn_variable_name || "",
+                data_column: cond.data_column || "",
+              } : {}),
+              ...(sourceType === "database" ? {
+                sn_variable_name: cond.sn_variable_name || "",
+                table_name: cond.table_name || "",
+                // Database Gate uses one Column field, like SN List.
+                // For row modes (Exists/Not Exists/Duplicate/Not Duplicate),
+                // this is the column used to search the SN. For comparison
+                // modes, it is the data/result column and the SN lookup column
+                // remains `sn` (legacy sn_column is kept for old flows).
+                data_column: cond.data_column || cond.sn_column || "",
+                sn_column: cond.sn_column || "sn",
+              } : {}),
+            }
+          : cond
+      )),
+    }));
+  };
+
   const addCondition = () => {
     setLocalConfig(prev => ({
       ...prev,
-      conditions: [...(prev.conditions || []), { variable_name: "", operator: "equals", value: "", value2: "" }],
+      conditions: [
+        ...(prev.conditions || []),
+        { source_type: "internal_variable", variable_name: "", operator: "equals", value: "", value2: "" },
+      ],
     }));
   };
   const removeCondition = (idx) => {
@@ -886,55 +947,179 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
         </>)}
 
         {node.type === "multi_condition_gate" && (<>
-          {conditions.map((cond, idx) => (
-            <div key={idx} className="flex flex-col gap-1 rounded-lg border border-[var(--border-soft)] p-2">
-              <div className="flex items-center justify-between">
-                <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Condition {idx + 1}</span>
-                <button type="button" onClick={() => removeCondition(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove condition">
-                  <IconTrash />
-                </button>
+          {conditions.map((cond, idx) => {
+            const sourceType = cond.source_type || "internal_variable";
+            const rowOperators = [
+              { value: "exists", label: "Exists" },
+              { value: "not_exists", label: "Not Exists" },
+              { value: "duplicate", label: "Duplicate" },
+              { value: "not_duplicate", label: "Not Duplicate" },
+            ];
+            const compareOperators = [
+              { value: "equals", label: "Equals (=)" },
+              { value: "not_equals", label: "Not Equals (≠)" },
+              { value: "greater_than", label: "Greater Than (>)" },
+              { value: "less_than", label: "Less Than (<)" },
+              { value: "greater_equal", label: "Greater or Equal (≥)" },
+              { value: "less_equal", label: "Less or Equal (≤)" },
+              { value: "between", label: "Between (range)" },
+              { value: "contains", label: "Contains" },
+              { value: "not_contains", label: "Not Contains" },
+            ];
+            const operators = (sourceType === "sn_list" || sourceType === "database")
+              ? [...compareOperators, ...rowOperators]
+              : compareOperators;
+
+            return (
+              <div key={idx} className="flex flex-col gap-1 rounded-lg border border-[var(--border-soft)] p-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Condition {idx + 1}</span>
+                  <button type="button" onClick={() => removeCondition(idx)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove condition">
+                    <IconTrash />
+                  </button>
+                </div>
+
+                <Field label="Source / Data Type">
+                  <Select
+                    value={sourceType}
+                    onChange={v => setConditionSource(idx, v)}
+                    options={[
+                      { value: "internal_variable", label: "Internal Variable" },
+                      { value: "tcpip", label: "TCP/IP" },
+                      { value: "sn_list", label: "SN List" },
+                      { value: "database", label: "Database" },
+                    ]}
+                  />
+                </Field>
+
+                {sourceType === "internal_variable" && (
+                  <Field label="Internal Variable">
+                    <select
+                      value={cond.variable_name || ""}
+                      onChange={e => updateCondition(idx, { variable_name: e.target.value })}
+                      className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60"
+                    >
+                      <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
+                      {internalVariables.map(v => (
+                        <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
+
+                {sourceType === "tcpip" && (<>
+                  <Field label="TCP/IP Device">
+                    <Select
+                      value={cond.device_name || ""}
+                      onChange={v => updateCondition(idx, { device_name: v })}
+                      options={[
+                        { value: "", label: "Select TCP/IP device…" },
+                        ...((tcpDevices || []).map(d => ({ value: d.name, label: d.name }))),
+                      ]}
+                    />
+                  </Field>
+                  <Field label="Address Type">
+                    <Select
+                      value={cond.address_type || "holding_register"}
+                      onChange={v => updateCondition(idx, { address_type: v })}
+                      options={[
+                        { value: "coil", label: "Coil" },
+                        { value: "holding_register", label: "Holding Register" },
+                      ]}
+                    />
+                  </Field>
+                  <Field label="Address">
+                    <Input value={cond.address ?? "0"} onChange={v => updateCondition(idx, { address: v })} placeholder="0" />
+                  </Field>
+                </>)}
+
+                {sourceType === "sn_list" && (<>
+                  <Field label="SN Source — Internal Variable">
+                    <select
+                      value={cond.sn_variable_name || ""}
+                      onChange={e => updateCondition(idx, { sn_variable_name: e.target.value })}
+                      className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#EAB308]/60"
+                    >
+                      <option value="">{internalVariablesLoading ? "Loading variables…" : "Select SN variable…"}</option>
+                      {internalVariables
+                        .filter(v => String(v?.data_type || "").toLowerCase() !== "system")
+                        .map(v => (
+                          <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                        ))}
+                    </select>
+                  </Field>
+
+                  <Field label="SN List Column">
+                    <select
+                      value={cond.data_column || ""}
+                      onChange={e => updateCondition(idx, { data_column: e.target.value })}
+                      className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#EAB308]/60"
+                    >
+                      <option value="">{snListColumnsLoading ? "Loading columns…" : "Select column…"}</option>
+                      {snListColumns.map(col => (
+                        <option key={col.key} value={col.key}>{col.label || col.key} ({col.key})</option>
+                      ))}
+                    </select>
+                  </Field>
+                </>)}
+
+                {sourceType === "database" && (<>
+                  <Field label="Database Table">
+                    <Input value={cond.table_name || ""} onChange={v => updateCondition(idx, { table_name: v })} placeholder="e.g. hipot" />
+                  </Field>
+
+                  <Field label="Database Column">
+                    <Input
+                      value={cond.data_column || ""}
+                      onChange={v => updateCondition(idx, { data_column: v })}
+                      placeholder={
+                        ["exists", "not_exists", "duplicate", "not_duplicate"].includes(cond.operator)
+                          ? "e.g. sn"
+                          : "e.g. step1"
+                      }
+                    />
+                  </Field>
+
+                  <Field label="SN Source — Internal Variable">
+                    <select
+                      value={cond.sn_variable_name || ""}
+                      onChange={e => updateCondition(idx, { sn_variable_name: e.target.value })}
+                      className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#EAB308]/60"
+                    >
+                      <option value="">{internalVariablesLoading ? "Loading variables…" : "Select SN variable…"}</option>
+                      {internalVariables
+                        .filter(v => String(v?.data_type || "").toLowerCase() !== "system")
+                        .map(v => (
+                          <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
+                        ))}
+                    </select>
+                  </Field>
+                </>)}
+
+                <Field label={(sourceType === "sn_list" || sourceType === "database") ? "Mode" : "Operator"}>
+                  <Select value={cond.operator || "equals"} onChange={v => updateCondition(idx, { operator: v })} options={operators} />
+                </Field>
+
+                {["exists", "not_exists", "duplicate", "not_duplicate"].includes(cond.operator) ? (
+                  <p className="text-[var(--text-muted)] text-[9px]">
+                    <b>{cond.operator === "duplicate" ? "Duplicate" : cond.operator === "not_duplicate" ? "Not Duplicate" : cond.operator === "exists" ? "Exists" : "Not Exists"}</b>
+                    mengecek jumlah record untuk SN target pada Column yang dipilih. Tidak membutuhkan Value.
+                  </p>
+                ) : cond.operator === "between" ? (
+                  <Field label="Value Min / Max">
+                    <div className="grid grid-cols-2 gap-1">
+                      <Input value={cond.value} onChange={v => updateCondition(idx, { value: v })} placeholder="min" />
+                      <Input value={cond.value2} onChange={v => updateCondition(idx, { value2: v })} placeholder="max" />
+                    </div>
+                  </Field>
+                ) : (
+                  <Field label="Value">
+                    <Input value={cond.value} onChange={v => updateCondition(idx, { value: v })} placeholder="e.g. PASS" />
+                  </Field>
+                )}
               </div>
-
-              <Field label="Internal Variable">
-                <select
-                  value={cond.variable_name || ""}
-                  onChange={e => updateCondition(idx, { variable_name: e.target.value })}
-                  className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#22C55E]/60"
-                >
-                  <option value="">{internalVariablesLoading ? "Loading variables…" : "Select variable…"}</option>
-                  {internalVariables.map(v => (
-                    <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>
-                  ))}
-                </select>
-              </Field>
-
-              <Field label="Operator">
-                <Select value={cond.operator || "equals"} onChange={v => updateCondition(idx, { operator: v })} options={[
-                  { value: "equals", label: "Equals (=)" },
-                  { value: "not_equals", label: "Not Equals (≠)" },
-                  { value: "greater_than", label: "Greater Than (>)" },
-                  { value: "less_than", label: "Less Than (<)" },
-                  { value: "greater_equal", label: "Greater or Equal (≥)" },
-                  { value: "less_equal", label: "Less or Equal (≤)" },
-                  { value: "between", label: "Between (range)" },
-                  { value: "contains", label: "Contains" },
-                ]} />
-              </Field>
-
-              {cond.operator === "between" ? (
-                <Field label="Value Min / Max">
-                  <div className="grid grid-cols-2 gap-1">
-                    <Input value={cond.value} onChange={v => updateCondition(idx, { value: v })} placeholder="min" />
-                    <Input value={cond.value2} onChange={v => updateCondition(idx, { value2: v })} placeholder="max" />
-                  </div>
-                </Field>
-              ) : (
-                <Field label="Value">
-                  <Input value={cond.value} onChange={v => updateCondition(idx, { value: v })} placeholder="e.g. PASS" />
-                </Field>
-              )}
-            </div>
-          ))}
+            );
+          })}
 
           <button
             type="button"
@@ -945,8 +1130,9 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
           </button>
 
           <p className="text-[var(--text-muted)] text-[9px] mt-1">
-            Semua kondisi dicek dengan AND — kalau <b>semua</b> Internal Variable memenuhi kondisinya → <b style={{ color: "#22C55E" }}>Green (True)</b>, lanjut ke node berikutnya. Kalau <b>salah satu</b> NG (atau variable-nya tidak ditemukan) → <b style={{ color: "#EF4444" }}>Red (False)</b>.
-            <br />Status tiap baris Specification Table otomatis muncul di sini sebagai <code>Spec_&lt;nama_spesifikasi&gt;_Step&lt;nomor_baris&gt;_Status</code> (isinya PASS/FAIL/waiting_trigger/running). Baris ke-1 di tabel = Step1, baris ke-2 = Step2, dst.
+            Semua kondisi dicek dengan <b>AND</b>. Source dapat berupa <b>Internal Variable</b>, <b>TCP/IP</b>, <b>SN List</b>, atau <b>Database</b>.
+            <br />Untuk SN List/Database, <b>SN Source</b> diambil dari Internal Variable yang dipilih. <b>Exists/Not Exists</b> mengecek ada/tidaknya record, sedangkan <b>Duplicate/Not Duplicate</b> mengecek apakah SN mempunyai lebih dari satu record. Jika tabel memiliki <code>date_time</code>, pembacaan value memakai record terbaru; tanpa <code>date_time</code> memakai record yang tersedia.
+            <br />Kondisi Internal Variable lama tetap kompatibel dan tetap dibandingkan seperti sebelumnya.
           </p>
 
           <Field label="Timing">
@@ -964,9 +1150,9 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
 
           <p className="text-[var(--text-muted)] text-[9px] mt-1">
             {c.wait_mode === "poll" ? (
-              <>Node ini bakal <b>ngecek berulang tiap 0.2 detik</b> sampai semua kondisi terpenuhi, atau sampai Timeout abis (baru dianggap NG). Pakai mode ini kalau variable yang dicek butuh waktu buat berubah (misal status Specification Table yang mulai dari <code>waiting_trigger</code>/<code>running</code> dan baru jadi PASS/FAIL setelah test-nya beneran selesai) — biar gate-nya gak keburu ambil keputusan pas test-nya baru mulai.</>
+              <>Node ini bakal <b>ngecek berulang tiap 0.2 detik</b> sampai semua kondisi terpenuhi, atau sampai Timeout abis (baru dianggap NG). Untuk source database/SN List/TCP/IP, data dibaca ulang setiap polling.</>
             ) : (
-              <>Mode instant cuma ngecek SEKALI, pas node ini dijalankan — cocok kalau variable-nya udah pasti punya nilai final saat itu juga. Kalau variable-nya (misal status test) baru mulai berubah SETELAH node sebelumnya (misal Write Output yang mulai test), pakai mode "Wait Until Match" di atas, jangan instant.</>
+              <>Mode instant cuma ngecek <b>sekali</b> saat node dijalankan.</>
             )}
           </p>
         </>)}
