@@ -289,6 +289,8 @@ class FlowExecutor:
                 return str(left).strip().lower() != str(right).strip().lower()
             if operator == "contains":
                 return str(right).strip().lower() in str(left).strip().lower()
+            if operator == "not_contains":
+                return str(right).strip().lower() not in str(left).strip().lower()
         except (ValueError, TypeError):
             return False
         return False
@@ -765,16 +767,20 @@ class FlowExecutor:
             self._follow(outputs, "true" if ok else "false", db)
             return
 
-        # ─── MULTI-CONDITION GATE: AND-check a list of Internal Variables against
-        #     per-variable custom conditions — all must pass ("true") for the flow
-        #     to continue; any single NG stops it on "false". By default this is a
-        #     single instant snapshot check — for a variable whose value takes time
-        #     to settle (e.g. a Specification Table row's status, which starts at
-        #     "waiting_trigger"/"running" and only becomes PASS/FAIL once the actual
-        #     test finishes), turn on "Wait Until Match" so this node polls instead
-        #     of judging on the very first read. ──
+        # ─── MULTI-CONDITION GATE: AND-check several data sources.
+        #     Sources supported by this node:
+        #       internal_variable -> current Internal Variable value
+        #       tcpip             -> live Modbus TCP value
+        #       sn_list           -> value/row for a selected SN in this CP's SN List
+        #       database          -> value/row for a selected SN in a MySQL table
+        #
+        #     Legacy conditions without source_type are treated as Internal Variable,
+        #     so existing flows keep their original behavior.
+        #
+        #     Exists / Not Exists / Duplicate / Not Duplicate are row-level checks
+        #     and therefore do not require a comparison Value.
         if ntype == "multi_condition_gate":
-            cfg = node.get("config", {})
+            cfg = node.get("config", {}) or {}
             conditions = cfg.get("conditions", []) or []
 
             if not conditions:
@@ -782,33 +788,235 @@ class FlowExecutor:
                 self._follow(outputs, "false", db)
                 return
 
+            def _safe_identifier(value, label):
+                value = str(value or "").strip()
+                if not re.fullmatch(r"[A-Za-z0-9_]+", value):
+                    raise ValueError(f"invalid {label} '{value}'")
+                return value
+
+            def _sn_list_lookup(cond):
+                from routes.snlist import get_snlist_conn, ensure_table_exists, get_columns_from_table, get_table_name
+
+                ensure_table_exists(self.cp)
+                table = get_table_name(self.cp)
+                columns = list(get_columns_from_table(self.cp) or [])
+                lookup_col = "sn"
+                value_col = str(cond.get("data_column", cond.get("column", "")) or "").strip()
+                if lookup_col not in columns:
+                    actual = next((c for c in columns if str(c).lower() == lookup_col), None)
+                    if actual:
+                        lookup_col = actual
+                    else:
+                        raise ValueError(f"SN List CP{self.cp} has no 'sn' column")
+                if value_col:
+                    actual_value_col = next((c for c in columns if str(c).lower() == value_col.lower()), None)
+                    if not actual_value_col:
+                        raise ValueError(f"SN List column '{value_col}' does not exist")
+                    value_col = actual_value_col
+
+                sn_variable = str(cond.get("sn_variable_name", "") or "").strip()
+                sn_value = self._read_internal_variable(sn_variable)
+                if sn_value is None:
+                    raise ValueError(f"SN source Internal Variable '{sn_variable}' not found")
+
+                qtable = '"' + str(table).replace('"', '""') + '"'
+                qlookup = '"' + str(lookup_col).replace('"', '""') + '"'
+                operator = str(cond.get("operator", "equals") or "equals").strip().lower()
+
+                with get_snlist_conn() as conn:
+                    if operator in ("exists", "not_exists", "duplicate", "not_duplicate"):
+                        row = conn.execute(
+                            f"SELECT COUNT(*) AS cnt FROM {qtable} WHERE {qlookup} = ?",
+                            (str(sn_value),),
+                        ).fetchone()
+                        count = int(row["cnt"] if row is not None and "cnt" in row.keys() else row[0])
+                        return {
+                            "exists": count > 0,
+                            "count": count,
+                            "value": count,
+                            "display": f"SN={sn_value}, count={count}",
+                        }
+
+                    if not value_col:
+                        raise ValueError("SN List data column is required for this operator")
+
+                    qvalue = '"' + str(value_col).replace('"', '""') + '"'
+                    date_col = next((c for c in columns if str(c).lower() == "date_time"), None)
+                    sql = f"SELECT {qvalue} AS gate_value FROM {qtable} WHERE {qlookup} = ?"
+                    if date_col:
+                        qdate = '"' + str(date_col).replace('"', '""') + '"'
+                        sql += f" ORDER BY {qdate} DESC"
+                    sql += " LIMIT 1"
+                    row = conn.execute(sql, (str(sn_value),)).fetchone()
+                    if not row:
+                        return {"exists": False, "count": 0, "value": None, "display": f"SN={sn_value}, no row"}
+                    return {
+                        "exists": True,
+                        "count": 1,
+                        "value": row["gate_value"] if "gate_value" in row.keys() else row[0],
+                        "display": f"SN={sn_value}, {value_col}",
+                    }
+
+            def _database_lookup(cond):
+                if db is None:
+                    raise ValueError("database is disconnected")
+
+                table = _safe_identifier(cond.get("table_name", cond.get("source_table", "")), "database table")
+                column = str(cond.get("data_column", cond.get("column", "")) or "").strip()
+                legacy_sn_column = str(cond.get("sn_column", "") or "").strip()
+                operator = str(cond.get("operator", "equals") or "equals").strip().lower()
+                row_operators = ("exists", "not_exists", "duplicate", "not_duplicate")
+
+                meta = db.fetch_all(f"SHOW COLUMNS FROM `{table}`")
+                if not meta:
+                    raise ValueError(f"database table '{table}' not found")
+                available = [str(r.get("Field", "")) for r in meta if isinstance(r, dict) and r.get("Field")]
+                # Database Gate intentionally has the same single Column field as
+                # SN List, plus Table Name. For row modes the selected Column is
+                # the lookup/key column (e.g. `sn` in the UI screenshot). For
+                # comparison modes, the SN lookup is the conventional `sn`
+                # column and the selected Column is the value/data column.
+                if operator in row_operators:
+                    key_col = column or legacy_sn_column or "sn"
+                    key_actual = next((c for c in available if c.lower() == key_col.lower()), None)
+                    if not key_actual:
+                        raise ValueError(f"database column '{key_col}' does not exist in '{table}'")
+                    value_actual = None
+                else:
+                    key_col = legacy_sn_column or "sn"
+                    key_actual = next((c for c in available if c.lower() == key_col.lower()), None)
+                    if not key_actual:
+                        raise ValueError(f"database SN column '{key_col}' does not exist in '{table}'")
+                    if not column:
+                        raise ValueError("Database data column is required for this operator")
+                    value_actual = next((c for c in available if c.lower() == column.lower()), None)
+                    if not value_actual:
+                        raise ValueError(f"database data column '{column}' does not exist in '{table}'")
+
+                sn_variable = str(cond.get("sn_variable_name", "") or "").strip()
+                sn_value = self._read_internal_variable(sn_variable)
+                if sn_value is None:
+                    raise ValueError(f"SN source Internal Variable '{sn_variable}' not found")
+
+                if operator in row_operators:
+                    qtable = "`" + table.replace("`", "``") + "`"
+                    qkey = "`" + key_actual.replace("`", "``") + "`"
+                    row = db.fetch_one(
+                        f"SELECT COUNT(*) AS cnt FROM {qtable} WHERE {qkey} = %s",
+                        (str(sn_value),),
+                    )
+                    count = int((row or {}).get("cnt", 0))
+                    return {
+                        "exists": count > 0,
+                        "count": count,
+                        "value": count,
+                        "display": f"SN={sn_value}, {key_actual}, count={count}",
+                    }
+
+                qtable = "`" + table.replace("`", "``") + "`"
+                qkey = "`" + key_actual.replace("`", "``") + "`"
+                qvalue = "`" + value_actual.replace("`", "``") + "`"
+                date_col = next((c for c in available if c.lower() == "date_time"), None)
+                sql = f"SELECT {qvalue} AS gate_value FROM {qtable} WHERE {qkey} = %s"
+                if date_col:
+                    qdate = "`" + date_col.replace("`", "``") + "`"
+                    sql += f" ORDER BY {qdate} DESC"
+                sql += " LIMIT 1"
+                row = db.fetch_one(sql, (str(sn_value),))
+                if not row:
+                    return {"exists": False, "count": 0, "value": None, "display": f"SN={sn_value}, no row"}
+                return {
+                    "exists": True,
+                    "count": 1,
+                    "value": row.get("gate_value"),
+                    "display": f"SN={sn_value}, {value_actual}",
+                }
+
+            def _resolve_gate_condition(cond):
+                source = str(cond.get("source_type", "internal_variable") or "internal_variable").strip().lower()
+                operator = str(cond.get("operator", "equals") or "equals").strip().lower()
+
+                if source == "internal_variable":
+                    name = str(cond.get("variable_name", "") or "").strip()
+                    value = self._read_internal_variable(name)
+                    if value is None:
+                        raise ValueError(f"Internal Variable '{name}' not found")
+                    return {"exists": True, "count": 1, "value": value, "display": name}
+
+                if source == "tcpip":
+                    value = self._resolve_device_value({
+                        "protocol": "tcp",
+                        "device_name": cond.get("device_name", ""),
+                        "address_type": cond.get("address_type", "holding_register"),
+                        "address": cond.get("address", "0"),
+                    })
+                    if value == "" and operator not in ("exists", "not_exists", "duplicate", "not_duplicate"):
+                        raise ValueError("TCP/IP value could not be read")
+                    return {"exists": value != "", "count": 1 if value != "" else 0, "value": value,
+                            "display": f"{cond.get('device_name', '?')} {cond.get('address_type', '?')}@{cond.get('address', '?')}"}
+
+                if source == "sn_list":
+                    return _sn_list_lookup(cond)
+
+                if source == "database":
+                    return _database_lookup(cond)
+
+                raise ValueError(f"unsupported source '{source}'")
+
+            def _condition_ok(cond, result):
+                operator = str(cond.get("operator", "equals") or "equals").strip().lower()
+                if operator == "exists":
+                    return bool(result["exists"])
+                if operator == "not_exists":
+                    return not bool(result["exists"])
+                if operator == "duplicate":
+                    return int(result.get("count", 0)) >= 1
+                if operator == "not_duplicate":
+                    return int(result.get("count", 0)) == 0
+
+                # A missing SN/database row is NG for value comparisons.
+                if not result.get("exists"):
+                    return False
+                return self._compare_values(
+                    result.get("value"),
+                    operator,
+                    cond.get("value", ""),
+                    cond.get("value2", ""),
+                )
+
             def check_once(log_each: bool) -> bool:
                 ok_all = True
                 for cond in conditions:
-                    var_name = cond.get("variable_name", "")
-                    operator = cond.get("operator", "equals")
-                    value = self._read_internal_variable(var_name)
-                    if value is None:
+                    try:
+                        result = _resolve_gate_condition(cond)
+                        ok = _condition_ok(cond, result)
                         if log_each:
-                            self._log(f"Multi-Condition Gate: variable '{var_name}' not found", "#EF4444")
-                        ok_all = False
-                        continue
-                    ok = self._compare_values(value, operator, cond.get("value", ""), cond.get("value2", ""))
-                    if log_each:
-                        self._log(f"Multi-Condition Gate: {var_name} ({value}) {operator} {cond.get('value', '')} -> {'OK' if ok else 'NG'}", "#22C55E" if ok else "#EF4444")
+                            source = str(cond.get("source_type", "internal_variable") or "internal_variable")
+                            operator = str(cond.get("operator", "equals") or "equals")
+                            self._log(
+                                f"Multi-Condition Gate: [{source}] {result.get('display', '')} "
+                                f"({result.get('value', '')}) {operator} "
+                                f"{cond.get('value', '')} -> {'OK' if ok else 'NG'}",
+                                "#22C55E" if ok else "#EF4444",
+                            )
+                    except Exception as e:
+                        ok = False
+                        if log_each:
+                            self._log(f"Multi-Condition Gate: {e}", "#EF4444")
                     if not ok:
                         ok_all = False
                 return ok_all
 
             def any_condition_failed() -> bool:
-                """Fail-fast: if the real test this is waiting on already settled
-                on a definitive negative result (a Specification Table row's
-                status reads the literal "FAIL"), there's no point burning the
-                rest of the timeout waiting for a PASS that will never come."""
-                return any(
-                    str(self._read_internal_variable(cond.get("variable_name", "")) or "").strip().lower() == "fail"
-                    for cond in conditions
-                )
+                # Keep the old fail-fast behavior for Internal Variable conditions.
+                # Other sources are re-evaluated normally so their state can settle.
+                for cond in conditions:
+                    source = str(cond.get("source_type", "internal_variable") or "internal_variable").strip().lower()
+                    if source != "internal_variable":
+                        continue
+                    if str(self._read_internal_variable(cond.get("variable_name", "")) or "").strip().lower() == "fail":
+                        return True
+                return False
 
             if cfg.get("wait_mode") == "poll":
                 import time
@@ -829,9 +1037,14 @@ class FlowExecutor:
                         timed_out = True
                         break
                     time.sleep(0.2)
-                check_once(log_each=True)  # one final pass just to log the actual per-condition outcome
+                check_once(log_each=True)
                 if not all_ok:
-                    self._log(f"Multi-Condition Gate: timed out after {timeout}s waiting for all conditions" if timed_out else "Multi-Condition Gate: stopped early — a condition reported FAIL", "#EF4444")
+                    self._log(
+                        f"Multi-Condition Gate: timed out after {timeout}s waiting for all conditions"
+                        if timed_out
+                        else "Multi-Condition Gate: stopped early — a condition reported FAIL",
+                        "#EF4444",
+                    )
             else:
                 all_ok = check_once(log_each=True)
 

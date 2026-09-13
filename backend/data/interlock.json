@@ -4,7 +4,7 @@
         "Control Point Family": "CP01 EE Software",
         "Control Point Name": "CP01 - Equipment Software",
         "Data Point": "CP01 EE",
-        "Interlock ByPass": "Yes",
+        "Interlock ByPass": "No",
         "Process": "CP02"
     },
     "Documents": {

@@ -1476,9 +1476,7 @@
         "borderColor": "#1E3A4D",
         "borderRadius": 8,
         "borderWidth": 1,
-        "filter": [
-          "internal"
-        ],
+        "filter": [],
         "fontSize": 11,
         "height": 235,
         "lineHeight": 1.45,
@@ -6589,9 +6587,7 @@
             "borderColor": "#1E3A4D",
             "borderRadius": 8,
             "borderWidth": 1,
-            "filter": [
-              "internal"
-            ],
+            "filter": [],
             "fontSize": 11,
             "height": 235,
             "lineHeight": 1.45,
