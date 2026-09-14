@@ -114,6 +114,12 @@ export const TEXTBOX_ICONS = [
   { value: "✗", label: "NG", icon: "✗" },
   { value: "⚙️", label: "Machine", icon: "⚙️" },
   { value: "🔗", label: "Connection", icon: "🔗" },
+  { value: "🎨", label: "Color Code", icon: "🎨" },
+  { value: "📏", label: "Line Code", icon: "📏" },
+  { value: "🛒", label: "Planned Qty", icon: "🛒" },
+  { value: "📅", label: "Planned Start Date", icon: "📅" },
+  { value: "📷", label: "Product Vision", icon: "📷" },
+  { value: "🧾", label: "SO", icon: "🧾" },
 ];
 
 
@@ -435,8 +441,8 @@ export function ParamFieldsEditor({ fields, onChange, availableDevices = [] }) {
       {list.map((field, idx) => {
         const addressOptions =
           field.kind === "jog" ? PARAM_JOG_ADDRESS_TYPES :
-          field.kind === "boolean" ? PARAM_BOOL_ADDRESS_TYPES :
-          PARAM_VALUE_ADDRESS_TYPES;
+            field.kind === "boolean" ? PARAM_BOOL_ADDRESS_TYPES :
+              PARAM_VALUE_ADDRESS_TYPES;
 
         return (
           <div key={field.id} className="rounded-lg border border-[var(--border-soft)] bg-[var(--panel-canvas)] p-2.5 flex flex-col gap-2">

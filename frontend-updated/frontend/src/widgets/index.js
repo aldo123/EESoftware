@@ -17,6 +17,7 @@ import { alarmBannerDef, AlarmBannerPreview, AlarmBannerPropertyPanel, RuntimeAl
 import { progressBarDef, ProgressBarPreview, ProgressBarPropertyPanel, RuntimeProgressBar } from "./progressbar";
 import { selectorSwitchDef, SelectorSwitchPreview, SelectorSwitchPropertyPanel, RuntimeSelectorSwitch } from "./selectorswitch";
 import { messageDef, MessagePreview, MessagePropertyPanel, RuntimeMessage } from "./message";
+import { popupDef, PopupPreview, PopupPropertyPanel, RuntimePopup } from "./popup";
 
 
 
@@ -37,6 +38,7 @@ export const COMPONENT_TYPES = [
   progressBarDef,
   selectorSwitchDef,
   messageDef,
+  popupDef,
 ];
 
 // type -> canvas preview component (Page Builder, design-time)
@@ -54,6 +56,7 @@ export const WIDGET_PREVIEWS = {
   progressbar: ProgressBarPreview,
   selectorswitch: SelectorSwitchPreview,
   message: MessagePreview,
+  popup: PopupPreview,
 };
 
 // type -> property panel component (Page Builder, right sidebar)
@@ -71,6 +74,7 @@ export const WIDGET_PROPERTY_PANELS = {
   progressbar: ProgressBarPropertyPanel,
   selectorswitch: SelectorSwitchPropertyPanel,
   message: MessagePropertyPanel,
+  popup: PopupPropertyPanel,
 };
 
 // type -> runtime component (Dynamic CP Page, live/production)
@@ -88,6 +92,7 @@ export const WIDGET_RUNTIME = {
   progressbar: RuntimeProgressBar,
   selectorswitch: RuntimeSelectorSwitch,
   message: RuntimeMessage,
+  popup: RuntimePopup,
 };
 
 // Also re-export each runtime component by name, since DynamicCPPage.jsx
@@ -107,6 +112,7 @@ export {
   RuntimeProgressBar,
   RuntimeSelectorSwitch,
   RuntimeMessage,
+  RuntimePopup,
 };
 
 export * from "./shared";

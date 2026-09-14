@@ -121,6 +121,50 @@ export default function DynamicCPPage({ cpNumber, user }) {
     setValue: setInternalValue,
   } = useInternalVariables();
 
+  // ============================================================
+  // LOG
+  // ============================================================
+
+  const addLog = useCallback(
+    (
+      message,
+      color = "var(--accent-green)",
+      meta = {}
+    ) => {
+      const now = new Date();
+      const time = now.toLocaleTimeString("en-US", {
+        hour12: false,
+      });
+
+      const source = String(meta?.source || "SYSTEM").trim().toUpperCase();
+      const level = String(
+        meta?.level ||
+        (
+          String(color).includes("red")
+            ? "ERROR"
+            : String(color).includes("orange")
+              ? "WARNING"
+              : "INFO"
+        )
+      ).trim().toUpperCase();
+
+      setLogs((previous) => [
+        ...previous.slice(-499),
+        {
+          id: `${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: now.getTime(),
+          time,
+          message: String(message ?? ""),
+          color,
+          source,
+          level,
+        },
+      ]);
+    },
+    []
+  );
+
+
   // Realtime trend history is intentionally kept in browser memory.
   // It is not written to the database on every PLC poll.
   const [chartHistory, setChartHistory] = useState({});
@@ -187,9 +231,30 @@ export default function DynamicCPPage({ cpNumber, user }) {
     ? popupPage.widgets
     : [];
 
+  // Runtime popup window size comes from the Popup Widget properties on the
+  // active Dynamic Page, while the popup content itself uses the Popup Page
+  // canvas size. This keeps window size and design canvas independently adjustable.
+  const activePopupWidget = useMemo(() => {
+    if (!activePopupPage) return null;
+    return Object.values(pages || {})
+      .flatMap(page => Array.isArray(page?.widgets) ? page.widgets : [])
+      .find(widget =>
+        widget?.type === "popup" &&
+        String(widget?.props?.targetPage || "") === String(activePopupPage)
+      ) || null;
+  }, [pages, activePopupPage]);
+
+  const activePopupWidth = Math.max(240, Number(activePopupWidget?.props?.popupWidth || popupPage?.canvasWidth || 800));
+  const activePopupHeight = Math.max(160, Number(activePopupWidget?.props?.popupHeight || popupPage?.canvasHeight || 500));
+
+  const popupDesignCanvas = useMemo(() => ({
+    width: Math.max(240, Number(popupPage?.canvasWidth || 800)),
+    height: Math.max(160, Number(popupPage?.canvasHeight || 500)),
+  }), [popupPage?.canvasWidth, popupPage?.canvasHeight]);
+
   const popupBounds = useMemo(
-    () => getPopupContentBounds(popupWidgets, designCanvas),
-    [popupWidgets, designCanvas]
+    () => getPopupContentBounds(popupWidgets, popupDesignCanvas),
+    [popupWidgets, popupDesignCanvas]
   );
 
   const popupScale = useMemo(() => {
@@ -1322,6 +1387,9 @@ export default function DynamicCPPage({ cpNumber, user }) {
         loadedPages.dynamic = {
           name: "Dynamic Page",
           icon: "🖥",
+          kind: "dynamic",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
           widgets: Array.isArray(savedPages.dynamic?.widgets)
             ? savedPages.dynamic.widgets
             : legacyDynamic,
@@ -1335,6 +1403,9 @@ export default function DynamicCPPage({ cpNumber, user }) {
           loadedPages[id] = {
             name: page.name || id,
             icon: page.icon || "📄",
+            kind: page.kind === "popup" ? "popup" : "custom",
+            canvasWidth: Number(page.canvasWidth || (page.kind === "popup" ? 800 : 1920)),
+            canvasHeight: Number(page.canvasHeight || (page.kind === "popup" ? 500 : 1080)),
             widgets: Array.isArray(page.widgets) ? page.widgets : [],
           };
         });
@@ -1377,6 +1448,79 @@ export default function DynamicCPPage({ cpNumber, user }) {
     () => Object.values(pages).flatMap(page => Array.isArray(page?.widgets) ? page.widgets : []),
     [pages]
   );
+
+  // ============================================================
+  // POPUP TRIGGER — ONLY INTERNAL VARIABLES BELONGING TO ACTIVE CP
+  // ============================================================
+  const popupTriggerStateRef = useRef({});
+
+  const activeCPInternalVariables = useMemo(() => (internalVariables || []).filter(v => {
+    const vcp = v?.cp_number ?? v?.cpNumber ?? v?.cp;
+    return vcp !== undefined && vcp !== null && String(vcp) === String(cpNumber);
+  }), [internalVariables, cpNumber]);
+
+  const activeCPInternalMap = useMemo(() => {
+    const map = new Map();
+    activeCPInternalVariables.forEach(v => {
+      if (v?.name) map.set(String(v.name), v);
+    });
+    return map;
+  }, [activeCPInternalVariables]);
+
+  useEffect(() => {
+    const popupWidgets = Object.values(pages).flatMap(page =>
+      Array.isArray(page?.widgets) ? page.widgets : []
+    ).filter(w => w?.type === "popup");
+
+    const configuredIds = new Set(popupWidgets.map(w => String(w.id)));
+
+    // Remove stale trigger states.
+    Object.keys(popupTriggerStateRef.current).forEach(id => {
+      if (!configuredIds.has(id)) delete popupTriggerStateRef.current[id];
+    });
+
+    popupWidgets.forEach(widget => {
+      const p = widget.props || {};
+      const variableName = String(p.triggerVariable || "").trim();
+      if (!variableName) return;
+
+      // Strict CP ownership: if the variable is not in the active CP map,
+      // it cannot trigger this popup even if another CP has the same name.
+      const variable = activeCPInternalMap.get(variableName);
+      if (!variable) {
+        popupTriggerStateRef.current[String(widget.id)] = false;
+        if (String(activePopupPage || "") === String(p.targetPage || "") &&
+            String(activePopupPage || "") !== "") {
+          setActivePopupPage(null);
+          setPopupMaximized(false);
+        }
+        return;
+      }
+
+      const actual = getInternalValue(variableName);
+      const expected = p.triggerValue ?? 1;
+      const isActive = valuesEqualRuntime(actual, expected);
+      const id = String(widget.id);
+      const wasActive = Boolean(popupTriggerStateRef.current[id]);
+
+      if (isActive && !wasActive) {
+        popupTriggerStateRef.current[id] = true;
+        const target = String(p.targetPage || "").trim();
+        const targetPage = pages?.[target];
+        if (target && target !== "dynamic" && targetPage) {
+          setActivePopupPage(target);
+          setPopupMaximized(false);
+        }
+      } else if (!isActive) {
+        popupTriggerStateRef.current[id] = false;
+        if (String(activePopupPage || "") === String(p.targetPage || "") &&
+            String(activePopupPage || "") !== "") {
+          setActivePopupPage(null);
+          setPopupMaximized(false);
+        }
+      }
+    });
+  }, [pages, activeCPInternalMap, activePopupPage, cpNumber, valuesEqualRuntime, getInternalValue]);
 
   useEffect(() => {
     if (!runtimeWidgets.length) return;
@@ -2401,49 +2545,6 @@ export default function DynamicCPPage({ cpNumber, user }) {
       } catch { }
     }
   }, [cpNumber]);
-
-  // ============================================================
-  // LOG
-  // ============================================================
-
-  const addLog = useCallback(
-    (
-      message,
-      color = "var(--accent-green)",
-      meta = {}
-    ) => {
-      const now = new Date();
-      const time = now.toLocaleTimeString("en-US", {
-        hour12: false,
-      });
-
-      const source = String(meta?.source || "SYSTEM").trim().toUpperCase();
-      const level = String(
-        meta?.level ||
-        (
-          String(color).includes("red")
-            ? "ERROR"
-            : String(color).includes("orange")
-              ? "WARNING"
-              : "INFO"
-        )
-      ).trim().toUpperCase();
-
-      setLogs((previous) => [
-        ...previous.slice(-499),
-        {
-          id: `${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
-          timestamp: now.getTime(),
-          time,
-          message: String(message ?? ""),
-          color,
-          source,
-          level,
-        },
-      ]);
-    },
-    []
-  );
 
   const formatMessageValue = useCallback((value) => {
     if (value === undefined) return "undefined";
@@ -3652,9 +3753,11 @@ export default function DynamicCPPage({ cpNumber, user }) {
             className={
               popupMaximized
                 ? "relative w-full h-full overflow-hidden rounded-xl"
-                : "relative w-[94vw] h-[88vh] max-w-[1680px] max-h-[920px] min-h-[560px] overflow-hidden rounded-xl"
+                : "relative overflow-hidden rounded-xl"
             }
             style={{
+              width: popupMaximized ? "100%" : `min(${Math.max(240, activePopupWidth)}px, 94vw)`,
+              height: popupMaximized ? "100%" : `min(${Math.max(160, activePopupHeight)}px, 88vh)`,
               background: "var(--bg-surface, #f7fafc)",
               border: "1px solid rgba(148, 163, 184, 0.55)",
               boxShadow:
@@ -3822,8 +3925,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
                       style={{
                         left: -popupBounds.minX,
                         top: -popupBounds.minY,
-                        width: designCanvas.width,
-                        height: designCanvas.height,
+                        width: popupDesignCanvas.width,
+                        height: popupDesignCanvas.height,
                       }}
                     >
                       {popupWidgets.map(renderRuntimeWidget)}

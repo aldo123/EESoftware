@@ -2,6 +2,7 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { API } from "../service/api";
 import { ModalBackdrop, ModalPanel } from "../components/motion";
+import { useInternalVariables } from "../hooks/useInternalVariables";
 import {
   COMPONENT_TYPES,
   WIDGET_PREVIEWS,
@@ -97,7 +98,7 @@ function AlignDistributePanel({ count, onAlign, onDelete, onDuplicate }) {
   );
 }
 
-function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction, canvasWidth, canvasHeight, availableDevices = [], availablePages = [], cpNumber = "" }) {
+function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction, canvasWidth, canvasHeight, availableDevices = [], availablePages = [], availableInternalVariables = [], cpNumber = "" }) {
   if (!widget) return (<div className="flex flex-col items-center justify-center h-full text-center px-4"><span className="text-3xl opacity-20 mb-2">🖱</span><p className="text-[var(--text-muted)] text-[10px]">Click a widget on the canvas to edit its properties</p></div>);
   const { type, props: p, x, y } = widget;
 
@@ -155,7 +156,7 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction,
     {(() => {
       const Panel = WIDGET_PROPERTY_PANELS[type];
       if (!Panel) return null;
-      return <Panel p={p} set={set} availableDevices={availableDevices} availablePages={availablePages} cpNumber={cpNumber} />;
+      return <Panel p={p} set={set} availableDevices={availableDevices} availablePages={availablePages} availableInternalVariables={availableInternalVariables} cpNumber={cpNumber} />;
     })()}
 
 
@@ -166,15 +167,26 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
   // Dynamic Page is the permanent MAIN page.
   // Custom pages are stored alongside it and may be deleted.
   const [pageType, setPageType] = useState("dynamic");
+  const { variables: internalVariables = [] } = useInternalVariables();
+  const activeInternalVariables = useMemo(() => (internalVariables || []).filter(v => {
+    const vcp = v?.cp_number ?? v?.cpNumber ?? v?.cp;
+    return vcp !== undefined && vcp !== null && String(vcp) === String(cpNumber);
+  }), [internalVariables, cpNumber]);
   const [pages, setPages] = useState({
     dynamic: {
       name: "Dynamic Page",
       icon: "🖥",
+      kind: "dynamic",
+      canvasWidth: 1920,
+      canvasHeight: 1080,
       widgets: [],
     },
   });
   const [showCreatePage, setShowCreatePage] = useState(false);
   const [newPageName, setNewPageName] = useState("");
+  const [newPageKind, setNewPageKind] = useState("custom");
+  const [newPageWidth, setNewPageWidth] = useState(800);
+  const [newPageHeight, setNewPageHeight] = useState(500);
   const [widgets, setWidgetsRaw] = useState([]);
   // Undo/redo history for the CURRENT page's widget list. Kept as plain refs
   // (not state) since pushing to them must never itself trigger a re-render —
@@ -279,8 +291,22 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
   const [canvasPreset, setCanvasPreset] = useState(
     CANVAS_PRESETS.find(p => p.width === DEFAULT_CANVAS.width && p.height === DEFAULT_CANVAS.height) || CANVAS_PRESETS[0]
   );
-  const CANVAS_W = canvasPreset.width;
-  const CANVAS_H = canvasPreset.height;
+  const currentPage = pages[pageType];
+  const isPopupPage = pageType !== "dynamic" && currentPage?.kind === "popup";
+  const CANVAS_W = isPopupPage ? Math.max(240, Number(currentPage?.canvasWidth || 800)) : canvasPreset.width;
+  const CANVAS_H = isPopupPage ? Math.max(160, Number(currentPage?.canvasHeight || 500)) : canvasPreset.height;
+
+  const setPopupCanvasSize = useCallback((key, value) => {
+    if (!isPopupPage) return;
+    const numeric = Math.max(key === "canvasWidth" ? 240 : 160, Number(value) || (key === "canvasWidth" ? 240 : 160));
+    setPages(prev => ({
+      ...prev,
+      [pageType]: {
+        ...(prev[pageType] || {}),
+        [key]: numeric,
+      },
+    }));
+  }, [isPopupPage, pageType]);
 
   // Layer order is represented by the widgets array and a normalized zIndex.
   // Higher zIndex is always rendered above lower zIndex.
@@ -502,6 +528,9 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
         normalizedPages.dynamic = {
           name: "Dynamic Page",
           icon: "🖥",
+          kind: "dynamic",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
           widgets: normalizePage(
             savedDynamic?.widgets ??
             legacyDynamic ??
@@ -516,7 +545,10 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
 
           normalizedPages[key] = {
             name: value.name || key,
-            icon: value.icon || "📄",
+            icon: value.icon || (value.kind === "popup" ? "▣" : "📄"),
+            kind: value.kind === "popup" ? "popup" : "custom",
+            canvasWidth: Number(value.canvasWidth || (value.kind === "popup" ? 800 : 1920)),
+            canvasHeight: Number(value.canvasHeight || (value.kind === "popup" ? 500 : 1080)),
             widgets: normalizePage(value.widgets || []),
           };
         });
@@ -835,6 +867,9 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
           {
             name: value?.name || key,
             icon: value?.icon || "📄",
+            kind: value?.kind === "popup" ? "popup" : "custom",
+            canvasWidth: value?.kind === "popup" ? Math.max(240, Number(value?.canvasWidth || 800)) : 1920,
+            canvasHeight: value?.kind === "popup" ? Math.max(160, Number(value?.canvasHeight || 500)) : 1080,
             widgets: normalizePage(value?.widgets || []),
           },
         ])
@@ -1091,7 +1126,10 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
 
     const newPage = {
       name,
-      icon: "📄",
+      icon: newPageKind === "popup" ? "▣" : "📄",
+      kind: newPageKind,
+      canvasWidth: newPageKind === "popup" ? Math.max(240, Number(newPageWidth) || 800) : 1920,
+      canvasHeight: newPageKind === "popup" ? Math.max(160, Number(newPageHeight) || 500) : 1080,
       widgets: [],
     };
 
@@ -1104,7 +1142,10 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
     setResizing(null);
     setShowCreatePage(false);
     setNewPageName("");
-  }, [newPageName, pages, resetHistory]);
+    setNewPageKind("custom");
+    setNewPageWidth(800);
+    setNewPageHeight(500);
+  }, [newPageName, newPageKind, newPageWidth, newPageHeight, pages, resetHistory]);
 
   const deleteCurrentPage = useCallback(() => {
     if (!pageType || pageType === "dynamic") return;
@@ -1189,7 +1230,14 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
           <div className="flex items-center gap-2 flex-wrap shrink-0">
             <div className="flex items-center gap-1.5 shrink-0">
               <span className="text-[9px] font-bold uppercase tracking-wider text-[var(--text-muted)]">Canvas</span>
-              <span className="px-2 h-7 inline-flex items-center rounded border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 text-[var(--accent-green)] text-[10px] font-bold font-mono whitespace-nowrap">FULL HD · 1920 × 1080</span>
+              <span className="px-2 h-7 inline-flex items-center rounded border border-[var(--accent-green)]/30 bg-[var(--accent-green)]/10 text-[var(--accent-green)] text-[10px] font-bold font-mono whitespace-nowrap">{CANVAS_W} × {CANVAS_H}{isPopupPage ? " · POPUP" : ""}</span>
+              {isPopupPage && (
+                <div className="flex items-center gap-1 ml-1">
+                  <input type="number" min="240" value={CANVAS_W} onChange={e => setPopupCanvasSize("canvasWidth", e.target.value)} className="w-16 h-7 px-1.5 rounded border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-primary)] text-[9px] font-mono outline-none" title="Popup canvas width" />
+                  <span className="text-[9px] text-[var(--text-muted)]">×</span>
+                  <input type="number" min="160" value={CANVAS_H} onChange={e => setPopupCanvasSize("canvasHeight", e.target.value)} className="w-16 h-7 px-1.5 rounded border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-primary)] text-[9px] font-mono outline-none" title="Popup canvas height" />
+                </div>
+              )}
             </div>
             {saveMsg && <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saveMsg.startsWith("✓") ? "text-[var(--accent-green)] bg-[var(--accent-green)]/10" : "text-[var(--accent-red)] bg-[var(--accent-red)]/10"}`}>{saveMsg}</span>}
             {pageType && pageType !== "dynamic" && (
@@ -1279,7 +1327,8 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
                 canvasWidth={CANVAS_W}
                 canvasHeight={CANVAS_H}
                 availableDevices={availableDevices}
-                availablePages={Object.entries(pages).map(([id, page]) => ({ id, name: page?.name || id }))}
+                availablePages={Object.entries(pages).map(([id, page]) => ({ id, name: page?.name || id, kind: page?.kind || "custom" }))}
+                availableInternalVariables={activeInternalVariables}
                 cpNumber={cpNumber}
               />
             )}
@@ -1325,6 +1374,24 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
                 placeholder="e.g. Inspection Page"
                 className="w-full h-9 px-3 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-primary)] text-xs outline-none focus:border-[var(--accent-green)]"
               />
+
+              <div className="grid grid-cols-3 gap-2 mt-3">
+                <div className="col-span-1">
+                  <label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1">Page Type</label>
+                  <select value={newPageKind} onChange={e => setNewPageKind(e.target.value)} className="w-full h-9 px-2 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-primary)] text-xs outline-none">
+                    <option value="custom">Custom Page</option>
+                    <option value="popup">Popup Page</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1">Canvas Width</label>
+                  <input type="number" min="240" value={newPageKind === "popup" ? newPageWidth : 1920} disabled={newPageKind !== "popup"} onChange={e => setNewPageWidth(e.target.value)} className="w-full h-9 px-2 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-primary)] text-xs outline-none disabled:opacity-50" />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1">Canvas Height</label>
+                  <input type="number" min="160" value={newPageKind === "popup" ? newPageHeight : 1080} disabled={newPageKind !== "popup"} onChange={e => setNewPageHeight(e.target.value)} className="w-full h-9 px-2 rounded-lg border border-[var(--border)] bg-[var(--bg-canvas)] text-[var(--text-primary)] text-xs outline-none disabled:opacity-50" />
+                </div>
+              </div>
 
               <div className="flex justify-end gap-2 mt-5">
                 <button
