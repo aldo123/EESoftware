@@ -12,6 +12,7 @@
 
 import React from "react";
 import { useInternalVariables } from "../hooks/useInternalVariables";
+import { API } from "../service/api";
 
 import {
   PropInput,
@@ -63,17 +64,6 @@ const FRAME_PRESET_COLORS = {
 
 const clamp = (value, min, max) =>
   Math.min(max, Math.max(min, Number(value)));
-
-// Numeric TextBox values are displayed with exactly 3 digits
-// after the decimal point. The underlying stored value remains numeric.
-const formatTextBoxNumber = (value) => {
-  if (value === undefined || value === null || value === "") return value;
-
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) return value;
-
-  return numeric.toFixed(3);
-};
 
 const resolveFrameColor = (p) => {
   if (p.framePreset === "custom") return p.frameColor || "#00E5FF";
@@ -309,7 +299,7 @@ export const textboxDef = {
     inputMethod: "popup",
 
     // Fixed numeric display precision.
-    decimalPlaces: 3,
+    decimalPlaces: 2,
 
     // CALCULATION
     // Each item can come from an Internal Variable or TCP/IP address.
@@ -324,6 +314,8 @@ export const textboxDef = {
     addressType: "holding_register",
     address: "",
     sourceDevice: "",
+    // Reference DB input source (table is fixed to reference_master by backend).
+    referenceColumn: "",
 
     // READ TRIGGER
     readTriggerSource: "realtime",
@@ -390,6 +382,18 @@ export const textboxDef = {
 // ────────────────────────────────────────────────────────────────
 // HELPERS
 // ────────────────────────────────────────────────────────────────
+
+const normalizeDecimalPlaces = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(2, Math.trunc(n)));
+};
+
+const formatTextBoxNumber = (value, decimalPlaces = 0) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value ?? "";
+  return n.toFixed(normalizeDecimalPlaces(decimalPlaces));
+};
 
 const getHorizontalPosition = (position) => {
   if (position === "left") return "left";
@@ -925,6 +929,59 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [], cpNumber =
     label: `${item.name} (${item.data_type || "string"})`,
   }));
 
+  // Reference DB uses the existing reference.db / reference_master backend.
+  // Only the column is configurable here; the table is intentionally fixed
+  // by backend/reference.py.
+  const [referenceColumns, setReferenceColumns] = React.useState([]);
+  const [referenceColumnsLoading, setReferenceColumnsLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (p.textMode !== "inputdata" || String(p.inputSource || "").toLowerCase() !== "reference") {
+      return;
+    }
+
+    let cancelled = false;
+    setReferenceColumnsLoading(true);
+
+    fetch(`${API}/api/reference/columns`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((columns) => {
+        if (cancelled) return;
+        setReferenceColumns(Array.isArray(columns) ? columns : []);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setReferenceColumns([]);
+          console.error("[TextBox] Reference DB columns load failed:", error);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setReferenceColumnsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [p.textMode, p.inputSource]);
+
+  const referenceColumnOptions = [
+    {
+      value: "",
+      label: referenceColumnsLoading
+        ? "Loading Reference DB columns..."
+        : "Select Reference DB column...",
+    },
+    ...referenceColumns
+      .filter((column) => column?.key && column.key !== "id" && column.key !== "date_time")
+      .map((column) => ({
+        value: column.key,
+        label: column.label || column.key,
+      })),
+  ];
+
   return (
     <>
       <PropSection title="Text Mode">
@@ -947,6 +1004,20 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [], cpNumber =
           onChange={(v) => set("defaultText", v)}
           placeholder="Shown when no runtime value is available"
         />
+
+        {((p.textMode === "calculation") ||
+          (p.textMode === "read" && p.dataType === "number") ||
+          (p.textMode === "inputdata" && p.dataType === "number")) && (
+          <PropInput
+            label="Decimal Places"
+            type="number"
+            min={0}
+            max={2}
+            step={1}
+            value={normalizeDecimalPlaces(p.decimalPlaces)}
+            onChange={(v) => set("decimalPlaces", normalizeDecimalPlaces(v))}
+          />
+        )}
 
         {(p.textMode === "write" || p.textMode === "inputdata") && (
           <PropInput
@@ -1007,12 +1078,36 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [], cpNumber =
             options={[
               { value: "tcp", label: "TCP / IP" },
               { value: "com", label: "COM / RS232" },
+              { value: "reference", label: "Reference DB" },
             ]}
             value={p.inputSource || "tcp"}
-            onChange={(v) => set("inputSource", v)}
+            onChange={(v) => {
+              set("inputSource", v);
+
+              // Reference DB does not use TCP/COM communication settings.
+              if (String(v).toLowerCase() === "reference") {
+                set("device", "");
+                set("address", "");
+                set("addressType", "holding_register");
+                set("sourceDevice", "");
+              }
+            }}
           />
 
-          {String(p.inputSource || "tcp").toLowerCase() === "tcp" ? (
+          {String(p.inputSource || "tcp").toLowerCase() === "reference" ? (
+            <>
+              <PropInput
+                label="Reference Column"
+                options={referenceColumnOptions}
+                value={p.referenceColumn || ""}
+                onChange={(v) => set("referenceColumn", v)}
+              />
+
+              <div className="text-[8px] text-[var(--text-dim)] mt-1">
+                Runtime shows a searchable dropdown from the selected column in the existing reference.db.
+              </div>
+            </>
+          ) : String(p.inputSource || "tcp").toLowerCase() === "tcp" ? (
             <>
               <div>
                 <label className="block text-[9px] font-semibold text-[var(--text-dim)] uppercase tracking-wider mb-1">
@@ -2473,19 +2568,195 @@ function HMIInputPopup({
   );
 }
 
+
+function ReferenceDBInputPicker({ widget, value, onSelect }) {
+  const p = widget?.props || {};
+  const column = String(p.referenceColumn || "").trim();
+  const [open, setOpen] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [options, setOptions] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState("");
+
+  const loadOptions = React.useCallback(async (searchText) => {
+    if (!column) {
+      setOptions([]);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const params = new URLSearchParams({
+        page: "1",
+        per: "100",
+        column,
+        q: String(searchText || ""),
+      });
+
+      const response = await fetch(`${API}/api/reference/data?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      const rows = Array.isArray(result?.data) ? result.data : [];
+
+      const unique = [];
+      const seen = new Set();
+
+      rows.forEach((row) => {
+        const raw = row?.[column];
+        if (raw === undefined || raw === null) return;
+
+        const text = String(raw);
+        const key = text.trim().toLowerCase();
+
+        if (!key || seen.has(key)) return;
+
+        seen.add(key);
+        unique.push(text);
+      });
+
+      setOptions(unique);
+    } catch (err) {
+      console.error("[TextBox] Reference DB runtime load failed:", err);
+      setOptions([]);
+      setError("Reference DB unavailable");
+    } finally {
+      setLoading(false);
+    }
+  }, [column]);
+
+  React.useEffect(() => {
+    if (!open) return;
+
+    const timer = setTimeout(() => {
+      loadOptions(query);
+    }, 180);
+
+    return () => clearTimeout(timer);
+  }, [open, query, loadOptions]);
+
+  React.useEffect(() => {
+    if (!open) {
+      setQuery("");
+      setOptions([]);
+      setError("");
+    }
+  }, [open]);
+
+  const displayValue =
+    value === undefined || value === null ? "" : String(value);
+
+  return (
+    <div
+      className="absolute"
+      style={{
+        left: widget.x,
+        top: widget.y,
+        width: p.width,
+        height: p.height,
+        zIndex: 40,
+      }}
+    >
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          height: "100%",
+        }}
+      >
+        <TextBoxSurface
+          p={{
+            ...p,
+            __runtimeId: widget.id,
+          }}
+          textValue={displayValue || (p.defaultText ?? p.text ?? "SELECT")}
+          preview={false}
+        />
+
+        <button
+          type="button"
+          onClick={() => setOpen((prev) => !prev)}
+          className="absolute inset-0 w-full h-full cursor-pointer bg-transparent border-0 outline-none"
+          aria-label="Open Reference DB selection"
+        />
+
+        {open && (
+          <div
+            className="absolute left-0 top-[calc(100%+6px)] w-full min-w-[240px] rounded-md border border-[var(--border)] bg-[var(--panel-canvas)] shadow-2xl"
+            style={{
+              zIndex: 1000,
+              maxHeight: 300,
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="p-2 border-b border-[var(--border)]">
+              <input
+                autoFocus
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={`Filter ${column || "Reference DB"}...`}
+                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[11px] font-mono outline-none focus:border-[var(--accent-green)]"
+              />
+            </div>
+
+            <div className="max-h-[240px] overflow-y-auto p-1">
+              {loading ? (
+                <div className="px-2 py-3 text-[10px] text-[var(--text-dim)] text-center">
+                  Loading Reference DB...
+                </div>
+              ) : error ? (
+                <div className="px-2 py-3 text-[10px] text-[var(--accent-red)] text-center">
+                  {error}
+                </div>
+              ) : !column ? (
+                <div className="px-2 py-3 text-[10px] text-[var(--text-dim)] text-center">
+                  Select a Reference DB column in Page Builder.
+                </div>
+              ) : options.length === 0 ? (
+                <div className="px-2 py-3 text-[10px] text-[var(--text-dim)] text-center">
+                  No matching data.
+                </div>
+              ) : (
+                options.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={async () => {
+                      setOpen(false);
+                      setQuery("");
+                      await onSelect(option);
+                    }}
+                    className="block w-full text-left px-2 py-2 rounded text-[10px] font-mono text-[var(--text-primary)] hover:bg-[var(--panel-hover)] hover:text-[var(--accent-green)]"
+                  >
+                    {option}
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function RuntimeTextBox({ widget, value, onWrite }) {
   const p = widget.props || {};
   const mode = p.textMode || "read";
   const fallback = p.defaultText ?? p.text ?? "TEXT";
 
-  // Number and Calculation TextBoxes always show 3 decimal places.
-  // Static text is never altered.
+  // Decimal formatting applies only to Read/Display, Input Data Number, and Calculation.
   const shouldFormatNumber =
     mode === "calculation" ||
-    p.dataType === "number";
+    (mode === "read" && p.dataType === "number") ||
+    (mode === "inputdata" && p.dataType === "number");
 
   const displayValue = shouldFormatNumber
-    ? formatTextBoxNumber(value)
+    ? formatTextBoxNumber(value, p.decimalPlaces)
     : value;
 
   const externalValue =
@@ -2500,20 +2771,72 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
     String(externalValue ?? "").length
   );
 
-  // Static/read always follow the external value.
-  // Write mode follows PLC read-back whenever the user is not editing.
+  // Keep the last value received from the parent so an Internal Variable
+  // change can update the TextBox immediately, even while the input is
+  // focused. We only overwrite a focused draft when the user has NOT
+  // modified it since the previous external value. This prevents stale
+  // values (for example 25) from remaining visible after the Internal
+  // Variable changes to 0, while still protecting active user typing.
+  const lastExternalValueRef = React.useRef(externalValue);
+
   React.useEffect(() => {
-    if ((!focused && !popupOpen) || mode !== "write") {
-      setDraft(externalValue);
+    const previousExternalValue = lastExternalValueRef.current;
+    const externalChanged = externalValue !== previousExternalValue;
+
+    if (externalChanged) {
+      const draftStillMatchesExternal = draft === previousExternalValue;
+
+      if (
+        mode !== "write" ||
+        (!focused && !popupOpen) ||
+        draftStillMatchesExternal
+      ) {
+        setDraft(externalValue);
+        setCursorPosition(String(externalValue ?? "").length);
+      }
+
+      lastExternalValueRef.current = externalValue;
+      return;
     }
-  }, [externalValue, focused, popupOpen, mode]);
+
+    // Static/read/input-data modes always follow the parent value.
+    // For write mode, synchronize whenever the user is not editing.
+    if ((!focused && !popupOpen) || mode !== "write") {
+      if (draft !== externalValue) {
+        setDraft(externalValue);
+        setCursorPosition(String(externalValue ?? "").length);
+      }
+    }
+  }, [externalValue, focused, popupOpen, mode, draft]);
+
+  // WRITE MODE: persist every value immediately as the user types.
+  // A small promise queue keeps rapid keystrokes in order so an older
+  // async write cannot finish after a newer write.
+  const writeQueueRef = React.useRef(Promise.resolve());
 
   const commit = React.useCallback(
     async (nextValue = draft) => {
       if (mode !== "write" || !onWrite) return;
-      await onWrite(nextValue);
+
+      const valueToWrite = String(nextValue ?? "");
+      writeQueueRef.current = writeQueueRef.current
+        .catch(() => {})
+        .then(() => onWrite(valueToWrite));
+
+      return writeQueueRef.current;
     },
     [draft, mode, onWrite]
+  );
+
+  const commitImmediate = React.useCallback(
+    (nextValue) => {
+      // Update the local display first, then persist immediately.
+      setDraft(String(nextValue ?? ""));
+      commit(nextValue).catch((error) => {
+        console.error("[RuntimeTextBox] Immediate write failed:", error);
+      });
+    },
+    [commit]
   );
 
   const openPopup = React.useCallback(() => {
@@ -2531,6 +2854,23 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
       widget.id ||
       `${widget.x || 0}-${widget.y || 0}-${p.frameStyle || "standard"}`,
   };
+
+  if (
+    mode === "inputdata" &&
+    String(p.inputSource || "").trim().toLowerCase() === "reference"
+  ) {
+    return (
+      <ReferenceDBInputPicker
+        widget={widget}
+        value={value}
+        onSelect={async (selectedValue) => {
+          if (onWrite) {
+            await onWrite(selectedValue);
+          }
+        }}
+      />
+    );
+  }
 
   if (mode === "static") {
     return (
@@ -2626,17 +2966,20 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
             <input
               value={draft}
               onFocus={() => setFocused(true)}
-              onChange={(e) => setDraft(e.target.value)}
+              onChange={(e) => {
+                // Persist immediately. No Enter/blur is required.
+                commitImmediate(e.target.value);
+              }}
               onKeyDown={(e) => {
-                if (p.writeTrigger !== "blur" && e.key === "Enter") {
+                if (e.key === "Enter") {
                   e.preventDefault();
-                  commit();
+                  // Value was already persisted by onChange.
                   e.currentTarget.blur();
                 }
               }}
               onBlur={() => {
                 setFocused(false);
-                if (p.writeTrigger === "blur") commit();
+                // No write is performed here; onChange already persisted it.
               }}
               className="absolute inset-0 w-full h-full bg-transparent border-0 outline-none"
               step={p.dataType === "number" ? "0.001" : undefined}
@@ -2673,12 +3016,15 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
           cursorPosition={cursorPosition}
           onCursorChange={setCursorPosition}
           onChange={(nextValue) => {
-            setDraft(nextValue);
+            // Persist every keypad change immediately.
+            commitImmediate(nextValue);
           }}
           onCommit={async (nextValue) => {
             setPopupOpen(false);
             setFocused(false);
-            await commit(nextValue);
+            // Keep compatibility with keypad commit, but avoid a duplicate
+            // write when the value has already been persisted by onChange.
+            setDraft(String(nextValue ?? ""));
           }}
           onCancel={() => {
             setPopupOpen(false);

@@ -96,6 +96,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
   const [activePopupPage, setActivePopupPage] = useState(null);
   const [popupMaximized, setPopupMaximized] = useState(false);
   const popupViewportRef = useRef(null);
+  // Tracks whether each Popup widget was manually closed while its trigger remains active.
+  const popupClosedByUserRef = useRef({});
   const [popupViewport, setPopupViewport] = useState({ width: 0, height: 0 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -375,6 +377,19 @@ export default function DynamicCPPage({ cpNumber, user }) {
     if (value === "tcp" || value === "tcpip") return "tcp";
     if (value === "com" || value === "rs232" || value === "serial") return "com";
     if (value === "internal" || value === "variable" || value === "internalvariable" || value === "internalvar") return "internal";
+
+    // Reference DB is a first-class TextBox Input Data source.
+    // Accept legacy/new aliases so saved Page Builder configurations
+    // continue to work without migration.
+    if (
+      value === "reference" ||
+      value === "referencedb" ||
+      value === "reference_db" ||
+      value === "refdb"
+    ) {
+      return "reference";
+    }
+
     return value;
   }, []);
 
@@ -908,7 +923,9 @@ export default function DynamicCPPage({ cpNumber, user }) {
       if (!isInputDataTriggerAllowed(widget)) return;
 
       const destination = String(
-        p.inputDataDestinationVariable || ""
+        p.inputDataDestinationVariable ||
+        p.destinationVariable ||
+        ""
       ).trim();
 
       if (!destination) {
@@ -1505,6 +1522,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
       if (isActive && !wasActive) {
         popupTriggerStateRef.current[id] = true;
+        popupClosedByUserRef.current[id] = false;
         const target = String(p.targetPage || "").trim();
         const targetPage = pages?.[target];
         if (target && target !== "dynamic" && targetPage) {
@@ -1513,6 +1531,8 @@ export default function DynamicCPPage({ cpNumber, user }) {
         }
       } else if (!isActive) {
         popupTriggerStateRef.current[id] = false;
+        // Trigger OFF always clears the reopen state.
+        popupClosedByUserRef.current[id] = false;
         if (String(activePopupPage || "") === String(p.targetPage || "") &&
             String(activePopupPage || "") !== "") {
           setActivePopupPage(null);
@@ -2050,9 +2070,9 @@ export default function DynamicCPPage({ cpNumber, user }) {
           }
         }
 
-        // Internal Variable mode is stored in the shared Internal Variable
-        // store, not PLC polling.
-        if (source === "internal") {
+        // Internal Variable and Reference DB modes are stored/read through
+        // the shared Internal Variable store, not PLC polling.
+        if (source === "internal" || source === "reference") {
           return;
         }
 
@@ -3377,7 +3397,14 @@ export default function DynamicCPPage({ cpNumber, user }) {
         addLog(`Selector Switch write failed: ${err.message}`, "var(--accent-red)");
       }
     },
-    [addLog, getTCPDevice, normalizeType, setInternalValue, writeTCPValue]
+    [
+      acceptInputData,
+      addLog,
+      getTCPDevice,
+      normalizeType,
+      setInternalValue,
+      writeTCPValue,
+    ]
   );
 
   // ============================================================
@@ -3387,10 +3414,42 @@ export default function DynamicCPPage({ cpNumber, user }) {
     async (widget, rawValue) => {
       const p = widget?.props || {};
       const mode = String(p.textMode || "read").trim().toLowerCase();
+      const source = normalizeInputSource(p.inputSource);
+
+      // ----------------------------------------------------------
+      // INPUT DATA / REFERENCE DB
+      // ----------------------------------------------------------
+      // Reference DB values are INPUT DATA, not PLC WRITE data.
+      // The RuntimeTextBox can call onWrite() for both a typed value
+      // and a selected dropdown value, so route both through the same
+      // Input Data -> Internal Variable pipeline.
+      //
+      // IMPORTANT:
+      // - Do not require textMode === "write" here.
+      // - Do not use p.variable for Reference DB.
+      // - The destination is inputDataDestinationVariable.
+      // - acceptInputData() performs datatype conversion and the actual
+      //   setInternalValue() write.
+      if (mode === "inputdata" && source === "reference") {
+        const destination = String(
+          p.inputDataDestinationVariable ||
+          p.destinationVariable ||
+          ""
+        ).trim();
+
+        if (!destination) {
+          addLog(
+            "Reference DB TextBox destination Internal Variable is empty",
+            "var(--accent-red)"
+          );
+          return;
+        }
+
+        await acceptInputData(widget, rawValue);
+        return;
+      }
 
       if (mode !== "write") return;
-
-      const source = normalizeInputSource(p.inputSource);
       const variableName = String(p.variable || "").trim();
       const dataType = String(p.dataType || "number").trim().toLowerCase();
 
@@ -3582,9 +3641,19 @@ export default function DynamicCPPage({ cpNumber, user }) {
   }, [addLog, pages]);
 
   const closePopupPage = useCallback(() => {
+    const closedPage = String(activePopupPage || "").trim();
+    if (closedPage) {
+      const popupWidget = runtimeWidgets.find(widget =>
+        widget?.type === "popup" &&
+        String(widget?.props?.targetPage || "").trim() === closedPage
+      );
+      if (popupWidget) {
+        popupClosedByUserRef.current[String(popupWidget.id)] = true;
+      }
+    }
     setActivePopupPage(null);
     setPopupMaximized(false);
-  }, []);
+  }, [activePopupPage, runtimeWidgets]);
 
   const renderRuntimeWidget = useCallback((widget) => {
     const { type, id } = widget;
@@ -3618,10 +3687,60 @@ export default function DynamicCPPage({ cpNumber, user }) {
       />
     );
 
+    if (type === "popup") {
+      const p = widget?.props || {};
+      const target = String(p.targetPage || "").trim();
+      const reopenEnabled = p.reopenEnabled !== false;
+      const closedByUser = popupClosedByUserRef.current[String(id)] === true;
+
+      // Use ONLY the Internal Variable belonging to this active CP.
+      const variableName = String(p.triggerVariable || "").trim();
+      const activeVariable = activeCPInternalMap.get(variableName);
+      const triggerRaw = variableName ? getInternalValue(variableName) : undefined;
+      const triggerActive = Boolean(activeVariable) && valuesEqualRuntime(triggerRaw, p.triggerValue ?? 1);
+
+      if (!reopenEnabled || !target || !pages[target] || !triggerActive || !closedByUser || activePopupPage) {
+        return null;
+      }
+
+      const width = Math.max(40, Number(p.width ?? 180));
+      const height = Math.max(28, Number(p.height ?? 48));
+
+      return (
+        <div
+          key={id}
+          className="absolute z-[80] flex items-center justify-center overflow-hidden rounded-lg cursor-pointer select-none"
+          style={{
+            left: Number(widget?.x ?? 0),
+            top: Number(widget?.y ?? 0),
+            width,
+            height,
+            background: p.reopenBackground || "var(--accent-green, #22c55e)",
+            color: p.reopenTextColor || "#ffffff",
+            border: `1px solid ${p.reopenBorderColor || "rgba(255,255,255,0.35)"}`,
+            borderRadius: Number(p.borderRadius ?? 8),
+            opacity: Number(p.reopenOpacity ?? 1),
+            boxSizing: "border-box",
+            fontSize: Number(p.reopenFontSize ?? 12),
+            fontWeight: 700,
+            boxShadow: "0 6px 18px rgba(0,0,0,0.22)",
+          }}
+          title={`Reopen ${pages[target]?.name || target}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            popupClosedByUserRef.current[String(id)] = false;
+            openPopupPage(target);
+          }}
+        >
+          {String(p.reopenText || "REOPEN POPUP")}
+        </div>
+      );
+    }
+
     // Manual / Calibration / Timing Limit are no longer special widgets.
     // They are now normal custom pages created through Page Builder.
     return null;
-  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, handleSelectorSwitchChange, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage, navigateToPage, logs]);
+  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, handleSelectorSwitchChange, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage, navigateToPage, logs, fieldValues, getInternalValue, activeCPInternalMap, valuesEqualRuntime, pages, activePopupPage]);
 
   // ============================================================
   // RENDER STATES
@@ -3744,7 +3863,10 @@ export default function DynamicCPPage({ cpNumber, user }) {
             WebkitBackdropFilter: "blur(7px)",
           }}
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
+            if (
+              event.target === event.currentTarget &&
+              activePopupWidget?.props?.closeOnOutside !== false
+            ) {
               closePopupPage();
             }
           }}
@@ -3831,7 +3953,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
                   </span>
                 </div>
 
-                <button
+                {/* <button
                   type="button"
                   title={popupMaximized ? "Restore" : "Maximize"}
                   onClick={() => setPopupMaximized((value) => !value)}
@@ -3855,7 +3977,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
                   }}
                 >
                   ✕
-                </button>
+                </button> */}
               </div>
             </header>
 
