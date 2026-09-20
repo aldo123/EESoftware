@@ -1,6 +1,9 @@
 import os
 import json
 import re
+import sqlite3
+import threading
+import uuid
 from flask import Blueprint, request, jsonify
 
 logic_engine_bp = Blueprint("logic_engine", __name__)
@@ -170,22 +173,133 @@ class FlowExecutor:
         self.flow = _load_flow(cp)
         self.nodes, self.connections = _flatten_flow(self.flow.get("nodes", []), self.flow.get("connections", []))
         self.commands = []
+        # Per-executor locks keep shared runtime state deterministic when Race
+        # candidates are evaluated in parallel. They do not change normal
+        # sequential execution.
+        self._commands_lock = threading.RLock()
+        self._fields_lock = threading.RLock()
+        self._db_gate_lock = threading.RLock()
+        self._db_schema_cache = {}
+        # Build the connection adjacency once. The old implementation scanned
+        # every connection every time a node executed; that becomes expensive
+        # when Race/On-Change causes many evaluations.
+        self._outputs_cache = {}
+        for _conn in self.connections:
+            self._outputs_cache.setdefault(_conn["fromId"], {}).setdefault(_conn["fromPort"], []).append(_conn["toId"])
+
+        # Race execution is opt-in per Multi-Condition Gate.
+        # Normal flow execution remains sequential. Only sibling gates that
+        # explicitly share the same non-empty race_group are evaluated in parallel.
+        self._race_local = threading.local()
+        self._race_states = {}
+        self._race_states_lock = threading.RLock()
 
         if self.cp not in RUNTIME_STATES:
             RUNTIME_STATES[self.cp] = {"waiting_scan": None}
 
     def _node_outputs(self, node_id: str) -> dict:
-        """port -> list of target node ids. A single port can fan out to multiple targets."""
-        result = {}
-        for conn in self.connections:
-            if conn["fromId"] == node_id:
-                result.setdefault(conn["fromPort"], []).append(conn["toId"])
-        return result
+        """Return cached port -> target ids adjacency for a node."""
+        return self._outputs_cache.get(node_id, {})
 
     def _follow(self, outputs: dict, port: str, db=None):
-        """Execute every node connected to the given output port (fan-out)."""
-        for next_id in outputs.get(port, []):
+        """Execute downstream nodes. Normal fan-out stays sequential.
+
+        Multi-Condition Gates that explicitly share a non-empty ``race_group``
+        are treated as a race: all sibling gates start together and the first
+        gate whose complete condition set becomes TRUE wins. Other waiting race
+        candidates are cancelled. If every candidate finishes FALSE, the FALSE
+        branch of the race is executed once.
+        """
+        targets = list(outputs.get(port, []))
+        if not targets:
+            return
+
+        race_groups = {}
+        normal_targets = []
+        for next_id in targets:
+            next_node = self.nodes.get(next_id) or {}
+            if next_node.get("type") != "multi_condition_gate":
+                normal_targets.append(next_id)
+                continue
+            cfg = next_node.get("config", {}) or {}
+            race_group = str(cfg.get("race_group", "") or "").strip()
+            if race_group:
+                race_groups.setdefault(race_group, []).append(next_id)
+            else:
+                normal_targets.append(next_id)
+
+        # Preserve the original sequential behavior for all normal nodes.
+        for next_id in normal_targets:
             self._execute_node(next_id, db)
+
+        for race_group, group_targets in race_groups.items():
+            if len(group_targets) < 2:
+                self._execute_node(group_targets[0], db)
+                continue
+
+            # A race group name is a configuration label, not a global runtime
+            # identifier. Multiple executions of the same CP can overlap, so a
+            # unique runtime key prevents one race from cancelling another.
+            race_key = f"{race_group}:{uuid.uuid4().hex}"
+            state = {
+                "event": threading.Event(),
+                "active": set(group_targets),
+                "winner": None,
+                "all_failed": False,
+                "lock": threading.RLock(),
+            }
+            with self._race_states_lock:
+                self._race_states[race_key] = state
+
+            def _run_race_candidate(candidate_id):
+                self._race_local.group = race_key
+                self._race_local.node_id = candidate_id
+                try:
+                    self._execute_node(candidate_id, db)
+                except Exception as exc:
+                    # A worker exception must not leave the race permanently
+                    # active. Treat that candidate as failed and let the other
+                    # candidates continue normally.
+                    self._log(f"Multi-Condition Race candidate '{candidate_id}' error: {exc}", "#EF4444")
+                    with state["lock"]:
+                        state["active"].discard(candidate_id)
+                        if not state["active"] and state.get("winner") is None:
+                            state["all_failed"] = True
+                            state["event"].set()
+                            self._follow(outputs, "false", db)
+                finally:
+                    self._race_local.group = None
+                    self._race_local.node_id = None
+
+            threads = [
+                threading.Thread(
+                    target=_run_race_candidate,
+                    args=(candidate_id,),
+                    daemon=True,
+                    name=f"logic-race-{race_group}-{candidate_id}",
+                )
+                for candidate_id in group_targets
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            with self._race_states_lock:
+                self._race_states.pop(race_key, None)
+
+    def _race_state_for(self, node_id: str):
+        """Return the active race state only when this node is a race candidate."""
+        group = getattr(self._race_local, "group", None)
+        local_node = getattr(self._race_local, "node_id", None)
+        if not group or local_node != node_id:
+            return None
+        with self._race_states_lock:
+            return self._race_states.get(group)
+
+    def _race_cancelled(self, node_id: str) -> bool:
+        state = self._race_state_for(node_id)
+        return bool(state and state["event"].is_set() and state.get("winner") != node_id)
 
     def _get_field(self, key: str) -> str:
         return str(self.fields.get(key, ""))
@@ -251,17 +365,21 @@ class FlowExecutor:
         return static_value
 
     def _set_field(self, key: str, value: str):
-        self.fields[key] = value
-        self.commands.append({"cmd": "set_field", "key": key, "value": value})
+        with self._fields_lock, self._commands_lock:
+            self.fields[key] = value
+            self.commands.append({"cmd": "set_field", "key": key, "value": value})
 
     def _log(self, message: str, color: str = "#22C55E"):
-        self.commands.append({"cmd": "log", "message": message, "color": color})
+        with self._commands_lock:
+            self.commands.append({"cmd": "log", "message": message, "color": color})
 
     def _instruction(self, text: str, color: str = "blue", widget: str = ""):
-        self.commands.append({"cmd": "set_instruction", "widget": widget, "text": text, "color": color})
+        with self._commands_lock:
+            self.commands.append({"cmd": "set_instruction", "widget": widget, "text": text, "color": color})
 
     def _reject(self, reason: str):
-        self.commands.append({"cmd": "reject", "reason": reason})
+        with self._commands_lock:
+            self.commands.append({"cmd": "reject", "reason": reason})
 
     @staticmethod
     def _compare_values(left, operator: str, right, right2=None) -> bool:
@@ -280,17 +398,20 @@ class FlowExecutor:
                 if operator == "greater_equal":
                     return l_num >= r_num
                 return l_num <= r_num
+            # Normalize comparison values without treating empty string as
+            # "missing". Fixed Value = "" is a valid value and must work for
+            # both Equals and Not Equals.
+            left_s = "" if left is None else str(left).strip().lower()
+            right_s = "" if right is None else str(right).strip().lower()
+
             if operator == "equals":
-                # Case-insensitive: an Internal Variable's boolean True/False (Python's
-                # str(True) == "True") must still match a lowercase "true" typed into
-                # the condition's Value field, and PASS/pass/Pass are all the same intent.
-                return str(left).strip().lower() == str(right).strip().lower()
+                return left_s == right_s
             if operator == "not_equals":
-                return str(left).strip().lower() != str(right).strip().lower()
+                return left_s != right_s
             if operator == "contains":
-                return str(right).strip().lower() in str(left).strip().lower()
+                return right_s in left_s
             if operator == "not_contains":
-                return str(right).strip().lower() not in str(left).strip().lower()
+                return right_s not in left_s
         except (ValueError, TypeError):
             return False
         return False
@@ -788,6 +909,11 @@ class FlowExecutor:
                 self._follow(outputs, "false", db)
                 return
 
+            race_group = str(cfg.get("race_group", "") or "").strip()
+            race_state = self._race_state_for(node_id)
+            if race_state and self._race_cancelled(node_id):
+                return
+
             def _safe_identifier(value, label):
                 value = str(value or "").strip()
                 if not re.fullmatch(r"[A-Za-z0-9_]+", value):
@@ -862,56 +988,54 @@ class FlowExecutor:
                     raise ValueError("database is disconnected")
 
                 table = _safe_identifier(cond.get("table_name", cond.get("source_table", "")), "database table")
-                column = str(cond.get("data_column", cond.get("column", "")) or "").strip()
-                legacy_sn_column = str(cond.get("sn_column", "") or "").strip()
+                key_col = _safe_identifier(cond.get("sn_column", cond.get("target_database_column", "sn")), "database SN column")
+                value_col = str(cond.get("data_column", cond.get("column", "")) or "").strip()
                 operator = str(cond.get("operator", "equals") or "equals").strip().lower()
-                row_operators = ("exists", "not_exists", "duplicate", "not_duplicate")
 
-                meta = db.fetch_all(f"SHOW COLUMNS FROM `{table}`")
-                if not meta:
-                    raise ValueError(f"database table '{table}' not found")
-                available = [str(r.get("Field", "")) for r in meta if isinstance(r, dict) and r.get("Field")]
-                # Database Gate intentionally has the same single Column field as
-                # SN List, plus Table Name. For row modes the selected Column is
-                # the lookup/key column (e.g. `sn` in the UI screenshot). For
-                # comparison modes, the SN lookup is the conventional `sn`
-                # column and the selected Column is the value/data column.
-                if operator in row_operators:
-                    key_col = column or legacy_sn_column or "sn"
-                    key_actual = next((c for c in available if c.lower() == key_col.lower()), None)
-                    if not key_actual:
-                        raise ValueError(f"database column '{key_col}' does not exist in '{table}'")
-                    value_actual = None
-                else:
-                    key_col = legacy_sn_column or "sn"
-                    key_actual = next((c for c in available if c.lower() == key_col.lower()), None)
-                    if not key_actual:
-                        raise ValueError(f"database SN column '{key_col}' does not exist in '{table}'")
-                    if not column:
-                        raise ValueError("Database data column is required for this operator")
-                    value_actual = next((c for c in available if c.lower() == column.lower()), None)
-                    if not value_actual:
-                        raise ValueError(f"database data column '{column}' does not exist in '{table}'")
+                # The DB manager/connection may be shared by concurrent Race
+                # candidates and is not guaranteed to be thread-safe. Serialize
+                # only the short database read; other source types can still run
+                # concurrently.
+                with self._db_gate_lock:
+                    available = self._db_schema_cache.get(table)
+                    if available is None:
+                        meta = db.fetch_all(f"SHOW COLUMNS FROM `{table}`")
+                        if not meta:
+                            raise ValueError(f"database table '{table}' not found")
+                        available = [str(r.get("Field", "")) for r in meta if isinstance(r, dict) and r.get("Field")]
+                        self._db_schema_cache[table] = tuple(available)
+                    else:
+                        available = list(available)
+                key_actual = next((c for c in available if c.lower() == key_col.lower()), None)
+                if not key_actual:
+                    raise ValueError(f"database SN column '{key_col}' does not exist in '{table}'")
 
                 sn_variable = str(cond.get("sn_variable_name", "") or "").strip()
                 sn_value = self._read_internal_variable(sn_variable)
                 if sn_value is None:
                     raise ValueError(f"SN source Internal Variable '{sn_variable}' not found")
 
-                if operator in row_operators:
+                if operator in ("exists", "not_exists", "duplicate", "not_duplicate"):
                     qtable = "`" + table.replace("`", "``") + "`"
                     qkey = "`" + key_actual.replace("`", "``") + "`"
-                    row = db.fetch_one(
-                        f"SELECT COUNT(*) AS cnt FROM {qtable} WHERE {qkey} = %s",
-                        (str(sn_value),),
-                    )
+                    with self._db_gate_lock:
+                        row = db.fetch_one(
+                            f"SELECT COUNT(*) AS cnt FROM {qtable} WHERE {qkey} = %s",
+                            (str(sn_value),),
+                        )
                     count = int((row or {}).get("cnt", 0))
                     return {
                         "exists": count > 0,
                         "count": count,
                         "value": count,
-                        "display": f"SN={sn_value}, {key_actual}, count={count}",
+                        "display": f"SN={sn_value}, count={count}",
                     }
+
+                if not value_col:
+                    raise ValueError("Database data column is required for this operator")
+                value_actual = next((c for c in available if c.lower() == value_col.lower()), None)
+                if not value_actual:
+                    raise ValueError(f"database data column '{value_col}' does not exist in '{table}'")
 
                 qtable = "`" + table.replace("`", "``") + "`"
                 qkey = "`" + key_actual.replace("`", "``") + "`"
@@ -922,7 +1046,8 @@ class FlowExecutor:
                     qdate = "`" + date_col.replace("`", "``") + "`"
                     sql += f" ORDER BY {qdate} DESC"
                 sql += " LIMIT 1"
-                row = db.fetch_one(sql, (str(sn_value),))
+                with self._db_gate_lock:
+                    row = db.fetch_one(sql, (str(sn_value),))
                 if not row:
                     return {"exists": False, "count": 0, "value": None, "display": f"SN={sn_value}, no row"}
                 return {
@@ -1018,7 +1143,9 @@ class FlowExecutor:
                         return True
                 return False
 
-            if cfg.get("wait_mode") == "poll":
+            wait_mode = str(cfg.get("wait_mode", "instant") or "instant").strip().lower()
+
+            if wait_mode == "poll":
                 import time
                 try:
                     timeout = min(max(float(cfg.get("timeout_seconds", 10)), 0.5), 120)
@@ -1028,6 +1155,8 @@ class FlowExecutor:
                 all_ok = False
                 timed_out = False
                 while True:
+                    if self._race_cancelled(node_id):
+                        return
                     if any_condition_failed():
                         break
                     all_ok = check_once(log_each=False)
@@ -1037,7 +1166,12 @@ class FlowExecutor:
                         timed_out = True
                         break
                     time.sleep(0.2)
-                check_once(log_each=True)
+                if not self._race_cancelled(node_id):
+                    # Final read after the polling loop preserves the original
+                    # behavior while avoiding a read after another Race winner
+                    # has already cancelled this candidate.
+                    final_ok = check_once(log_each=True)
+                    all_ok = bool(all_ok or final_ok)
                 if not all_ok:
                     self._log(
                         f"Multi-Condition Gate: timed out after {timeout}s waiting for all conditions"
@@ -1045,8 +1179,130 @@ class FlowExecutor:
                         else "Multi-Condition Gate: stopped early — a condition reported FAIL",
                         "#EF4444",
                     )
+            elif wait_mode == "on_change":
+                # ON DATA CHANGE semantics:
+                #   ANY one condition/source changes -> evaluate ALL conditions.
+                # The gate must NOT wait for every condition to change.
+                # A condition is allowed to remain unchanged while another
+                # condition changes. This is especially important for mixed
+                # sources (Internal Variable + TCP/IP + SN List + Database).
+                #
+                # Empty string is a valid data value. It must participate in
+                # the snapshot and in comparisons such as: String != Fixed Value
+                # with Fixed Value = "".
+                import time
+                try:
+                    timeout = max(float(cfg.get("change_timeout_seconds", 0)), 0.0)
+                except (TypeError, ValueError):
+                    timeout = 0.0
+
+                def _snapshot():
+                    snapshot = []
+                    for cond in conditions:
+                        try:
+                            result = _resolve_gate_condition(cond)
+                            # Keep type/value distinctions stable. In particular,
+                            # do not turn a legitimate empty string into a
+                            # missing value.
+                            value = result.get("value")
+                            if value is None:
+                                value_key = None
+                            else:
+                                value_key = str(value)
+                            snapshot.append((
+                                bool(result.get("exists")),
+                                int(result.get("count", 0) or 0),
+                                value_key,
+                                str(result.get("display", "")),
+                            ))
+                        except Exception as e:
+                            snapshot.append(("error", str(e)))
+                    return tuple(snapshot)
+
+                # IMPORTANT: evaluate the current state immediately.
+                # Data Change is an event mode, but a node must never wait for
+                # a future change when all conditions are already satisfied at
+                # the moment the node starts.
+                if self._race_cancelled(node_id):
+                    return
+                initial_ok = check_once(log_each=True)
+                if initial_ok:
+                    all_ok = True
+                    changed = False
+                    self._log(
+                        "Multi-Condition Gate: Data Change initial state MATCH -> process immediately",
+                        "#22C55E",
+                    )
+                else:
+                    baseline = _snapshot()
+                    deadline = time.monotonic() + timeout if timeout > 0 else None
+                    all_ok = False
+                    changed = False
+
+                    while True:
+                        if self._race_cancelled(node_id):
+                            return
+
+                        # IMPORTANT: do not use any_condition_failed() here.
+                        # A condition can change from FAIL -> PASS. On Data Change
+                        # must detect that transition and then evaluate ALL rows.
+                        current = _snapshot()
+
+                        # ANY changed condition is enough to trigger a complete
+                        # Multi-Condition evaluation. Unchanged conditions are still
+                        # included by check_once().
+                        if current != baseline:
+                            baseline = current
+                            changed = True
+                            all_ok = check_once(log_each=True)
+                            if all_ok:
+                                break
+                            # Keep waiting if this change did not make ALL
+                            # conditions true. The next source change is evaluated
+                            # against the newest snapshot, preventing repeated
+                            # evaluation of the same change.
+
+                        if deadline is not None and time.monotonic() >= deadline:
+                            break
+
+                        # Detector cadence only; this is NOT a decision timer.
+                        time.sleep(0.02)
+
+                if not changed and not all_ok:
+                    self._log(
+                        "Multi-Condition Gate: no source data change detected before timeout",
+                        "#F59E0B",
+                    )
             else:
+                if self._race_cancelled(node_id):
+                    return
                 all_ok = check_once(log_each=True)
+
+            if race_state:
+                race_won = False
+                race_all_failed = False
+                with race_state["lock"]:
+                    # Another candidate may have won while this candidate was
+                    # performing its final read. Do not execute a losing branch.
+                    if race_state["event"].is_set() and race_state.get("winner") != node_id:
+                        return
+                    race_state["active"].discard(node_id)
+                    if all_ok and race_state.get("winner") is None:
+                        race_state["winner"] = node_id
+                        race_state["event"].set()
+                        race_won = True
+                    elif not all_ok and not race_state["active"] and race_state.get("winner") is None:
+                        race_state["all_failed"] = True
+                        race_state["event"].set()
+                        race_all_failed = True
+
+                if race_won:
+                    self._log(f"Multi-Condition Race: '{node_id}' won group '{race_group}'", "#22C55E")
+                    self._follow(outputs, "true", db)
+                elif race_all_failed:
+                    self._log(f"Multi-Condition Race: no condition matched in group '{race_group}'", "#EF4444")
+                    self._follow(outputs, "false", db)
+                return
 
             self._follow(outputs, "true" if all_ok else "false", db)
             return
@@ -1161,6 +1417,160 @@ class FlowExecutor:
                 else:
                     ok = self._write_device_value(w, value)
                     self._log(f"Write Output: {w.get('device_name', '?')} {w.get('address_type', '?')}@{w.get('address', '?')} = {value}" if ok else "Write Output failed", "#22C55E" if ok else "#EF4444")
+
+            self._follow(outputs, "next", db)
+            return
+
+        # ─── READ REFERENCE: lookup one row in the local reference.db and
+        #     read one or several columns from that same row into Internal Variables.
+        #     Legacy single-read fields remain supported.
+        if ntype == "read_reference":
+            cfg = node.get("config", {}) or {}
+            source_database = str(cfg.get("source_database", "reference") or "reference").strip().lower()
+            target_database_column = str(cfg.get("target_database_column", "") or "").strip()
+            target_data_variable = str(cfg.get("target_data_variable", "") or "").strip()
+            mappings = cfg.get("mappings")
+
+            if isinstance(mappings, list):
+                mappings = [
+                    m for m in mappings
+                    if isinstance(m, dict)
+                    and str(m.get("source_column", "") or "").strip()
+                    and str(m.get("variable_name", "") or "").strip()
+                ]
+            else:
+                mappings = []
+
+            # Backward compatibility with original single-read configuration.
+            if not mappings:
+                legacy_read_column = str(cfg.get("read_table_column", "") or "").strip()
+                legacy_destination = str(cfg.get("destination_internal_variable", "") or "").strip()
+                if legacy_read_column and legacy_destination:
+                    mappings = [{
+                        "source_column": legacy_read_column,
+                        "variable_name": legacy_destination,
+                    }]
+
+            if source_database != "reference":
+                self._log("Read Reference: source database must be 'reference'", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
+
+            if not target_database_column or not target_data_variable or not mappings:
+                self._log(
+                    "Read Reference: Target Column, Target Data, and at least one READ mapping must be configured",
+                    "#EF4444",
+                )
+                self._follow(outputs, "next", db)
+                return
+
+            if not re.fullmatch(r"[A-Za-z0-9_]+", target_database_column):
+                self._log("Read Reference: invalid Reference DB target column name", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
+
+            seen_columns = set()
+            seen_destinations = set()
+            for m in mappings:
+                source_column = str(m["source_column"]).strip()
+                destination = str(m["variable_name"]).strip()
+                if not re.fullmatch(r"[A-Za-z0-9_]+", source_column):
+                    self._log(f"Read Reference: invalid READ column '{source_column}'", "#EF4444")
+                    self._follow(outputs, "next", db)
+                    return
+                if source_column.lower() in seen_columns:
+                    self._log(f"Read Reference: duplicate READ column '{source_column}'", "#EF4444")
+                    self._follow(outputs, "next", db)
+                    return
+                if destination.lower() in seen_destinations:
+                    self._log(f"Read Reference: duplicate destination Internal Variable '{destination}'", "#EF4444")
+                    self._follow(outputs, "next", db)
+                    return
+                seen_columns.add(source_column.lower())
+                seen_destinations.add(destination.lower())
+
+            lookup_value = self._read_internal_variable(target_data_variable)
+            if lookup_value is None:
+                self._log(f"Read Reference: Internal Variable '{target_data_variable}' not found", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
+
+            reference_db_path = os.path.join(DATA_DIR, "reference.db")
+            try:
+                with sqlite3.connect(reference_db_path) as refdb:
+                    refdb.row_factory = sqlite3.Row
+                    table_row = refdb.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                        ("reference_master",),
+                    ).fetchone()
+                    if not table_row:
+                        raise ValueError("reference_master table does not exist in reference.db")
+
+                    meta = refdb.execute("PRAGMA table_info(reference_master)").fetchall()
+                    available_columns = {str(r[1]) for r in meta if len(r) > 1}
+                    target_column = next(
+                        (c for c in available_columns if c.lower() == target_database_column.lower()),
+                        None,
+                    )
+                    if not target_column:
+                        raise ValueError(
+                            f"target column '{target_database_column}' does not exist in reference_master"
+                        )
+
+                    read_columns = []
+                    for m in mappings:
+                        requested = str(m["source_column"]).strip()
+                        actual = next(
+                            (c for c in available_columns if c.lower() == requested.lower()),
+                            None,
+                        )
+                        if not actual:
+                            raise ValueError(
+                                f"read column '{requested}' does not exist in reference_master"
+                            )
+                        read_columns.append((actual, str(m["variable_name"]).strip()))
+
+                    q_target = '"' + target_column.replace('"', '""') + '"'
+                    select_parts = []
+                    for idx, (actual, _) in enumerate(read_columns):
+                        q_read = '"' + actual.replace('"', '""') + '"'
+                        select_parts.append(f"{q_read} AS _read_{idx}")
+
+                    row = refdb.execute(
+                        f"SELECT {', '.join(select_parts)} FROM reference_master "
+                        f"WHERE CAST({q_target} AS TEXT) = CAST(? AS TEXT) COLLATE NOCASE LIMIT 1",
+                        (str(lookup_value),),
+                    ).fetchone()
+
+                    if row is None:
+                        raise ValueError(
+                            f"no reference row found where {target_column}='{lookup_value}'"
+                        )
+
+                    results = []
+                    for idx, (actual, destination) in enumerate(read_columns):
+                        result_value = row[f"_read_{idx}"]
+                        if result_value is None:
+                            result_value = ""
+                        results.append((actual, destination, result_value))
+
+                # Write only after the lookup and all requested columns have succeeded.
+                for actual, destination, result_value in results:
+                    if not self._write_internal_variable(destination, result_value):
+                        raise ValueError(
+                            f"failed to write Internal Variable '{destination}'"
+                        )
+
+                summary = "; ".join(
+                    f"{actual}='{value}' → {destination}"
+                    for actual, destination, value in results
+                )
+                self._log(
+                    f"Read Reference: reference.{target_column}='{lookup_value}' → {summary}",
+                    "#A855F7",
+                )
+            except Exception as e:
+                self._log(f"Read Reference error: {e}", "#EF4444")
 
             self._follow(outputs, "next", db)
             return

@@ -1,0 +1,511 @@
+{
+  "id": "productinfo",
+  "name": "ProductInfo",
+  "description": "",
+  "nodes": [
+    {
+      "config": {
+        "address": "0",
+        "address_type": "holding_register",
+        "device_name": "",
+        "field_key": "",
+        "protocol": "tcp",
+        "read_source": "none",
+        "variable_name": ""
+      },
+      "id": "gi",
+      "type": "group_input",
+      "x": 560,
+      "y": 21
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "static",
+            "value_variable_name": "",
+            "variable_name": "Initialization"
+          }
+        ]
+      },
+      "id": "n1789847687680_11",
+      "type": "write_output",
+      "x": 318.1328125,
+      "y": 90.5078125
+    },
+    {
+      "config": {
+        "address": "0",
+        "address_type": "holding_register",
+        "device_name": "",
+        "port": "next",
+        "protocol": "tcp",
+        "value": "0",
+        "value_field_key": "",
+        "value_source": "static",
+        "variable_name": "Initialization",
+        "write_target": "internal"
+      },
+      "id": "n1789850083187_7",
+      "type": "group_output",
+      "x": 162,
+      "y": 695
+    },
+    {
+      "config": {
+        "change_scope": "all",
+        "change_timeout_seconds": "0",
+        "conditions": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "compare_source": "fixed",
+            "compare_variable_name": "",
+            "compare_variable_name2": "",
+            "database_data_column": "",
+            "database_lookup_column": "sn",
+            "database_table": "",
+            "device_name": "",
+            "operator": "equals",
+            "protocol": "tcp",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "value": "1",
+            "value2": "",
+            "variable_name": "Close"
+          }
+        ],
+        "race_group": "RG01",
+        "timeout_seconds": "10",
+        "wait_mode": "on_change"
+      },
+      "id": "n1789852302382_11",
+      "type": "multi_condition_gate",
+      "x": 191.1328125,
+      "y": 188.5078125
+    },
+    {
+      "config": {
+        "group_name": "ProductInfo",
+        "mode": "group",
+        "targets": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ChassisBatch_1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "PlanQty_1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "PO_1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "SKU_1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "SO_1"
+          }
+        ]
+      },
+      "id": "n1789858378047_1",
+      "type": "reset_node",
+      "x": 87.1328125,
+      "y": 327.5078125
+    },
+    {
+      "config": {
+        "change_timeout_seconds": "0",
+        "conditions": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "compare_source": "fixed",
+            "compare_variable_name": "PO",
+            "compare_variable_name2": "",
+            "database_data_column": "",
+            "database_lookup_column": "sn",
+            "database_table": "",
+            "device_name": "",
+            "operator": "not_equals",
+            "protocol": "tcp",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "value": "0",
+            "value2": "",
+            "variable_name": "PO_1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "compare_source": "fixed",
+            "compare_variable_name": "",
+            "compare_variable_name2": "",
+            "database_data_column": "",
+            "database_lookup_column": "sn",
+            "database_table": "",
+            "device_name": "",
+            "operator": "not_equals",
+            "protocol": "tcp",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "value": "0",
+            "value2": "",
+            "variable_name": "ChassisBatch_1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "compare_source": "fixed",
+            "compare_variable_name": "",
+            "compare_variable_name2": "",
+            "database_data_column": "",
+            "database_lookup_column": "sn",
+            "database_table": "",
+            "device_name": "",
+            "operator": "not_equals",
+            "protocol": "tcp",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "value": "0",
+            "value2": "",
+            "variable_name": "SKU_1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "compare_source": "fixed",
+            "compare_variable_name": "",
+            "compare_variable_name2": "",
+            "database_data_column": "",
+            "database_lookup_column": "sn",
+            "database_table": "",
+            "device_name": "",
+            "operator": "not_equals",
+            "protocol": "tcp",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "value": "0",
+            "value2": "",
+            "variable_name": "SO_1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "compare_source": "fixed",
+            "compare_variable_name": "",
+            "compare_variable_name2": "",
+            "database_data_column": "",
+            "database_lookup_column": "sn",
+            "database_table": "",
+            "device_name": "",
+            "operator": "not_equals",
+            "protocol": "tcp",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "value": "0",
+            "value2": "",
+            "variable_name": "PlanQty_1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "compare_source": "fixed",
+            "compare_variable_name": "",
+            "compare_variable_name2": "",
+            "database_data_column": "",
+            "database_lookup_column": "sn",
+            "database_table": "",
+            "device_name": "",
+            "operator": "equals",
+            "protocol": "tcp",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "value": "1",
+            "value2": "",
+            "variable_name": "Save"
+          }
+        ],
+        "race_group": "RG01",
+        "timeout_seconds": "10",
+        "wait_mode": "on_change"
+      },
+      "id": "n1789859588769_21",
+      "type": "multi_condition_gate",
+      "x": 483.1328125,
+      "y": 225.5078125
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "ChassisBatch_1",
+            "variable_name": "ChassisBatch"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "PlanQty_1",
+            "variable_name": "PlanQty"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "PO_1",
+            "variable_name": "PO"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "SKU_1",
+            "variable_name": "SKU"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "SO_1",
+            "variable_name": "SO"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "12",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "static",
+            "value_variable_name": "",
+            "variable_name": "Batch_Qty"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "12",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "static",
+            "value_variable_name": "",
+            "variable_name": "RemainingQty"
+          }
+        ]
+      },
+      "id": "n1789896627641_5",
+      "type": "write_output",
+      "x": 479.1328125,
+      "y": 341.01171875
+    },
+    {
+      "config": {
+        "destination_internal_variable": "Vision",
+        "mappings": [
+          {
+            "source_column": "program",
+            "variable_name": "Vision"
+          },
+          {
+            "source_column": "description",
+            "variable_name": "Desciption"
+          },
+          {
+            "source_column": "producttype",
+            "variable_name": "Type"
+          },
+          {
+            "source_column": "line",
+            "variable_name": "Line"
+          },
+          {
+            "source_column": "partner",
+            "variable_name": "Partner"
+          },
+          {
+            "source_column": "voltage",
+            "variable_name": "Voltage"
+          },
+          {
+            "source_column": "plug",
+            "variable_name": "Plug"
+          },
+          {
+            "source_column": "colour",
+            "variable_name": "Color"
+          }
+        ],
+        "read_table_column": "program",
+        "source_database": "reference",
+        "target_data_variable": "SKU",
+        "target_database_column": "name"
+      },
+      "id": "n1789900152430_1",
+      "type": "read_reference",
+      "x": 448.1328125,
+      "y": 435.5078125
+    },
+    {
+      "config": {
+        "group_name": "ProductInfo",
+        "mode": "selected",
+        "targets": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "Vision"
+          }
+        ]
+      },
+      "id": "n1789901434255_1",
+      "type": "reset_node",
+      "x": 273.1328125,
+      "y": 323.5078125
+    }
+  ],
+  "connections": [
+    {
+      "fromId": "gi",
+      "fromPort": "next",
+      "id": "n1789847689997_13",
+      "toId": "n1789847687680_11"
+    },
+    {
+      "fromId": "n1789847687680_11",
+      "fromPort": "next",
+      "id": "n1789852306860_13",
+      "toId": "n1789852302382_11"
+    },
+    {
+      "fromId": "n1789847687680_11",
+      "fromPort": "next",
+      "id": "n1789859638628_23",
+      "toId": "n1789859588769_21"
+    },
+    {
+      "fromId": "n1789852302382_11",
+      "fromPort": "true",
+      "id": "n1789896538087_2",
+      "toId": "n1789858378047_1"
+    },
+    {
+      "fromId": "n1789859588769_21",
+      "fromPort": "true",
+      "id": "n1789896629877_7",
+      "toId": "n1789896627641_5"
+    },
+    {
+      "fromId": "n1789896627641_5",
+      "fromPort": "next",
+      "id": "n1789900154363_3",
+      "toId": "n1789900152430_1"
+    },
+    {
+      "fromId": "n1789900152430_1",
+      "fromPort": "next",
+      "id": "n1789900186596_4",
+      "toId": "n1789850083187_7"
+    },
+    {
+      "fromId": "n1789852302382_11",
+      "fromPort": "true",
+      "id": "n1789901440390_3",
+      "toId": "n1789901434255_1"
+    }
+  ]
+}

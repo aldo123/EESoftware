@@ -146,10 +146,22 @@ def get_reference_data():
     date_from = request.args.get("date_from")
     date_to = request.args.get("date_to")
     q = request.args.get("q", "").strip()
+    requested_column = request.args.get("column", "").strip()
 
     ensure_table_exists()
     cols = get_columns_from_table()
-    search_cols = [c for c in cols if c != 'id']
+    valid_search_cols = [c for c in cols if c not in ("id", "date_time")]
+
+    # Reference DB always uses the existing reference_master table.
+    # When a column is supplied, validate it against PRAGMA table_info
+    # before interpolating it into SQL.
+    if requested_column:
+        if requested_column not in valid_search_cols:
+            return jsonify({"error": f"Invalid reference column: {requested_column}"}), 400
+        search_cols = [requested_column]
+    else:
+        search_cols = valid_search_cols
+
     where_clauses = []
     params = []
 

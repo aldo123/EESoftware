@@ -18,19 +18,19 @@
       },
       "id": "n1788774632149_1",
       "type": "device_trigger",
-      "x": 720.7578125,
-      "y": 52.73046875
+      "x": 277.7578125,
+      "y": 50.73046875
     },
     {
       "config": {
         "expose_check": true,
-        "template_id": "1",
-        "template_name": "1"
+        "template_id": "CheckSN",
+        "template_name": "CheckSN"
       },
       "id": "n1788776020868_31",
       "type": "subflow_call",
-      "x": 723.7578125,
-      "y": 237.5078125
+      "x": 217.7578125,
+      "y": 214.5078125
     },
     {
       "config": {
@@ -38,8 +38,8 @@
       },
       "id": "n1788776742731_9",
       "type": "timer",
-      "x": 337.7578125,
-      "y": 465.7578125
+      "x": 792.7578125,
+      "y": 605.7578125
     },
     {
       "config": {
@@ -90,8 +90,8 @@
       },
       "id": "n1788776776848_14",
       "type": "reset_node",
-      "x": 287.7578125,
-      "y": 574.7578125
+      "x": 908.7578125,
+      "y": 759.7578125
     },
     {
       "config": {
@@ -148,8 +148,8 @@
       },
       "id": "n1788849637610_2",
       "type": "write_sn_list",
-      "x": 811.7578125,
-      "y": 475.1328125
+      "x": 242.7578125,
+      "y": 428.1328125
     },
     {
       "config": {
@@ -169,8 +169,8 @@
       },
       "id": "n1788853301890_31",
       "type": "write_output",
-      "x": 592.7578125,
-      "y": 351.1328125
+      "x": 37.7578125,
+      "y": 333.1328125
     },
     {
       "config": {
@@ -190,8 +190,8 @@
       },
       "id": "n1788853306100_32",
       "type": "write_output",
-      "x": 817.7578125,
-      "y": 329.1328125
+      "x": 429.7578125,
+      "y": 326.1328125
     },
     {
       "config": {
@@ -245,21 +245,13 @@
             "kind": "internal",
             "protocol": "tcp",
             "variable_name": "ProductSNHPT"
-          },
-          {
-            "address": "0",
-            "address_type": "holding_register",
-            "device_name": "",
-            "kind": "internal",
-            "protocol": "tcp",
-            "variable_name": "SNCPdatabase"
           }
         ]
       },
       "id": "n1788853380847_40",
       "type": "reset_node",
-      "x": 487.7578125,
-      "y": 579.7578125
+      "x": 689.7578125,
+      "y": 765.7578125
     },
     {
       "config": {
@@ -269,8 +261,8 @@
       },
       "id": "n1789057063630_2",
       "type": "subflow_call",
-      "x": 704.7578125,
-      "y": 146.5078125
+      "x": 386.7578125,
+      "y": 136.5078125
     },
     {
       "config": {
@@ -386,8 +378,8 @@
       },
       "id": "n1789228256019_1",
       "type": "write_sn_database",
-      "x": 792.7578125,
-      "y": 722.8828125
+      "x": 43.7578125,
+      "y": 719.8828125
     },
     {
       "config": {
@@ -404,8 +396,8 @@
       },
       "id": "n1789232001584_9",
       "type": "multi_condition_gate",
-      "x": 883.7578125,
-      "y": 564.8828125
+      "x": 238.7578125,
+      "y": 534.8828125
     },
     {
       "config": {
@@ -426,32 +418,19 @@
       },
       "id": "n1789295625956_1",
       "type": "write_sn_database",
-      "x": 981.1328125,
-      "y": 723.5078125
-    },
-    {
-      "config": {
-        "mappings": [
-          {
-            "source_column": "cp",
-            "variable_name": "SNCPdatabase"
-          }
-        ],
-        "source_table": "master_table",
-        "target_data_source": "internal_variable",
-        "target_database_column": "sn",
-        "target_internal_variable": "ProductSNHPT"
-      },
-      "id": "n1789302308141_11",
-      "type": "read_sn_database",
-      "x": 864.1328125,
-      "y": 878.0078125
+      "x": 342.1328125,
+      "y": 850.5078125
     },
     {
       "config": {
         "conditions": [
           {
+            "data_column": "cp",
             "operator": "equals",
+            "sn_column": "sn",
+            "sn_variable_name": "ProductSNHPT",
+            "source_type": "database",
+            "table_name": "master_table",
             "value": "11",
             "value2": "",
             "variable_name": "SNCPdatabase"
@@ -462,8 +441,34 @@
       },
       "id": "n1789302356522_15",
       "type": "multi_condition_gate",
-      "x": 782.1328125,
-      "y": 990.2578125
+      "x": 277.1328125,
+      "y": 967.2578125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "data_column": "",
+            "device_name": "",
+            "operator": "contains",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "table_name": "",
+            "value": "OK",
+            "value2": "",
+            "variable_name": "ResultHPT"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "instant"
+      },
+      "id": "n1789357819417_1",
+      "type": "multi_condition_gate",
+      "x": 246.1328125,
+      "y": 694.5078125
     }
   ],
   "connections": [
@@ -528,30 +533,6 @@
       "toId": "n1789228256019_1"
     },
     {
-      "fromId": "n1789232001584_9",
-      "fromPort": "true",
-      "id": "n1789302026559_2",
-      "toId": "n1789295625956_1"
-    },
-    {
-      "fromId": "n1789228256019_1",
-      "fromPort": "next",
-      "id": "n1789302310363_12",
-      "toId": "n1789302308141_11"
-    },
-    {
-      "fromId": "n1789295625956_1",
-      "fromPort": "next",
-      "id": "n1789302320330_14",
-      "toId": "n1789302308141_11"
-    },
-    {
-      "fromId": "n1789302308141_11",
-      "fromPort": "next",
-      "id": "n1789302359870_17",
-      "toId": "n1789302356522_15"
-    },
-    {
       "fromId": "n1789302356522_15",
       "fromPort": "true",
       "id": "n1789302385390_19",
@@ -562,6 +543,30 @@
       "fromPort": "false",
       "id": "n1789302571912_21",
       "toId": "n1788776742731_9"
+    },
+    {
+      "fromId": "n1789295625956_1",
+      "fromPort": "next",
+      "id": "n1789350305810_4",
+      "toId": "n1789302356522_15"
+    },
+    {
+      "fromId": "n1789357819417_1",
+      "fromPort": "true",
+      "id": "n1789357822586_2",
+      "toId": "n1789295625956_1"
+    },
+    {
+      "fromId": "n1789232001584_9",
+      "fromPort": "true",
+      "id": "n1789357825413_3",
+      "toId": "n1789357819417_1"
+    },
+    {
+      "fromId": "n1789228256019_1",
+      "fromPort": "next",
+      "id": "n1789358248111_7",
+      "toId": "n1789302356522_15"
     }
   ]
 }
