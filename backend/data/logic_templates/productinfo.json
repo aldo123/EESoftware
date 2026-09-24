@@ -434,8 +434,8 @@
       },
       "id": "n1789900152430_1",
       "type": "read_reference",
-      "x": 448.1328125,
-      "y": 435.5078125
+      "x": 406.1328125,
+      "y": 525.5078125
     },
     {
       "config": {
@@ -456,6 +456,48 @@
       "type": "reset_node",
       "x": 273.1328125,
       "y": 323.5078125
+    },
+    {
+      "id": "n1790246044002_3",
+      "type": "parse_data",
+      "x": 653.1328125,
+      "y": 521.5078125,
+      "config": {
+        "mappings": [
+          {
+            "source_type": "internal_variable",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "read_length": "1",
+            "decode_mode": "value",
+            "source_variable_name": "ChassisBatch",
+            "rs232_port": "",
+            "rs232_baudrate": "9600",
+            "rs232_encoding": "utf-8",
+            "rs232_read_mode": "buffer",
+            "rs232_consume": true,
+            "start_index": "0",
+            "end_index": "2",
+            "destination_variable_name": "ScrapLaser"
+          }
+        ],
+        "source_type": "internal_variable",
+        "device_name": "",
+        "address_type": "holding_register",
+        "address": "0",
+        "read_length": "1",
+        "decode_mode": "value",
+        "source_variable_name": "",
+        "rs232_port": "",
+        "rs232_baudrate": "9600",
+        "rs232_encoding": "utf-8",
+        "rs232_read_mode": "buffer",
+        "rs232_consume": true,
+        "start_index": "0",
+        "end_index": "",
+        "destination_variable_name": ""
+      }
     }
   ],
   "connections": [
@@ -490,12 +532,6 @@
       "toId": "n1789896627641_5"
     },
     {
-      "fromId": "n1789896627641_5",
-      "fromPort": "next",
-      "id": "n1789900154363_3",
-      "toId": "n1789900152430_1"
-    },
-    {
       "fromId": "n1789900152430_1",
       "fromPort": "next",
       "id": "n1789900186596_4",
@@ -506,6 +542,18 @@
       "fromPort": "true",
       "id": "n1789901440390_3",
       "toId": "n1789901434255_1"
+    },
+    {
+      "fromId": "n1789896627641_5",
+      "fromPort": "next",
+      "id": "n1790243436444_6",
+      "toId": "n1789900152430_1"
+    },
+    {
+      "id": "n1790246046645_5",
+      "fromId": "n1789896627641_5",
+      "fromPort": "next",
+      "toId": "n1790246044002_3"
     }
   ]
 }

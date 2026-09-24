@@ -3,6 +3,7 @@ import json
 import re
 import sqlite3
 import threading
+import time
 import uuid
 from flask import Blueprint, request, jsonify
 
@@ -20,6 +21,109 @@ MAX_SUBFLOW_DEPTH = 8
 
 # ─── Runtime State per CP ──────────────────────────────────────────
 RUNTIME_STATES = {}  # { cp: {"waiting_scan": node_id or None} }
+
+
+class _RS232ReaderManager:
+    """Lazy, persistent RS232 readers used by Parse Data nodes.
+
+    Each unique serial configuration gets one background reader so a parse node
+    can consume the latest bytes without opening/closing the COM port on every
+    flow cycle. pyserial remains optional: when it is unavailable the node logs
+    a clear error instead of crashing the whole flow.
+    """
+
+    def __init__(self):
+        self._lock = threading.RLock()
+        self._readers = {}
+
+    @staticmethod
+    def _key(port, baudrate, encoding):
+        return (str(port or "").strip().upper(), int(baudrate or 9600), str(encoding or "utf-8").strip() or "utf-8")
+
+    def _start(self, port, baudrate, encoding):
+        try:
+            import serial
+        except Exception as exc:
+            raise RuntimeError(f"pyserial is not available: {exc}")
+
+        port = str(port or "").strip()
+        if not port:
+            raise ValueError("RS232 COM Port is empty")
+        baudrate = int(baudrate or 9600)
+        encoding = str(encoding or "utf-8").strip() or "utf-8"
+
+        ser = serial.Serial(port=port, baudrate=baudrate, timeout=0.05)
+        state = {
+            "serial": ser,
+            "buffer": "",
+            "latest_line": "",
+            "stop": threading.Event(),
+            "lock": threading.RLock(),
+        }
+
+        def reader_loop():
+            while not state["stop"].is_set():
+                try:
+                    waiting = int(getattr(ser, "in_waiting", 0) or 0)
+                    if waiting > 0:
+                        raw = ser.read(waiting)
+                        if raw:
+                            text = raw.decode(encoding, errors="replace")
+                            with state["lock"]:
+                                state["buffer"] = (state["buffer"] + text)[-65536:]
+                                parts = state["buffer"].splitlines()
+                                if parts:
+                                    # Keep the most recent complete line only.
+                                    if state["buffer"].endswith(("\n", "\r")):
+                                        state["latest_line"] = parts[-1]
+                    else:
+                        time.sleep(0.01)
+                except Exception:
+                    # The next parse call will validate the reader again.
+                    time.sleep(0.05)
+
+        thread = threading.Thread(target=reader_loop, daemon=True, name=f"logic-rs232-{port}")
+        state["thread"] = thread
+        thread.start()
+        return state
+
+    def _ensure(self, port, baudrate, encoding):
+        key = self._key(port, baudrate, encoding)
+        with self._lock:
+            state = self._readers.get(key)
+            if state:
+                ser = state.get("serial")
+                thread = state.get("thread")
+                try:
+                    is_open = bool(ser and ser.is_open)
+                except Exception:
+                    is_open = False
+                if is_open and thread and thread.is_alive():
+                    return state
+
+            state = self._start(port, baudrate, encoding)
+            self._readers[key] = state
+            return state
+
+    def read(self, cfg):
+        port = cfg.get("rs232_port", "")
+        baudrate = cfg.get("rs232_baudrate", "9600")
+        encoding = cfg.get("rs232_encoding", "utf-8")
+        read_mode = str(cfg.get("rs232_read_mode", "buffer") or "buffer").strip().lower()
+        consume = bool(cfg.get("rs232_consume", True))
+
+        state = self._ensure(port, baudrate, encoding)
+        with state["lock"]:
+            value = state["latest_line"] if read_mode == "latest_line" else state["buffer"]
+            if consume and read_mode == "buffer":
+                state["buffer"] = ""
+            elif consume and read_mode == "latest_line":
+                state["latest_line"] = ""
+        return value
+
+
+RS232_READERS = _RS232ReaderManager()
+
 
 # ─── HELPERS ──────────────────────────────────────────────────────
 
@@ -534,6 +638,10 @@ class FlowExecutor:
                     "variableName",
                     "internal_variable",
                     "internalVariable",
+                    "source_variable_name",
+                    "destination_variable_name",
+                    "source_variable",
+                    "destination_variable",
                 ):
                     value_ref = value.get(key)
                     if isinstance(value_ref, str) and value_ref.strip():
@@ -675,6 +783,138 @@ class FlowExecutor:
         except Exception as e:
             self._log(f"Device write error ({device_name or '?'} {address_type}@{address}): {e}", "#EF4444")
             return False
+
+    def _resolve_parse_tcp_value(self, cfg: dict) -> str:
+        """Read one or more Modbus TCP values and convert them to parseable text."""
+        protocol = "tcp"
+        device_name = str(cfg.get("device_name", "") or "").strip()
+        address_type = str(cfg.get("address_type", "holding_register") or "holding_register").strip()
+        address = cfg.get("address", "0")
+        try:
+            count = max(1, min(int(cfg.get("read_length", 1) or 1), 256))
+            addr = int(address)
+            if addr < 0 or addr > 65535:
+                raise ValueError("Address must be 0..65535")
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid TCP Parse Data address/length: {exc}")
+
+        if not device_name:
+            raise ValueError("TCP Parse Data has no device selected")
+
+        try:
+            mod = __import__("tcp_ip")
+            client = mod._get_client(device_name)
+            area = mod._normalize_area(address_type)
+            function_code = mod.AREA_MAP[area]
+            if function_code in (1, 2):
+                values = mod._read_bits(client, function_code, addr, count)
+            else:
+                values = mod._read_registers(client, function_code, addr, count)
+        except Exception as exc:
+            raise RuntimeError(
+                f"TCP Parse Data read error ({device_name} {address_type}@{addr} x{count}): {exc}"
+            ) from exc
+
+        decode_mode = str(cfg.get("decode_mode", "value") or "value").strip().lower()
+
+        if function_code in (1, 2):
+            return "".join("1" if bool(v) else "0" for v in values)
+
+        numbers = [int(v) & 0xFFFF for v in values]
+
+        if decode_mode == "ascii_be":
+            raw = b"".join(bytes([(v >> 8) & 0xFF, v & 0xFF]) for v in numbers)
+            return raw.decode("latin-1").rstrip("\x00")
+        if decode_mode == "ascii_le":
+            raw = b"".join(bytes([v & 0xFF, (v >> 8) & 0xFF]) for v in numbers)
+            return raw.decode("latin-1").rstrip("\x00")
+        if decode_mode == "decimal_join":
+            return "".join(str(v) for v in numbers)
+
+        # "value": one register is the most intuitive/default case. When more
+        # than one register is requested, concatenate their decimal text.
+        return str(numbers[0]) if len(numbers) == 1 else "".join(str(v) for v in numbers)
+
+    def _resolve_parse_source(self, cfg: dict) -> str:
+        source_type = str(cfg.get("source_type", "internal_variable") or "internal_variable").strip().lower()
+
+        if source_type == "internal_variable":
+            name = str(cfg.get("source_variable_name", "") or "").strip()
+            if not name:
+                raise ValueError("Parse Data: source Internal Variable is not configured")
+            value = self._read_internal_variable(name)
+            if value is None:
+                raise ValueError(f"Parse Data: Internal Variable '{name}' not found")
+            return str(value)
+
+        if source_type == "tcpip":
+            return self._resolve_parse_tcp_value(cfg)
+
+        if source_type == "rs232":
+            return str(RS232_READERS.read(cfg) or "")
+
+        raise ValueError(f"Parse Data: unsupported source type '{source_type}'")
+
+    @staticmethod
+    def _slice_text(value, start_index, end_index):
+        text = "" if value is None else str(value)
+        try:
+            start = max(0, int(start_index if start_index not in (None, "") else 0))
+        except (TypeError, ValueError):
+            start = 0
+
+        if end_index in (None, ""):
+            end = None
+        else:
+            try:
+                end = max(start, int(end_index))
+            except (TypeError, ValueError):
+                end = None
+
+        return text[start:end]
+
+    def _execute_parse_data(self, cfg: dict) -> list[dict]:
+        """Execute one or many parse mappings and write each result to its destination IV.
+
+        New format: cfg["mappings"] = [{...}, {...}, ...].
+        Legacy format (single mapping fields directly on cfg) remains supported.
+        """
+        mappings = cfg.get("mappings")
+        if not isinstance(mappings, list) or not mappings:
+            mappings = [cfg]
+
+        results = []
+        for index, mapping in enumerate(mappings):
+            if not isinstance(mapping, dict):
+                raise ValueError(f"Parse Data #{index + 1}: invalid mapping")
+
+            destination = str(mapping.get("destination_variable_name", "") or "").strip()
+            if not destination:
+                raise ValueError(f"Parse Data #{index + 1}: destination Internal Variable is not configured")
+
+            source_value = self._resolve_parse_source(mapping)
+            parsed = self._slice_text(
+                source_value,
+                mapping.get("start_index", "0"),
+                mapping.get("end_index", ""),
+            )
+
+            if not self._write_internal_variable(destination, parsed):
+                raise ValueError(
+                    f"Parse Data #{index + 1}: failed to write Internal Variable '{destination}'"
+                )
+
+            results.append({
+                "index": index + 1,
+                "source_type": str(mapping.get("source_type", "internal_variable")),
+                "source_value": source_value,
+                "parsed": parsed,
+                "start_index": mapping.get("start_index", "0"),
+                "end_index": mapping.get("end_index", ""),
+                "destination": destination,
+            })
+
+        return results
 
     def _db_query(self, table: str, key_col: str, key_val: str, fields: list, db) -> bool:
         """Generic single-row lookup, shared by any future DB-reading node."""
@@ -1383,6 +1623,24 @@ class FlowExecutor:
             except Exception as e:
                 self._log(f"Write SN List error CP{self.cp}: {e}", "#EF4444")
 
+            self._follow(outputs, "next", db)
+            return
+
+        # ─── PARSE DATA: read TCP/IP, Internal Variable, or RS232 text, slice
+        #     by character index, then save the parsed result into one Internal Variable.
+        if ntype == "parse_data":
+            cfg = node.get("config", {}) or {}
+            try:
+                results = self._execute_parse_data(cfg)
+                for item in results:
+                    self._log(
+                        f"Parse Data #{item['index']} [{item['source_type']}]: "
+                        f"'{item['source_value']}'[{item['start_index']}:{item['end_index'] or ''}] "
+                        f"→ '{item['parsed']}' → Internal Variable '{item['destination']}'",
+                        "#EC4899",
+                    )
+            except Exception as exc:
+                self._log(f"Parse Data error: {exc}", "#EF4444")
             self._follow(outputs, "next", db)
             return
 
