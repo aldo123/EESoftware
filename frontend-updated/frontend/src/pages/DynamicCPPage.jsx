@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { API } from "../service/api";
 import { useTCPPLC } from "../hooks/useTCPPLC";
 import { useInternalVariables } from "../hooks/useInternalVariables";
@@ -1468,6 +1468,14 @@ export default function DynamicCPPage({ cpNumber, user }) {
 
   // ============================================================
   // POPUP TRIGGER — ONLY INTERNAL VARIABLES BELONGING TO ACTIVE CP
+  // Robust trigger handling:
+  // - Do NOT depend on a rising-edge transition to open the popup.
+  // - If the trigger is already active when the page/runtime finishes loading,
+  //   the popup will still open.
+  // - If the popup disappears unexpectedly while the trigger is still active,
+  //   it can recover automatically.
+  // - If the user explicitly closes the popup, keep the REOPEN state until the
+  //   trigger goes OFF.
   // ============================================================
   const popupTriggerStateRef = useRef({});
 
@@ -1484,30 +1492,37 @@ export default function DynamicCPPage({ cpNumber, user }) {
     return map;
   }, [activeCPInternalVariables]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const popupWidgets = Object.values(pages).flatMap(page =>
       Array.isArray(page?.widgets) ? page.widgets : []
     ).filter(w => w?.type === "popup");
 
     const configuredIds = new Set(popupWidgets.map(w => String(w.id)));
 
-    // Remove stale trigger states.
+    // Remove stale trigger/reopen states.
     Object.keys(popupTriggerStateRef.current).forEach(id => {
       if (!configuredIds.has(id)) delete popupTriggerStateRef.current[id];
     });
+    Object.keys(popupClosedByUserRef.current).forEach(id => {
+      if (!configuredIds.has(id)) delete popupClosedByUserRef.current[id];
+    });
 
     popupWidgets.forEach(widget => {
-      const p = widget.props || {};
+      const p = widget?.props || {};
+      const id = String(widget?.id ?? "");
       const variableName = String(p.triggerVariable || "").trim();
-      if (!variableName) return;
+      const target = String(p.targetPage || "").trim();
 
-      // Strict CP ownership: if the variable is not in the active CP map,
-      // it cannot trigger this popup even if another CP has the same name.
+      if (!id || !variableName) return;
+
+      // Strict CP ownership: only an Internal Variable belonging to the
+      // currently active CP is allowed to trigger this popup.
       const variable = activeCPInternalMap.get(variableName);
       if (!variable) {
-        popupTriggerStateRef.current[String(widget.id)] = false;
-        if (String(activePopupPage || "") === String(p.targetPage || "") &&
-            String(activePopupPage || "") !== "") {
+        popupTriggerStateRef.current[id] = false;
+        popupClosedByUserRef.current[id] = false;
+
+        if (String(activePopupPage || "") === target && target) {
           setActivePopupPage(null);
           setPopupMaximized(false);
         }
@@ -1517,30 +1532,55 @@ export default function DynamicCPPage({ cpNumber, user }) {
       const actual = getInternalValue(variableName);
       const expected = p.triggerValue ?? 1;
       const isActive = valuesEqualRuntime(actual, expected);
-      const id = String(widget.id);
-      const wasActive = Boolean(popupTriggerStateRef.current[id]);
-
-      if (isActive && !wasActive) {
-        popupTriggerStateRef.current[id] = true;
-        popupClosedByUserRef.current[id] = false;
-        const target = String(p.targetPage || "").trim();
-        const targetPage = pages?.[target];
-        if (target && target !== "dynamic" && targetPage) {
-          setActivePopupPage(target);
-          setPopupMaximized(false);
-        }
-      } else if (!isActive) {
+      // Trigger OFF: reset everything so the next ON can trigger normally.
+      if (!isActive) {
         popupTriggerStateRef.current[id] = false;
-        // Trigger OFF always clears the reopen state.
         popupClosedByUserRef.current[id] = false;
-        if (String(activePopupPage || "") === String(p.targetPage || "") &&
-            String(activePopupPage || "") !== "") {
+
+        if (String(activePopupPage || "") === target && target) {
           setActivePopupPage(null);
           setPopupMaximized(false);
         }
+        return;
+      }
+
+      // Trigger ON. Keep the state ON even if the popup was closed or
+      // temporarily disappeared; this allows the popup to recover.
+      popupTriggerStateRef.current[id] = true;
+
+      const targetPage = pages?.[target];
+      if (!target || target === "dynamic" || !targetPage) {
+        return;
+      }
+
+      // User explicitly closed this popup while the trigger is still ON.
+      // Do not force it back open; renderRuntimeWidget() will show REOPEN POPUP.
+      if (popupClosedByUserRef.current[id]) {
+        return;
+      }
+
+      // Another popup is currently open. Do not replace it.
+      if (activePopupPage) {
+        return;
+      }
+
+      // IMPORTANT: open based on the CURRENT trigger state, not only on
+      // !wasActive. This fixes the case where the trigger was already ON
+      // before pages/internal variables finished loading.
+      {
+        popupClosedByUserRef.current[id] = false;
+        setActivePopupPage(target);
+        setPopupMaximized(false);
       }
     });
-  }, [pages, activeCPInternalMap, activePopupPage, cpNumber, valuesEqualRuntime, getInternalValue]);
+  }, [
+    pages,
+    activeCPInternalMap,
+    activePopupPage,
+    cpNumber,
+    valuesEqualRuntime,
+    getInternalValue,
+  ]);
 
   useEffect(() => {
     if (!runtimeWidgets.length) return;

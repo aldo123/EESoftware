@@ -16,6 +16,7 @@ const NODE_TYPES = [
   { type: "count_over_time", category: "check", color: "#8B5CF6", icon: "⏱", label: "Count Over Time", desc: "Count detections in a camera ROI over N seconds" },
   { type: "custom_script", category: "check", color: "#F59E0B", icon: "🧩", label: "Custom Script", desc: "Write custom logic for cases no other node covers" },
   { type: "multi_condition_gate", category: "check", color: "#EAB308", icon: "🚦", label: "Multi-Condition Gate", desc: "AND-check Internal Variable, TCP/IP, SN List, or Database data" },
+  { type: "parse_data", category: "data", color: "#EC4899", icon: "✂️", label: "Parse Data", desc: "Read TCP/IP, Internal Variable, or RS232 data, slice by index, and store the result" },
   { type: "write_output", category: "action", color: "#22C55E", icon: "✍️", label: "Write Output", desc: "Write a value to a PLC coil/register or an Internal Variable" },
   { type: "write_sn_list", category: "action", color: "#06B6D4", icon: "📝", label: "Write SN List", desc: "Write Internal Variables to SN List columns" },
   { type: "write_sn_database", category: "action", color: "#8B5CF6", icon: "🗄️", label: "Write SN Database", desc: "Send latest SN List row to MySQL database" },
@@ -94,6 +95,33 @@ const DEFAULT_NODE_CONFIG = {
     timeout_seconds: "10",
     change_timeout_seconds: "0",
     race_group: "",
+  },
+  parse_data: {
+    // Multi-parse: add as many independent parse mappings as needed.
+    // Each mapping can use TCP/IP, Internal Variable, or RS232 and has its own
+    // index range + destination Internal Variable.
+    mappings: [{
+      source_type: "internal_variable", // "tcpip" | "internal_variable" | "rs232"
+      device_name: "",
+      address_type: "holding_register",
+      address: "0",
+      read_length: "1",
+      decode_mode: "value",
+      source_variable_name: "",
+      rs232_port: "",
+      rs232_baudrate: "9600",
+      rs232_encoding: "utf-8",
+      rs232_read_mode: "buffer",
+      rs232_consume: true,
+      start_index: "0",
+      end_index: "",
+      destination_variable_name: "",
+    }],
+    // Legacy single-parse fields kept for backward compatibility.
+    source_type: "internal_variable",
+    device_name: "", address_type: "holding_register", address: "0", read_length: "1", decode_mode: "value",
+    source_variable_name: "", rs232_port: "", rs232_baudrate: "9600", rs232_encoding: "utf-8",
+    rs232_read_mode: "buffer", rs232_consume: true, start_index: "0", end_index: "", destination_variable_name: "",
   },
   write_output: {
     writes: [
@@ -824,6 +852,211 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
             Semua source di atas OR — <b>salah satu</b> aja yang mencapai Trigger Value-nya, flow ini langsung jalan (source lain diabaikan buat siklus itu). Berguna kalau lo mau satu flow bisa dipicu dari beberapa device/register/variable berbeda tanpa bikin banyak node Device Trigger.
           </p>
         </>)}
+
+        {node.type === "parse_data" && (() => {
+          const defaultParseMapping = {
+            source_type: "internal_variable",
+            device_name: "", address_type: "holding_register", address: "0", read_length: "1", decode_mode: "value",
+            source_variable_name: "", rs232_port: "", rs232_baudrate: "9600", rs232_encoding: "utf-8",
+            rs232_read_mode: "buffer", rs232_consume: true, start_index: "0", end_index: "", destination_variable_name: "",
+          };
+
+          // Convert old single-mapping config into the new multi-mapping shape.
+          const parseMappings = Array.isArray(c.mappings) && c.mappings.length
+            ? c.mappings
+            : [{
+                ...defaultParseMapping,
+                source_type: c.source_type || "internal_variable",
+                device_name: c.device_name || "",
+                address_type: c.address_type || "holding_register",
+                address: c.address ?? "0",
+                read_length: c.read_length ?? "1",
+                decode_mode: c.decode_mode || "value",
+                source_variable_name: c.source_variable_name || "",
+                rs232_port: c.rs232_port || "",
+                rs232_baudrate: c.rs232_baudrate ?? "9600",
+                rs232_encoding: c.rs232_encoding || "utf-8",
+                rs232_read_mode: c.rs232_read_mode || "buffer",
+                rs232_consume: c.rs232_consume !== false,
+                start_index: c.start_index ?? "0",
+                end_index: c.end_index ?? "",
+                destination_variable_name: c.destination_variable_name || "",
+              }];
+
+          const updateParseMapping = (index, patch) => {
+            setLocalConfig(prev => {
+              const base = Array.isArray(prev.mappings) && prev.mappings.length ? prev.mappings : parseMappings;
+              return { ...prev, mappings: base.map((m, i) => i === index ? { ...m, ...patch } : m) };
+            });
+          };
+
+          const addParseMapping = () => {
+            setLocalConfig(prev => {
+              const base = Array.isArray(prev.mappings) && prev.mappings.length ? prev.mappings : parseMappings;
+              return { ...prev, mappings: [...base, { ...defaultParseMapping }] };
+            });
+          };
+
+          const removeParseMapping = (index) => {
+            setLocalConfig(prev => {
+              const base = Array.isArray(prev.mappings) && prev.mappings.length ? prev.mappings : parseMappings;
+              const next = base.filter((_, i) => i !== index);
+              return { ...prev, mappings: next.length ? next : [{ ...defaultParseMapping }] };
+            });
+          };
+
+          return (<>
+            <div className="rounded-lg border border-[#EC4899]/30 bg-[#EC4899]/5 px-2.5 py-2 text-[9px] text-[var(--text-muted)]">
+              <b style={{ color: "#EC4899" }}>Parse Data</b> — satu node bisa melakukan <b>multiple parse</b>. Setiap row dapat memilih source yang berbeda, index berbeda, dan destination Internal Variable berbeda.
+              <br />Index dimulai dari <b>0</b>. <b>End Index</b> bersifat <b>exclusive</b>; kosong = sampai karakter terakhir.
+            </div>
+
+            <button
+              type="button"
+              onClick={addParseMapping}
+              className="w-full h-8 rounded-lg border border-[#EC4899]/40 bg-[#EC4899]/10 text-[9px] font-bold text-[#EC4899] hover:bg-[#EC4899]/20 transition-colors"
+            >
+              + Add Parse
+            </button>
+
+            <div className="space-y-3 mt-2">
+              {parseMappings.map((m, index) => (
+                <div key={index} className="rounded-xl border border-[var(--border)] bg-[var(--bg-surface)] p-2.5">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-[9px] font-bold text-[#EC4899]">PARSE #{index + 1}</span>
+                    <div className="flex-1" />
+                    <button
+                      type="button"
+                      onClick={() => removeParseMapping(index)}
+                      className="w-6 h-6 rounded border border-[var(--border)] text-[var(--text-muted)] hover:text-[#EF4444] hover:border-[#EF4444]/40"
+                      title="Remove parse"
+                    >×</button>
+                  </div>
+
+                  <Field label="Data Source">
+                    <Select
+                      value={m.source_type || "internal_variable"}
+                      onChange={v => updateParseMapping(index, { source_type: v })}
+                      options={[
+                        { value: "tcpip", label: "TCP/IP — Modbus TCP" },
+                        { value: "internal_variable", label: "Internal Variable" },
+                        { value: "rs232", label: "RS232 / Serial" },
+                      ]}
+                    />
+                  </Field>
+
+                  {m.source_type === "tcpip" && (<>
+                    <Field label="TCP/IP Device">
+                      <Select
+                        value={m.device_name || ""}
+                        onChange={v => updateParseMapping(index, { device_name: v })}
+                        options={[
+                          { value: "", label: "Select TCP/IP device…" },
+                          ...((tcpDevices || []).map(d => ({ value: d.name, label: d.name }))),
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Address Type">
+                      <Select
+                        value={m.address_type || "holding_register"}
+                        onChange={v => updateParseMapping(index, { address_type: v })}
+                        options={[
+                          { value: "coil", label: "Coil" },
+                          { value: "discrete_input", label: "Discrete Input" },
+                          { value: "holding_register", label: "Holding Register" },
+                          { value: "input_register", label: "Input Register" },
+                        ]}
+                      />
+                    </Field>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Start Address"><Input value={m.address ?? "0"} onChange={v => updateParseMapping(index, { address: v })} placeholder="0" /></Field>
+                      <Field label="Read Length"><Input value={m.read_length ?? "1"} onChange={v => updateParseMapping(index, { read_length: v })} placeholder="1" /></Field>
+                    </div>
+                    <Field label="TCP Decode">
+                      <Select
+                        value={m.decode_mode || "value"}
+                        onChange={v => updateParseMapping(index, { decode_mode: v })}
+                        options={[
+                          { value: "value", label: "Value → text" },
+                          { value: "ascii_be", label: "ASCII — High Byte / Low Byte" },
+                          { value: "ascii_le", label: "ASCII — Low Byte / High Byte" },
+                          { value: "decimal_join", label: "Decimal values joined" },
+                        ]}
+                      />
+                    </Field>
+                  </>)}
+
+                  {m.source_type === "internal_variable" && (
+                    <Field label="Source Internal Variable">
+                      <select
+                        value={m.source_variable_name || ""}
+                        onChange={e => updateParseMapping(index, { source_variable_name: e.target.value })}
+                        disabled={internalVariablesLoading}
+                        className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#EC4899]/60"
+                      >
+                        <option value="">{internalVariablesLoading ? "Loading variables…" : "Select source variable…"}</option>
+                        {internalVariables
+                          .filter(v => String(v?.data_type || "").toLowerCase() !== "system")
+                          .map(v => <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>)}
+                      </select>
+                    </Field>
+                  )}
+
+                  {m.source_type === "rs232" && (<>
+                    <Field label="COM Port"><Input value={m.rs232_port || ""} onChange={v => updateParseMapping(index, { rs232_port: v })} placeholder="COM3" /></Field>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Field label="Baudrate"><Input value={m.rs232_baudrate ?? "9600"} onChange={v => updateParseMapping(index, { rs232_baudrate: v })} placeholder="9600" /></Field>
+                      <Field label="Encoding"><Input value={m.rs232_encoding || "utf-8"} onChange={v => updateParseMapping(index, { rs232_encoding: v })} placeholder="utf-8" /></Field>
+                    </div>
+                    <Field label="Read Mode">
+                      <Select
+                        value={m.rs232_read_mode || "buffer"}
+                        onChange={v => updateParseMapping(index, { rs232_read_mode: v })}
+                        options={[
+                          { value: "buffer", label: "Current Buffer" },
+                          { value: "latest_line", label: "Latest Complete Line" },
+                        ]}
+                      />
+                    </Field>
+                    <Field label="Consume Data After Read">
+                      <Select
+                        value={m.rs232_consume !== false}
+                        onChange={v => updateParseMapping(index, { rs232_consume: v === true || v === "true" })}
+                        options={[
+                          { value: true, label: "Yes — clear parsed buffer" },
+                          { value: false, label: "No — keep buffer" },
+                        ]}
+                      />
+                    </Field>
+                  </>)}
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <Field label="Start Index"><Input value={m.start_index ?? "0"} onChange={v => updateParseMapping(index, { start_index: v })} placeholder="0" /></Field>
+                    <Field label="End Index"><Input value={m.end_index ?? ""} onChange={v => updateParseMapping(index, { end_index: v })} placeholder="e.g. 8" /></Field>
+                  </div>
+
+                  <Field label="Destination — Internal Variable">
+                    <select
+                      value={m.destination_variable_name || ""}
+                      onChange={e => updateParseMapping(index, { destination_variable_name: e.target.value })}
+                      disabled={internalVariablesLoading}
+                      className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#EC4899]/60"
+                    >
+                      <option value="">{internalVariablesLoading ? "Loading variables…" : "Select destination variable…"}</option>
+                      {internalVariables
+                        .filter(v => String(v?.data_type || "").toLowerCase() !== "system")
+                        .map(v => <option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>)}
+                    </select>
+                  </Field>
+                </div>
+              ))}
+            </div>
+
+            <p className="text-[var(--text-muted)] text-[9px] mt-1">
+              Contoh 3 parse: <b>ABC123456XYZ</b> → #1 index 3–9 → <b>SN</b>; #2 index 0–3 → <b>HEADER</b>; #3 index 9–12 → <b>SUFFIX</b>. Semua mapping dijalankan berurutan lalu node lanjut ke port <b>next</b>.
+            </p>
+          </>);
+        })()}
 
         {node.type === "zone_inspect" && (<>
           <Field label="Camera ID"><Input value={c.camera_id} onChange={v => setLocal("camera_id", v)} placeholder="e.g. line1_cam1" /></Field>

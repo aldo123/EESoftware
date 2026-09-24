@@ -417,6 +417,21 @@ export const buttonDef = {
 
     // State preview di builder
     builderState: 0,
+
+    // Runtime visibility control.
+    // Example:
+    // visibilityEnabled = true
+    // visibilityVariable = "VariableA"
+    // visibilityOperator = "equals"
+    // visibilityValue = 1
+    // visibilityMode = "hide"
+    // => VariableA = 1 -> button hidden
+    // => VariableA != 1 -> button shown
+    visibilityEnabled: false,
+    visibilityVariable: "",
+    visibilityOperator: "equals",
+    visibilityValue: 1,
+    visibilityMode: "hide",
   },
 };
 
@@ -927,6 +942,99 @@ export function ButtonPropertyPanel({
         </PropSection>
       )}
 
+      <PropSection title="Visibility">
+        <PropInput
+          label="Enable Hide / Show"
+          type="checkbox"
+          value={p.visibilityEnabled === true}
+          onChange={(v) =>
+            set("visibilityEnabled", v === true || v === "true")
+          }
+        />
+
+        {p.visibilityEnabled === true && (
+          <>
+            <PropInput
+              label="Trigger Internal Variable"
+              options={[
+                {
+                  value: "",
+                  label: internalVariablesLoading
+                    ? "Loading variables..."
+                    : "Select internal variable...",
+                },
+                ...internalVariables.map((variable) => ({
+                  value: variable.name,
+                  label: `${variable.name}${
+                    variable.data_type ? ` — ${variable.data_type}` : ""
+                  }`,
+                })),
+              ]}
+              value={p.visibilityVariable ?? ""}
+              onChange={(v) => set("visibilityVariable", v)}
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              <PropInput
+                label="Condition"
+                options={[
+                  { value: "equals", label: "Equals (=)" },
+                  { value: "not_equals", label: "Not Equals (≠)" },
+                ]}
+                value={p.visibilityOperator || "equals"}
+                onChange={(v) => set("visibilityOperator", v)}
+              />
+
+              <PropInput
+                label="Trigger Value"
+                value={p.visibilityValue ?? 1}
+                onChange={(v) => {
+                  const raw = String(v ?? "").trim();
+
+                  if (raw === "") {
+                    set("visibilityValue", "");
+                    return;
+                  }
+
+                  if (raw.toLowerCase() === "true") {
+                    set("visibilityValue", true);
+                    return;
+                  }
+
+                  if (raw.toLowerCase() === "false") {
+                    set("visibilityValue", false);
+                    return;
+                  }
+
+                  const numeric = Number(raw);
+                  set(
+                    "visibilityValue",
+                    Number.isFinite(numeric) ? numeric : raw
+                  );
+                }}
+              />
+            </div>
+
+            <PropInput
+              label="When Condition Matched"
+              options={[
+                { value: "hide", label: "Hide Button" },
+                { value: "show", label: "Show Button" },
+              ]}
+              value={p.visibilityMode || "hide"}
+              onChange={(v) => set("visibilityMode", v)}
+            />
+
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--panel-canvas)] px-3 py-2 text-[8px] text-[var(--text-dim)] leading-relaxed">
+              Example: Variable A = <b>1</b>, Condition = <b>Equals</b>,
+              Trigger Value = <b>1</b>, When Matched = <b>Hide Button</b>.
+              <br />
+              Result: <b>A = 1</b> → hidden, <b>A = 0</b> → shown.
+            </div>
+          </>
+        )}
+      </PropSection>
+
       <PropSection title="Simulation State">
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -1201,6 +1309,33 @@ export function ButtonPropertyPanel({
 // DYNAMIC CP PAGE — RUNTIME
 // ────────────────────────────────────────────────────────────────
 
+const normalizeVisibilityValue = (value) => {
+  if (typeof value === "boolean") return value ? "true" : "false";
+
+  const stringValue = String(value ?? "").trim();
+
+  if (stringValue === "") return "";
+
+  if (stringValue.toLowerCase() === "true") return "true";
+  if (stringValue.toLowerCase() === "false") return "false";
+
+  const numeric = Number(stringValue);
+  if (Number.isFinite(numeric)) return String(numeric);
+
+  return stringValue.toLowerCase();
+};
+
+const visibilityValuesEqual = (left, right) =>
+  normalizeVisibilityValue(left) === normalizeVisibilityValue(right);
+
+const visibilityConditionMatched = (currentValue, operator, targetValue) => {
+  if (operator === "not_equals") {
+    return !visibilityValuesEqual(currentValue, targetValue);
+  }
+
+  return visibilityValuesEqual(currentValue, targetValue);
+};
+
 export function RuntimeButton({ widget, value, onChange, onNavigate }) {
   const p = widget.props || {};
   const v = getVisual(p);
@@ -1219,6 +1354,40 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
     getValue: getInternalValue,
     setValue: setInternalValue,
   } = useInternalVariables();
+
+  const visibilityEnabled = p.visibilityEnabled === true;
+  const visibilityVariableName = String(p.visibilityVariable || "").trim();
+  const visibilityOperator = p.visibilityOperator || "equals";
+  const visibilityMode = p.visibilityMode === "show" ? "show" : "hide";
+
+  // Read the visibility trigger from the live Internal Variable store.
+  // Existing buttons that do not have visibility configured remain visible.
+  const visibilityRuntimeValue =
+    visibilityEnabled && visibilityVariableName
+      ? getInternalValue(visibilityVariableName, 0)
+      : 0;
+
+  const visibilityConditionMatchedValue =
+    visibilityEnabled && visibilityVariableName
+      ? visibilityConditionMatched(
+          visibilityRuntimeValue,
+          visibilityOperator,
+          p.visibilityValue ?? 1
+        )
+      : false;
+
+  // hide mode:
+  //   condition matched -> hidden
+  //   condition not matched -> shown
+  // show mode:
+  //   condition matched -> shown
+  //   condition not matched -> hidden
+  const shouldHideButton =
+    visibilityEnabled &&
+    visibilityVariableName &&
+    (visibilityMode === "hide"
+      ? visibilityConditionMatchedValue
+      : !visibilityConditionMatchedValue);
 
   const internalVariableName = String(p.variable || "").trim();
 
@@ -1481,6 +1650,11 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
     btnStyle.background = `linear-gradient(135deg, ${
       v.backgroundColor || "var(--panel-canvas)"
     }, ${isOn ? onBgTransparent : offBgTransparent})`;
+  }
+
+  // Remove the widget from runtime rendering when visibility says Hide.
+  if (shouldHideButton) {
+    return null;
   }
 
   return (

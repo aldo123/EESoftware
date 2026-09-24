@@ -390,8 +390,15 @@ const normalizeDecimalPlaces = (value) => {
 };
 
 const formatTextBoxNumber = (value, decimalPlaces = 0) => {
+  // Preserve an actually empty value. JavaScript's Number("") is 0,
+  // which would incorrectly turn an empty String Internal Variable into
+  // 0 / 0.00 when Decimal Places is enabled.
+  if (value === "" || value === null || value === undefined) {
+    return "";
+  }
+
   const n = Number(value);
-  if (!Number.isFinite(n)) return value ?? "";
+  if (!Number.isFinite(n)) return String(value);
   return n.toFixed(normalizeDecimalPlaces(decimalPlaces));
 };
 
@@ -2572,6 +2579,9 @@ function HMIInputPopup({
 function ReferenceDBInputPicker({ widget, value, onSelect }) {
   const p = widget?.props || {};
   const column = String(p.referenceColumn || "").trim();
+  // Reference DB dropdown uses the HMI green theme independently
+  // from the TextBox frame color.
+  const accent = "#00FF66";
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [options, setOptions] = React.useState([]);
@@ -2623,7 +2633,7 @@ function ReferenceDBInputPicker({ widget, value, onSelect }) {
     } catch (err) {
       console.error("[TextBox] Reference DB runtime load failed:", err);
       setOptions([]);
-      setError("Reference DB unavailable");
+      setError("REFERENCE DATABASE UNAVAILABLE");
     } finally {
       setLoading(false);
     }
@@ -2650,6 +2660,22 @@ function ReferenceDBInputPicker({ widget, value, onSelect }) {
   const displayValue =
     value === undefined || value === null ? "" : String(value);
 
+  const selectedKey = displayValue.trim().toLowerCase();
+  const resultCount = options.length;
+
+  const selectOption = async (option) => {
+    setOpen(false);
+    setQuery("");
+    await onSelect(option);
+  };
+
+  const clearSelection = async (event) => {
+    event.stopPropagation();
+    setOpen(false);
+    setQuery("");
+    await onSelect("");
+  };
+
   return (
     <div
       className="absolute"
@@ -2658,7 +2684,8 @@ function ReferenceDBInputPicker({ widget, value, onSelect }) {
         top: widget.y,
         width: p.width,
         height: p.height,
-        zIndex: 40,
+        zIndex: open ? 10000 : 40,
+        overflow: "visible",
       }}
     >
       <div
@@ -2677,65 +2704,427 @@ function ReferenceDBInputPicker({ widget, value, onSelect }) {
           preview={false}
         />
 
+        {/* Professional dropdown affordance */}
+        <div
+          style={{
+            position: "absolute",
+            right: Math.max(10, Number(p.padding ?? 8)),
+            top: "50%",
+            transform: "translateY(-50%)",
+            width: 38,
+            height: 38,
+            borderRadius: 7,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: accent,
+            background: "rgba(0, 0, 0, 0.22)",
+            border: `1px solid ${accent}55`,
+            boxShadow: open ? `0 0 12px ${accent}44` : "none",
+            zIndex: 5,
+            pointerEvents: "none",
+            transition: "all 160ms ease",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 18,
+              lineHeight: 1,
+              transform: open ? "rotate(180deg)" : "rotate(0deg)",
+              transition: "transform 160ms ease",
+            }}
+          >
+            ▾
+          </span>
+        </div>
+
         <button
           type="button"
           onClick={() => setOpen((prev) => !prev)}
           className="absolute inset-0 w-full h-full cursor-pointer bg-transparent border-0 outline-none"
+          style={{ zIndex: 6 }}
           aria-label="Open Reference DB selection"
+          aria-expanded={open}
         />
 
         {open && (
           <div
-            className="absolute left-0 top-[calc(100%+6px)] w-full min-w-[240px] rounded-md border border-[var(--border)] bg-[var(--panel-canvas)] shadow-2xl"
+            role="dialog"
+            aria-label="Reference Database Selection"
+            className="absolute left-0 top-[calc(100%+12px)] w-full"
             style={{
-              zIndex: 1000,
-              maxHeight: 300,
+              minWidth: "420px",
+              maxWidth: "min(760px, 94vw)",
+              height: "min(560px, 72vh)",
+              minHeight: "400px",
+              zIndex: 100000,
+              overflow: "hidden",
+              border: `1px solid ${accent}99`,
+              borderRadius: 16,
+              background:
+                "linear-gradient(180deg, rgba(7,24,38,0.99), rgba(2,10,17,0.99))",
+              boxShadow:
+                `0 18px 50px rgba(0,0,0,0.60), 0 0 24px ${accent}22, inset 0 0 24px ${accent}0D`,
+              backdropFilter: "blur(12px)",
+              display: "flex",
+              flexDirection: "column",
             }}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="p-2 border-b border-[var(--border)]">
-              <input
-                autoFocus
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={`Filter ${column || "Reference DB"}...`}
-                className="w-full h-8 px-2 rounded border border-[var(--border)] bg-[var(--panel-canvas)] text-[var(--text-primary)] text-[11px] font-mono outline-none focus:border-[var(--accent-green)]"
-              />
+            {/* Dropdown header */}
+            <div
+              style={{
+                minHeight: 58,
+                padding: "0 18px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 10,
+                borderBottom: `1px solid ${accent}35`,
+                background: `linear-gradient(90deg, ${accent}12, transparent 55%)`,
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div
+                  style={{
+                    color: accent,
+                    fontFamily: "monospace",
+                    fontSize: 13,
+                    fontWeight: 900,
+                    letterSpacing: "0.18em",
+                    textTransform: "uppercase",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  REFERENCE DATABASE
+                </div>
+                <div
+                  style={{
+                    marginTop: 2,
+                    color: "rgba(220,235,255,0.48)",
+                    fontFamily: "monospace",
+                    fontSize: 10,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  COLUMN: {column || "NOT CONFIGURED"}
+                </div>
+              </div>
+
+              <div
+                style={{
+                  flexShrink: 0,
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: `1px solid ${accent}38`,
+                  background: `${accent}0D`,
+                  color: "rgba(220,235,255,0.72)",
+                  fontFamily: "monospace",
+                  fontSize: 11,
+                  fontWeight: 800,
+                }}
+              >
+                {loading ? "LOADING" : `${resultCount} FOUND`}
+              </div>
             </div>
 
-            <div className="max-h-[240px] overflow-y-auto p-1">
+            {/* Search */}
+            <div
+              style={{
+                padding: 14,
+                borderBottom: `1px solid ${accent}24`,
+              }}
+            >
+              <div style={{ position: "relative" }}>
+                <span
+                  style={{
+                    position: "absolute",
+                    left: 16,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    color: accent,
+                    fontSize: 22,
+                    lineHeight: 1,
+                    pointerEvents: "none",
+                  }}
+                >
+                  ⌕
+                </span>
+
+                <input
+                  autoFocus
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder={`Search ${column || "Reference DB"}...`}
+                  style={{
+                    width: "100%",
+                    height: 58,
+                    boxSizing: "border-box",
+                    padding: "0 50px 0 48px",
+                    borderRadius: 11,
+                    border: `1px solid ${accent}55`,
+                    outline: "none",
+                    background: "rgba(1,10,17,0.92)",
+                    color: "#FFFFFF",
+                    fontFamily: "monospace",
+                    fontSize: 16,
+                    fontWeight: 700,
+                    boxShadow: `inset 0 0 12px ${accent}0A`,
+                  }}
+                  onFocus={(event) => {
+                    event.currentTarget.style.borderColor = accent;
+                    event.currentTarget.style.boxShadow =
+                      `0 0 12px ${accent}22, inset 0 0 12px ${accent}0A`;
+                  }}
+                  onBlur={(event) => {
+                    event.currentTarget.style.borderColor = `${accent}55`;
+                    event.currentTarget.style.boxShadow = `inset 0 0 12px ${accent}0A`;
+                  }}
+                />
+
+                {query && (
+                  <button
+                    type="button"
+                    onClick={() => setQuery("")}
+                    aria-label="Clear search"
+                    style={{
+                      position: "absolute",
+                      right: 8,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: 36,
+                      height: 36,
+                      borderRadius: 6,
+                      border: `1px solid ${accent}35`,
+                      background: `${accent}0D`,
+                      color: "rgba(255,255,255,0.72)",
+                      fontFamily: "monospace",
+                      fontSize: 19,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Options */}
+            <div
+              style={{
+                flex: 1,
+                minHeight: 0,
+                overflowY: "auto",
+                padding: "10px 12px 12px",
+                scrollbarWidth: "thin",
+                scrollbarColor: `${accent}66 rgba(0,0,0,0.20)`,
+              }}
+            >
               {loading ? (
-                <div className="px-2 py-3 text-[10px] text-[var(--text-dim)] text-center">
-                  Loading Reference DB...
+                <div style={{ padding: "22px 14px" }}>
+                  {[0, 1, 2, 3].map((item) => (
+                    <div
+                      key={item}
+                      style={{
+                        height: 56,
+                        marginBottom: 8,
+                        borderRadius: 8,
+                        background:
+                          `linear-gradient(90deg, ${accent}0D, ${accent}20, ${accent}0D)`,
+                        border: `1px solid ${accent}16`,
+                        animation: "referenceDbPulse 1.2s ease-in-out infinite",
+                        animationDelay: `${item * 80}ms`,
+                      }}
+                    />
+                  ))}
+                  <style>{`@keyframes referenceDbPulse { 0%,100% { opacity:.45 } 50% { opacity:1 } }`}</style>
                 </div>
               ) : error ? (
-                <div className="px-2 py-3 text-[10px] text-[var(--accent-red)] text-center">
-                  {error}
+                <div
+                  style={{
+                    minHeight: 160,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "column",
+                    gap: 8,
+                    color: "#FF4058",
+                    fontFamily: "monospace",
+                    fontSize: 14,
+                    fontWeight: 800,
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ fontSize: 24 }}>!</div>
+                  <div>{error}</div>
                 </div>
               ) : !column ? (
-                <div className="px-2 py-3 text-[10px] text-[var(--text-dim)] text-center">
-                  Select a Reference DB column in Page Builder.
+                <div
+                  style={{
+                    minHeight: 160,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "rgba(220,235,255,0.45)",
+                    fontFamily: "monospace",
+                    fontSize: 14,
+                    textAlign: "center",
+                    padding: 20,
+                  }}
+                >
+                  SELECT A REFERENCE DB COLUMN IN PAGE BUILDER
                 </div>
               ) : options.length === 0 ? (
-                <div className="px-2 py-3 text-[10px] text-[var(--text-dim)] text-center">
-                  No matching data.
+                <div
+                  style={{
+                    minHeight: 160,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "column",
+                    gap: 8,
+                    color: "rgba(220,235,255,0.45)",
+                    fontFamily: "monospace",
+                    fontSize: 12,
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ fontSize: 26, opacity: 0.55 }}>⌕</div>
+                  <div>NO MATCHING DATA</div>
+                  {query && (
+                    <div style={{ fontSize: 9, color: "rgba(220,235,255,0.30)" }}>
+                      Try another search keyword
+                    </div>
+                  )}
                 </div>
               ) : (
-                options.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    onClick={async () => {
-                      setOpen(false);
-                      setQuery("");
-                      await onSelect(option);
-                    }}
-                    className="block w-full text-left px-2 py-2 rounded text-[10px] font-mono text-[var(--text-primary)] hover:bg-[var(--panel-hover)] hover:text-[var(--accent-green)]"
-                  >
-                    {option}
-                  </button>
-                ))
+                options.map((option, index) => {
+                  const optionKey = String(option).trim().toLowerCase();
+                  const selected = optionKey === selectedKey;
+
+                  return (
+                    <button
+                      key={`${option}-${index}`}
+                      type="button"
+                      onClick={() => selectOption(option)}
+                      className="group"
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        width: "100%",
+                        minHeight: 60,
+                        marginBottom: 7,
+                        padding: "0 16px",
+                        borderRadius: 10,
+                        border: selected
+                          ? `1px solid ${accent}99`
+                          : "1px solid rgba(255,255,255,0.055)",
+                        background: selected
+                          ? `linear-gradient(90deg, ${accent}22, ${accent}0A)`
+                          : "rgba(255,255,255,0.025)",
+                        color: selected ? "#FFFFFF" : "rgba(235,243,255,0.88)",
+                        fontFamily: "monospace",
+                        fontSize: 17,
+                        fontWeight: selected ? 850 : 650,
+                        textAlign: "left",
+                        cursor: "pointer",
+                        boxSizing: "border-box",
+                        boxShadow: selected
+                          ? `0 0 12px ${accent}16, inset 0 0 12px ${accent}0D`
+                          : "none",
+                        transition: "all 120ms ease",
+                      }}
+                      onMouseEnter={(event) => {
+                        if (!selected) {
+                          event.currentTarget.style.background = `${accent}12`;
+                          event.currentTarget.style.borderColor = `${accent}55`;
+                          event.currentTarget.style.color = "#FFFFFF";
+                        }
+                      }}
+                      onMouseLeave={(event) => {
+                        if (!selected) {
+                          event.currentTarget.style.background = "rgba(255,255,255,0.025)";
+                          event.currentTarget.style.borderColor = "rgba(255,255,255,0.055)";
+                          event.currentTarget.style.color = "rgba(235,243,255,0.88)";
+                        }
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          flexShrink: 0,
+                          marginRight: 14,
+                          borderRadius: "50%",
+                          background: selected ? accent : "rgba(220,235,255,0.20)",
+                          boxShadow: selected ? `0 0 9px ${accent}` : "none",
+                        }}
+                      />
+                      <span
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {option}
+                      </span>
+                      {selected && (
+                        <span
+                          style={{
+                            marginLeft: 10,
+                            color: accent,
+                            fontSize: 20,
+                            fontWeight: 900,
+                          }}
+                        >
+                          ✓
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
               )}
+            </div>
+
+            {/* Footer */}
+            <div
+              style={{
+                minHeight: 44,
+                padding: "0 16px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 8,
+                borderTop: `1px solid ${accent}28`,
+                color: "rgba(220,235,255,0.38)",
+                fontFamily: "monospace",
+                fontSize: 10,
+                letterSpacing: "0.08em",
+              }}
+            >
+              <span>REFERENCE DB • SEARCH ENABLED</span>
+              <button
+                type="button"
+                onClick={clearSelection}
+                style={{
+                  border: 0,
+                  background: "transparent",
+                  color: "rgba(220,235,255,0.46)",
+                  fontFamily: "monospace",
+                  fontSize: 10,
+                  cursor: "pointer",
+                  padding: "4px 2px",
+                }}
+              >
+                CLEAR VALUE
+              </button>
             </div>
           </div>
         )}
