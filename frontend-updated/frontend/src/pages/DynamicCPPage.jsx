@@ -1,0 +1,4191 @@
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
+import { API } from "../service/api";
+import { usePlcRuntime } from "../hooks/usePlcRuntime";
+import { TAG_ADDRESS_TYPE, findDevice, normalizeFinsArea } from "../lib/comm";
+import { useInternalVariables } from "../hooks/useInternalVariables";
+import {
+  RuntimeButton,
+  RuntimeLight,
+  RuntimeShape,
+  RuntimeTextBox,
+  RuntimeGauge,
+  RuntimeLineChart,
+  RuntimeCameraFeed,
+  RuntimeTestTable,
+  RuntimeImage,
+  RuntimeAlarmBanner,
+  RuntimeProgressBar,
+  RuntimeSelectorSwitch,
+  RuntimeMessage,
+} from "../widgets";
+
+// ──────────────────────────────────────────────────────────────────
+// Every widget's live/runtime rendering now lives in its own file under
+// src/widgets/<type>.jsx (Runtime{Name} export), shared with the Page
+// Builder's design-time preview in the same file. This page only owns
+// the runtime shell: layout scaling, TCP/PLC bindings, chart history,
+// and the per-widget dispatch below. See src/widgets/index.js.
+// ──────────────────────────────────────────────────────────────────
+
+// ------------------------------------------------------------------
+// RUNTIME DISPLAY RESOLUTIONS
+// The Page Builder resolution is the DESIGN/source coordinate system.
+// Dynamic Page has its own TARGET/display resolution and scales the
+// complete design from source -> target.
+// ------------------------------------------------------------------
+const RUNTIME_RESOLUTION_PRESETS = [
+  { label: "Full HD • 1920 × 1080", width: 1920, height: 1080 },
+];
+
+const DEFAULT_RUNTIME_RESOLUTION = { width: 1920, height: 1080 };
+
+const resolutionKey = (w, h) => `${w}x${h}`;
+
+const getWidgetRect = (widget) => {
+  const x = Number(widget?.x ?? 0);
+  const y = Number(widget?.y ?? 0);
+  const width = Math.max(1, Number(widget?.props?.width ?? 1));
+  const height = Math.max(1, Number(widget?.props?.height ?? 1));
+
+  return {
+    x: Number.isFinite(x) ? x : 0,
+    y: Number.isFinite(y) ? y : 0,
+    width: Number.isFinite(width) ? width : 1,
+    height: Number.isFinite(height) ? height : 1,
+  };
+};
+
+const getPopupContentBounds = (widgets, canvas) => {
+  const list = Array.isArray(widgets)
+    ? widgets.filter(Boolean).map(getWidgetRect)
+    : [];
+
+  if (!list.length) {
+    return {
+      minX: 0,
+      minY: 0,
+      width: canvas.width,
+      height: canvas.height,
+    };
+  }
+
+  const minX = Math.min(...list.map(r => r.x));
+  const minY = Math.min(...list.map(r => r.y));
+  const maxX = Math.max(...list.map(r => r.x + r.width));
+  const maxY = Math.max(...list.map(r => r.y + r.height));
+
+  // Small logical breathing room around the actual widget group.
+  const padding = 24;
+
+  const boundedMinX = Math.max(0, minX - padding);
+  const boundedMinY = Math.max(0, minY - padding);
+  const boundedMaxX = Math.min(canvas.width, maxX + padding);
+  const boundedMaxY = Math.min(canvas.height, maxY + padding);
+
+  return {
+    minX: boundedMinX,
+    minY: boundedMinY,
+    width: Math.max(1, boundedMaxX - boundedMinX),
+    height: Math.max(1, boundedMaxY - boundedMinY),
+  };
+};
+
+export default function DynamicCPPage({ cpNumber, user }) {
+  const [widgets, setWidgets] = useState([]);
+  const [pages, setPages] = useState({});
+  const [activePageId, setActivePageId] = useState(null);
+  const [activePopupPage, setActivePopupPage] = useState(null);
+  const [popupMaximized, setPopupMaximized] = useState(false);
+  const popupViewportRef = useRef(null);
+  // Tracks whether each Popup widget was manually closed while its trigger remains active.
+  const popupClosedByUserRef = useRef({});
+  const [popupViewport, setPopupViewport] = useState({ width: 0, height: 0 });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [fieldValues, setFieldValues] = useState({});
+  // COM TextBox values are kept separately from Logic Builder fields.
+  // Read-trigger gating is handled independently for COM/TCP/Internal sources.
+  const [comTextBoxValues, setComTextBoxValues] = useState({});
+  // Input Data TextBox values contain only accepted source values.
+  const [inputDataValues, setInputDataValues] = useState({});
+  const inputDataWriteRef = useRef({});
+  // Realtime RS232 values for Testing Table rows. Sequential values are written by Logic Builder.
+  const [testTableComValues, setTestTableComValues] = useState({});
+  const [logs, setLogs] = useState([]);
+  const [tcpDevices, setTcpDevices] = useState([]);
+  const [tcpDeviceError, setTcpDeviceError] = useState("");
+
+  // Shared Internal Variable store. Widgets must use this central store
+  // instead of accessing /api/internal-variables directly.
+  const {
+    variables: internalVariables,
+    getValue: getInternalValue,
+    getVariable: getInternalVariable,
+    setValue: setInternalValue,
+  } = useInternalVariables();
+
+  // ============================================================
+  // LOG
+  // ============================================================
+
+  const addLog = useCallback(
+    (
+      message,
+      color = "var(--accent-green)",
+      meta = {}
+    ) => {
+      const now = new Date();
+      const time = now.toLocaleTimeString("en-US", {
+        hour12: false,
+      });
+
+      const source = String(meta?.source || "SYSTEM").trim().toUpperCase();
+      const level = String(
+        meta?.level ||
+        (
+          String(color).includes("red")
+            ? "ERROR"
+            : String(color).includes("orange")
+              ? "WARNING"
+              : "INFO"
+        )
+      ).trim().toUpperCase();
+
+      setLogs((previous) => [
+        ...previous.slice(-499),
+        {
+          id: `${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`,
+          timestamp: now.getTime(),
+          time,
+          message: String(message ?? ""),
+          color,
+          source,
+          level,
+        },
+      ]);
+    },
+    []
+  );
+
+
+  // Realtime trend history is intentionally kept in browser memory.
+  // It is not written to the database on every PLC poll.
+  const [chartHistory, setChartHistory] = useState({});
+  const [chartRunning, setChartRunning] = useState({});
+  const chartSampleRef = useRef({});
+  const chartTriggerRef = useRef({});
+  // Trend start time per chart. X-axis is elapsed seconds from START.
+  const chartStartTimeRef = useRef({});
+
+  const containerRef = useRef(null);
+  // Independent X/Y scale factors — NOT a single uniform scale. A uniform
+  // scale (Math.min(sx, sy)) preserves the 16:9 aspect ratio but always
+  // leaves unused space on one side (right or bottom) whenever the actual
+  // browser viewport's aspect ratio isn't exactly 1920:1080, since the
+  // canvas is pinned top-left rather than centered. That meant a widget
+  // placed flush against the right/bottom edge in Page Builder would show
+  // a gap at runtime. Scaling X and Y independently instead always fills
+  // the full available width AND height exactly, so an edge in the design
+  // is always the edge on screen too.
+  const [viewportScaleX, setViewportScaleX] = useState(1);
+  const [viewportScaleY, setViewportScaleY] = useState(1);
+  const [viewportOffsetX, setViewportOffsetX] = useState(0);
+
+  // Source/design resolution loaded from Page Builder.
+  // Widget coordinates are always stored in these pixels.
+  const [designCanvas, setDesignCanvas] = useState({ width: 1920, height: 1080 });
+
+  useEffect(() => {
+    const element = popupViewportRef.current;
+    if (!element || !activePopupPage) return;
+
+    const update = () => {
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      setPopupViewport((previous) => {
+        if (
+          Math.abs(previous.width - rect.width) < 1 &&
+          Math.abs(previous.height - rect.height) < 1
+        ) {
+          return previous;
+        }
+
+        return {
+          width: rect.width,
+          height: rect.height,
+        };
+      });
+    };
+
+    update();
+
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+
+    return () => observer.disconnect();
+  }, [activePopupPage, popupMaximized]);
+
+  const popupPage = activePopupPage
+    ? pages?.[activePopupPage] || null
+    : null;
+
+  const popupWidgets = Array.isArray(popupPage?.widgets)
+    ? popupPage.widgets
+    : [];
+
+  // Runtime popup window size comes from the Popup Widget properties on the
+  // active Dynamic Page, while the popup content itself uses the Popup Page
+  // canvas size. This keeps window size and design canvas independently adjustable.
+  const activePopupWidget = useMemo(() => {
+    if (!activePopupPage) return null;
+    return Object.values(pages || {})
+      .flatMap(page => Array.isArray(page?.widgets) ? page.widgets : [])
+      .find(widget =>
+        widget?.type === "popup" &&
+        String(widget?.props?.targetPage || "") === String(activePopupPage)
+      ) || null;
+  }, [pages, activePopupPage]);
+
+  const activePopupWidth = Math.max(240, Number(activePopupWidget?.props?.popupWidth || popupPage?.canvasWidth || 800));
+  const activePopupHeight = Math.max(160, Number(activePopupWidget?.props?.popupHeight || popupPage?.canvasHeight || 500));
+
+  const popupDesignCanvas = useMemo(() => ({
+    width: Math.max(240, Number(popupPage?.canvasWidth || 800)),
+    height: Math.max(160, Number(popupPage?.canvasHeight || 500)),
+  }), [popupPage?.canvasWidth, popupPage?.canvasHeight]);
+
+  const popupBounds = useMemo(
+    () => getPopupContentBounds(popupWidgets, popupDesignCanvas),
+    [popupWidgets, popupDesignCanvas]
+  );
+
+  const popupScale = useMemo(() => {
+    const availableWidth = Math.max(1, popupViewport.width - 24);
+    const availableHeight = Math.max(1, popupViewport.height - 24);
+
+    const sx = availableWidth / popupBounds.width;
+    const sy = availableHeight / popupBounds.height;
+
+    const scale = Math.min(sx, sy);
+
+    return Number.isFinite(scale)
+      ? Math.max(0.05, scale)
+      : 1;
+  }, [popupViewport, popupBounds]);
+
+  // Target/runtime resolution selected on Dynamic Page.
+  // This is independent from the Page Builder design resolution.
+  const [runtimeResolution, setRuntimeResolution] = useState(DEFAULT_RUNTIME_RESOLUTION);
+
+  // First scale the Page Builder design into the selected runtime resolution.
+  // A second, uniform viewport scale then fits the complete runtime canvas
+  // inside the Dynamic Page area. This keeps the HMI aspect ratio intact and
+  // removes both horizontal and vertical scrollbars.
+  const scaleX = designCanvas.width > 0 ? runtimeResolution.width / designCanvas.width : 1;
+  const scaleY = designCanvas.height > 0 ? runtimeResolution.height / designCanvas.height : 1;
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // containerRef is a normal flex sibling of the sidebar (see MainPage.jsx),
+    // not something the sidebar overlays — its own getBoundingClientRect()
+    // already excludes the sidebar's width, so no extra probing for "where
+    // does the sidebar end" is needed here.
+    const updateViewportScale = () => {
+      const rect = container.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+
+      const availableWidth = Math.max(1, rect.width - 8);
+      const availableHeight = Math.max(1, rect.height - 8);
+      const nextScaleX = availableWidth / runtimeResolution.width;
+      const nextScaleY = availableHeight / runtimeResolution.height;
+
+      setViewportOffsetX(prev => (prev === 0 ? prev : 0));
+      setViewportScaleX(prev => Math.abs(prev - nextScaleX) < 0.001 ? prev : nextScaleX);
+      setViewportScaleY(prev => Math.abs(prev - nextScaleY) < 0.001 ? prev : nextScaleY);
+    };
+
+    updateViewportScale();
+    const observer = new ResizeObserver(updateViewportScale);
+    observer.observe(container);
+    window.addEventListener('resize', updateViewportScale);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateViewportScale);
+    };
+    // Re-run once the container actually mounts (it doesn't exist yet while
+    // `loading` is true — see the early `if (loading) return ...` below —
+    // so `loading` flipping to false is what makes containerRef.current
+    // exist for the very first time).
+  }, [runtimeResolution.width, runtimeResolution.height, loading, activePageId]);
+
+  // ============================================================
+  // TCP PLC RUNTIME
+  //
+  // Page Builder stores:
+  //   props.device
+  //   props.addressType
+  //   props.address
+  //
+  // Dynamic Page resolves the device name against
+  // /api/tcp/devices and registers Button / Light / Gauge / LineChart.
+  //
+  // LineChart bindings:
+  //   <widgetId>:<seriesId>
+  //   <widgetId>:__trend_trigger__
+  //
+  // Test Table bindings:
+  //   <widgetId>:<rowId>
+  //
+  // All runtime widgets are now normal Page Builder widgets/pages.
+  // ============================================================
+
+  const {
+    values: tcpValues,
+    connectionStatus: tcpConnectionStatus,
+    errors: tcpErrors,
+    writeValue: writeTCPValue,
+    registerBinding,
+    clearBindings,
+    getValue: getTCPRuntimeValue,
+    commDevices,
+  } = usePlcRuntime({
+    devices: tcpDevices,
+    enabled: Boolean(cpNumber),
+    pollInterval: 20,
+  });
+
+  // cp-scan is handled by a long-lived event listener. Keep the
+  // latest TCP/PLC values in a ref so COM TextBox PLC-trigger checks
+  // always use the current trigger state instead of a stale closure.
+  const tcpValuesRef = useRef(tcpValues);
+
+  useEffect(() => {
+    tcpValuesRef.current = tcpValues;
+  }, [tcpValues]);
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+
+  const normalizeInputSource = useCallback((source) => {
+    const value = String(source || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[\s_/-]/g, "");
+
+    if (value === "tcp" || value === "tcpip") return "tcp";
+    if (value === "com" || value === "rs232" || value === "serial") return "com";
+    if (value === "internal" || value === "variable" || value === "internalvariable" || value === "internalvar") return "internal";
+
+    // Reference DB is a first-class TextBox Input Data source.
+    // Accept legacy/new aliases so saved Page Builder configurations
+    // continue to work without migration.
+    if (
+      value === "reference" ||
+      value === "referencedb" ||
+      value === "reference_db" ||
+      value === "refdb"
+    ) {
+      return "reference";
+    }
+
+    return value;
+  }, []);
+
+  const normalizeType = useCallback((type) => {
+    const value = String(type || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_\s-]/g, "");
+
+    if (value === "coil" || value === "coils") return "coil";
+
+    if (
+      value === "discreteinput" ||
+      value === "discreteinputs" ||
+      value === "digitalinput"
+    ) {
+      return "discrete_input";
+    }
+
+    if (
+      value === "holdingregister" ||
+      value === "holdingregisters" ||
+      value === "holding"
+    ) {
+      return "holding_register";
+    }
+
+    if (
+      value === "inputregister" ||
+      value === "inputregisters" ||
+      value === "analoginput"
+    ) {
+      return "input_register";
+    }
+
+    // Non-Modbus bindings (lib/comm.js): FINS memory areas and EtherNet/IP tags.
+    const finsArea = normalizeFinsArea(type);
+    if (finsArea) return finsArea;
+    if (value === TAG_ADDRESS_TYPE) return TAG_ADDRESS_TYPE;
+
+    return "";
+  }, []);
+
+  // Component capability rules:
+  // Button    = WRITE only: Coil / Holding Register
+  // Light     = READ only: Coil / Discrete Input / Holding Register / Input Register
+  // Gauge     = READ only: Holding Register
+  // LineChart = READ only: Coil / Discrete Input / Holding Register / Input Register
+  //
+  // LineChart has:
+  //   - series bindings for plotted values
+  //   - optional trigger binding for start/stop recording
+  //
+  // Icon-popup widgets reuse these same rules per-field:
+  //   "jog" fields are write-only (validated as "button")
+  //   "value"/"boolean" fields are read (validated as "light")
+  const isValidPLCBinding = useCallback((widgetType, addressType) => {
+    const type = normalizeType(addressType);
+
+    // FINS areas and EtherNet/IP tags are read/write for every widget type.
+    if (type === TAG_ADDRESS_TYPE || normalizeFinsArea(type)) return true;
+
+    if (widgetType === "button") {
+      return type === "coil" || type === "holding_register";
+    }
+
+    if (widgetType === "light") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
+    if (widgetType === "gauge") {
+      return type === "holding_register";
+    }
+
+    if (widgetType === "alarmbanner") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
+    if (widgetType === "progressbar") {
+      return type === "holding_register";
+    }
+
+    if (widgetType === "selectorswitch") {
+      return type === "holding_register";
+    }
+
+    if (widgetType === "textbox") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
+    if (widgetType === "linechart") {
+      return (
+        type === "coil" ||
+        type === "discrete_input" ||
+        type === "holding_register" ||
+        type === "input_register"
+      );
+    }
+
+    return false;
+  }, [normalizeType]);
+
+  const getTCPDevice = useCallback(
+    (deviceName) => {
+      if (!deviceName) return null;
+
+      const wanted = String(deviceName).trim().toLowerCase();
+
+      // Modbus TCP devices first (they carry host/port/unit id for useTCPPLC),
+      // then every other protocol: Modbus RTU, Omron FINS, EtherNet/IP.
+      return (
+        tcpDevices.find(
+          (device) =>
+            String(device.name || "")
+              .trim()
+              .toLowerCase() === wanted
+        ) ||
+        findDevice(commDevices, deviceName) ||
+        null
+      );
+    },
+    [tcpDevices, commDevices]
+  );
+
+  const hasPLCBinding = useCallback(
+    (widget) => {
+      const p = widget?.props || {};
+
+      // Gauge can now read from Internal Variable. Never treat that mode
+      // as a PLC binding, even if an old saved widget still contains
+      // device/address fields.
+      if (widget.type === "gauge") {
+        const source = String(p.dataSource || "device").trim().toLowerCase();
+        if (source === "internal") return false;
+      }
+
+      if (!p.device) return false;
+
+      if (
+        p.address === undefined ||
+        p.address === null ||
+        String(p.address).trim() === ""
+      ) {
+        return false;
+      }
+
+      const addressType = normalizeType(p.addressType);
+
+      if (!addressType) return false;
+
+      if (widget.type === "textbox") {
+        const source = normalizeInputSource(p.inputSource);
+
+        // Internal variables are stored in fieldValues and are not PLC bindings.
+        if (source === "internal") {
+          return false;
+        }
+
+        // COM/RS232 is fed by cp-scan; TCP/IP is the only PLC binding.
+        if (source !== "tcp") {
+          return false;
+        }
+      }
+
+      if (!isValidPLCBinding(widget.type, addressType)) {
+        return false;
+      }
+
+      return Boolean(getTCPDevice(p.device));
+    },
+    [getTCPDevice, isValidPLCBinding, normalizeInputSource, normalizeType]
+  );
+
+
+  // ============================================================
+  // TEXTBOX CALCULATION
+  // ============================================================
+  const resolveCalculationSource = useCallback(
+    (widget, source) => {
+      const s = source || {};
+      const sourceType = String(s.sourceType || "internal").trim().toLowerCase();
+
+      if (sourceType === "internal") {
+        const name = String(s.variable || "").trim();
+        if (!name) return undefined;
+
+        const value = getInternalValue(name);
+        const number = Number(value);
+        return value === undefined || value === null || value === ""
+          ? undefined
+          : Number.isFinite(number)
+            ? number
+            : undefined;
+      }
+
+      if (sourceType === "tcp") {
+        const device = getTCPDevice(s.device);
+        const addressType = normalizeType(s.addressType);
+        const address = s.address;
+
+        if (
+          !device ||
+          !addressType ||
+          address === undefined ||
+          address === null ||
+          String(address).trim() === ""
+        ) {
+          return undefined;
+        }
+
+        const bindingId =
+          `${widget.id}:calc:${s.id || s.alias || "source"}`;
+
+        const value = tcpValues[bindingId];
+        const number = Number(value);
+
+        return Number.isFinite(number) ? number : undefined;
+      }
+
+      return undefined;
+    },
+    [getInternalValue, getTCPDevice, normalizeType, tcpValues]
+  );
+
+  const evaluateCalculation = useCallback((formula, variables) => {
+    const expression = String(formula || "").trim();
+    if (!expression) return undefined;
+
+    const tokens = [];
+    let i = 0;
+
+    while (i < expression.length) {
+      const ch = expression[i];
+
+      if (/\s/.test(ch)) {
+        i += 1;
+        continue;
+      }
+
+      if (/[0-9.]/.test(ch)) {
+        let j = i + 1;
+        while (j < expression.length && /[0-9.eE]/.test(expression[j])) {
+          j += 1;
+        }
+
+        const value = Number(expression.slice(i, j));
+        if (!Number.isFinite(value)) return undefined;
+
+        tokens.push({ type: "number", value });
+        i = j;
+        continue;
+      }
+
+      if (/[A-Za-z_]/.test(ch)) {
+        let j = i + 1;
+        while (j < expression.length && /[A-Za-z0-9_.]/.test(expression[j])) {
+          j += 1;
+        }
+
+        const name = expression.slice(i, j);
+
+        if (!Object.prototype.hasOwnProperty.call(variables, name)) {
+          return undefined;
+        }
+
+        const value = Number(variables[name]);
+        if (!Number.isFinite(value)) return undefined;
+
+        tokens.push({ type: "number", value });
+        i = j;
+        continue;
+      }
+
+      if ("+-*/%()".includes(ch)) {
+        tokens.push({ type: "operator", value: ch });
+        i += 1;
+        continue;
+      }
+
+      return undefined;
+    }
+
+    const output = [];
+    const operators = [];
+    const precedence = {
+      "+": 1,
+      "-": 1,
+      "*": 2,
+      "/": 2,
+      "%": 2,
+    };
+
+    const isOperator = (value) =>
+      ["+", "-", "*", "/", "%"].includes(value);
+
+    for (let index = 0; index < tokens.length; index += 1) {
+      const token = tokens[index];
+
+      if (token.type === "number") {
+        output.push(token);
+        continue;
+      }
+
+      let op = token.value;
+
+      // Unary +/-.
+      if (
+        (op === "+" || op === "-") &&
+        (index === 0 ||
+          tokens[index - 1]?.value === "(" ||
+          isOperator(tokens[index - 1]?.value))
+      ) {
+        output.push({ type: "number", value: 0 });
+      }
+
+      if (op === "(") {
+        operators.push(op);
+        continue;
+      }
+
+      if (op === ")") {
+        let matched = false;
+
+        while (operators.length) {
+          const top = operators.pop();
+
+          if (top === "(") {
+            matched = true;
+            break;
+          }
+
+          output.push({ type: "operator", value: top });
+        }
+
+        if (!matched) return undefined;
+        continue;
+      }
+
+      while (
+        operators.length &&
+        operators[operators.length - 1] !== "(" &&
+        precedence[operators[operators.length - 1]] >= precedence[op]
+      ) {
+        output.push({
+          type: "operator",
+          value: operators.pop(),
+        });
+      }
+
+      operators.push(op);
+    }
+
+    while (operators.length) {
+      const top = operators.pop();
+
+      if (top === "(") return undefined;
+
+      output.push({ type: "operator", value: top });
+    }
+
+    const stack = [];
+
+    for (const token of output) {
+      if (token.type === "number") {
+        stack.push(token.value);
+        continue;
+      }
+
+      if (stack.length < 2) return undefined;
+
+      const b = stack.pop();
+      const a = stack.pop();
+
+      let result;
+
+      switch (token.value) {
+        case "+":
+          result = a + b;
+          break;
+        case "-":
+          result = a - b;
+          break;
+        case "*":
+          result = a * b;
+          break;
+        case "/":
+          if (b === 0) return undefined;
+          result = a / b;
+          break;
+        case "%":
+          if (b === 0) return undefined;
+          result = a % b;
+          break;
+        default:
+          return undefined;
+      }
+
+      if (!Number.isFinite(result)) return undefined;
+
+      stack.push(result);
+    }
+
+    return stack.length === 1 && Number.isFinite(stack[0])
+      ? stack[0]
+      : undefined;
+  }, []);
+
+  const calculateTextBox = useCallback(
+    (widget) => {
+      const p = widget?.props || {};
+      const sources = Array.isArray(p.calculationInputs)
+        ? p.calculationInputs
+        : [];
+
+      const variables = {};
+
+      for (const source of sources) {
+        const alias = String(source?.alias || "").trim();
+        if (!alias) continue;
+
+        const value = resolveCalculationSource(widget, source);
+
+        if (value === undefined) {
+          return undefined;
+        }
+
+        variables[alias] = value;
+      }
+
+      const result = evaluateCalculation(
+        p.calculationFormula,
+        variables
+      );
+
+      if (result === undefined) {
+        return undefined;
+      }
+
+      return Number(result.toFixed(3));
+    },
+    [evaluateCalculation, resolveCalculationSource]
+  );
+
+  const valuesEqualRuntime = (actual, expected) => {
+    const a = String(actual ?? "").trim().toLowerCase();
+    const e = String(expected ?? "").trim().toLowerCase();
+
+    if (a === e) return true;
+
+    const an = Number(actual);
+    const en = Number(expected);
+
+    return Number.isFinite(an) && Number.isFinite(en) && an === en;
+  };
+
+  const convertInputDataValue = useCallback((rawValue, dataType) => {
+    const type = String(dataType || "number").trim().toLowerCase();
+
+    if (type === "text" || type === "string") {
+      return String(rawValue ?? "");
+    }
+
+    if (type === "boolean") {
+      const normalized = String(rawValue ?? "").trim().toLowerCase();
+      if (["1", "true", "on", "yes"].includes(normalized)) return 1;
+      if (["0", "false", "off", "no"].includes(normalized)) return 0;
+      return undefined;
+    }
+
+    if (type === "integer") {
+      const parsed = Number.parseInt(String(rawValue ?? "").trim(), 10);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+
+    const numeric = Number(String(rawValue ?? "").trim());
+    return Number.isFinite(numeric) ? numeric : undefined;
+  }, []);
+
+  const isInputDataTriggerAllowed = useCallback(
+    (widget) => {
+      const p = widget?.props || {};
+      const triggerSource = String(
+        p.inputDataTriggerSource || "realtime"
+      ).trim().toLowerCase();
+
+      if (triggerSource === "realtime") return true;
+
+      if (triggerSource === "internal") {
+        const variableName = String(
+          p.inputDataTriggerVariable || ""
+        ).trim();
+
+        if (!variableName) return false;
+
+        return valuesEqualRuntime(
+          getInternalValue(variableName),
+          p.inputDataTriggerValue ?? 1
+        );
+      }
+
+      if (triggerSource === "plc") {
+        const triggerBindingId =
+          `${widget.id}:__inputdata_trigger__`;
+
+        return valuesEqualRuntime(
+          tcpValuesRef.current[triggerBindingId],
+          p.inputDataTriggerValue ?? 1
+        );
+      }
+
+      return false;
+    },
+    [getInternalValue, valuesEqualRuntime]
+  );
+
+  const acceptInputData = useCallback(
+    async (widget, rawValue) => {
+      if (!widget || widget.type !== "textbox") return;
+
+      const p = widget.props || {};
+      if (
+        String(p.textMode || "").trim().toLowerCase() !==
+        "inputdata"
+      ) {
+        return;
+      }
+
+      if (!isInputDataTriggerAllowed(widget)) return;
+
+      const destination = String(
+        p.inputDataDestinationVariable ||
+        p.destinationVariable ||
+        ""
+      ).trim();
+
+      if (!destination) {
+        console.warn(
+          `[DynamicCPPage] Input Data destination variable is empty: ${widget.id}`
+        );
+        return;
+      }
+
+      const converted = convertInputDataValue(
+        rawValue,
+        p.dataType || "number"
+      );
+
+      if (converted === undefined) {
+        console.error(
+          `[DynamicCPPage] Input Data conversion failed: ${widget.id}`
+        );
+        return;
+      }
+
+      const widgetKey = String(widget.id);
+      setInputDataValues((previous) => {
+        const oldValue = previous[widgetKey];
+        if (String(oldValue) === String(converted)) {
+          return previous;
+        }
+
+        return {
+          ...previous,
+          [widgetKey]: converted,
+        };
+      });
+
+      const valueKey = String(converted);
+      const writeKey = `${destination}:${valueKey}`;
+
+      /*
+       * INPUT DATA SCAN RETRY FIX
+       *
+       * Do not reject a second scan only because it has the same value as
+       * the previous scan. The destination variable may have been reset
+       * between scans.
+       *
+       * Example:
+       *   Scan #1 -> SN123 -> destination = SN123
+       *   destination reset -> 0
+       *   Scan #2 -> SN123 -> MUST write SN123 again
+       *
+       * Therefore the duplicate guard checks the CURRENT destination value.
+       * A write is skipped only when the destination already contains the
+       * value we are trying to write.
+       */
+      let currentDestinationValue;
+      try {
+        currentDestinationValue = await getInternalValue(destination);
+      } catch {
+        currentDestinationValue = undefined;
+      }
+
+      const destinationAlreadyHasValue =
+        currentDestinationValue !== undefined &&
+        currentDestinationValue !== null &&
+        String(currentDestinationValue) === valueKey;
+
+      if (destinationAlreadyHasValue) {
+        inputDataWriteRef.current[widgetKey] = writeKey;
+        return;
+      }
+
+      // Destination was reset/changed, so the same scanned value is allowed
+      // to be written again.
+      inputDataWriteRef.current[widgetKey] = null;
+
+      try {
+        await setInternalValue(destination, converted);
+        inputDataWriteRef.current[widgetKey] = writeKey;
+
+        console.log(
+          `[DynamicCPPage] Input Data accepted: ${widget.id} → ${destination} = ${valueKey}`
+        );
+      } catch (error) {
+        console.error(
+          `[DynamicCPPage] Input Data write failed for ${destination}:`,
+          error
+        );
+
+        console.error(
+          `[DynamicCPPage] Input Data write failed: ${error.message}`
+        );
+      }
+    },
+    [
+      convertInputDataValue,
+      isInputDataTriggerAllowed,
+      setInternalValue,
+    ]
+  );
+
+  const getRuntimeValue = useCallback(
+    (widget) => {
+      const p = widget?.props || {};
+
+
+      // ----------------------------------------------------------
+      // TEXTBOX COMMUNICATION SOURCES
+      // ----------------------------------------------------------
+      if (widget?.type === "textbox") {
+        const mode = String(p.textMode || "read").trim().toLowerCase();
+        const source = normalizeInputSource(p.inputSource);
+        const fallback = p.defaultText ?? p.text ?? "TEXT";
+
+        if (mode === "static") return fallback;
+
+        if (mode === "inputdata") {
+          // INPUT DATA ONLY:
+          // The TextBox displays the CURRENT Destination Internal Variable.
+          // Empty string means return to the configured default TextBox text.
+          const destinationVariable = String(
+            p.inputDataDestinationVariable || ""
+          ).trim();
+
+          if (!destinationVariable) return fallback;
+
+          const destinationValue = getInternalValue(destinationVariable);
+
+          // IMPORTANT:
+          // "" -> default text
+          // 0  -> remains 0 (must NOT be treated as empty)
+          if (
+            destinationValue === undefined ||
+            destinationValue === null ||
+            (typeof destinationValue === "string" &&
+              destinationValue.trim() === "")
+          ) {
+            return p.defaultText ?? p.text ?? fallback;
+          }
+
+          return destinationValue;
+        }
+
+        if (mode === "calculation") {
+          const resultVariable = String(
+            p.calculationResultVariable || ""
+          ).trim();
+
+          if (!resultVariable) return fallback;
+
+          // Calculate directly for display instead of waiting for the
+          // calculated result to be copied into fieldValues.
+          // This is important when the Result Variable is an Internal Variable.
+          const calculatedResult = calculateTextBox(widget);
+
+          if (calculatedResult !== undefined && calculatedResult !== null) {
+            return calculatedResult;
+          }
+
+          // Keep compatibility with existing stored result variables.
+          const internalResult = getInternalValue(resultVariable);
+          if (internalResult !== undefined && internalResult !== null) {
+            return internalResult;
+          }
+
+          return fieldValues[resultVariable] ?? fallback;
+        }
+
+        // ----------------------------------------------------------
+        // READ TRIGGER GATE
+        // TCP and Internal Variable data are NOT displayed while the
+        // configured trigger is OFF.
+        //
+        // realtime = no trigger gate; data is live immediately
+        // internal = trigger variable must equal readTriggerValue
+        // plc = selected TCP trigger address must equal readTriggerValue
+        // ----------------------------------------------------------
+        if (mode === "read") {
+          const triggerSource = String(
+            p.readTriggerSource || "realtime"
+          ).trim().toLowerCase();
+
+          if (triggerSource === "internal") {
+            const triggerVariable = String(
+              p.readTriggerVariable || ""
+            ).trim();
+
+            if (!triggerVariable) return fallback;
+
+            const triggerCurrent = getInternalValue(triggerVariable);
+            const triggerExpected = p.readTriggerValue ?? 1;
+
+            if (!valuesEqualRuntime(triggerCurrent, triggerExpected)) {
+              return fallback;
+            }
+          } else if (triggerSource === "plc") {
+            const triggerBindingId = `${widget.id}:__read_trigger__`;
+            const triggerCurrent = tcpValues[triggerBindingId];
+            const triggerExpected = p.readTriggerValue ?? 1;
+
+            if (!valuesEqualRuntime(triggerCurrent, triggerExpected)) {
+              return fallback;
+            }
+          }
+        }
+
+        // COM/RS232: value comes directly from cp-scan.
+        if (source === "com") {
+          const value = comTextBoxValues[String(widget.id)];
+          return value !== undefined ? value : fallback;
+        }
+
+        // TCP/IP: value comes from useTCPPLC.
+        // Internal Variable: the variable name is the source of truth.
+        if (source === "internal") {
+          const variableName = String(p.variable || p.fieldKey || "").trim();
+          if (!variableName) return fallback;
+          const internalValue = getInternalValue(variableName);
+          return internalValue !== undefined && internalValue !== null
+            ? internalValue
+            : fallback;
+        }
+
+        if (source === "tcp" && hasPLCBinding(widget)) {
+          const direct = tcpValues[String(widget.id)];
+          if (direct !== undefined) return direct;
+
+          const device = getTCPDevice(p.device);
+          const resolved = device
+            ? getTCPRuntimeValue({
+              widgetId: widget.id,
+              device,
+              addressType: p.addressType,
+              address: p.address,
+            })
+            : undefined;
+
+          return resolved !== undefined ? resolved : fallback;
+        }
+      }
+
+      // ----------------------------------------------------------
+      // GAUGE INTERNAL VARIABLE
+      // ----------------------------------------------------------
+      if (widget?.type === "gauge") {
+        const source = String(p.dataSource || "device").trim().toLowerCase();
+
+        if (source === "internal") {
+          const variableName = String(
+            p.internalVariable || p.variable || p.fieldKey || ""
+          ).trim();
+
+          if (!variableName) return p.simulationValue ?? 0;
+
+          const internalValue = getInternalValue(variableName);
+          return internalValue !== undefined && internalValue !== null
+            ? internalValue
+            : (p.simulationValue ?? 0);
+        }
+      }
+
+      // ----------------------------------------------------------
+      // ALARM BANNER / PROGRESS BAR INTERNAL VARIABLE
+      // ----------------------------------------------------------
+      if (
+        widget?.type === "alarmbanner" ||
+        widget?.type === "progressbar" ||
+        widget?.type === "selectorswitch"
+      ) {
+        const source = String(p.dataSource || "device").trim().toLowerCase();
+
+        if (source === "internal") {
+          const variableName = String(p.internalVariable || "").trim();
+          if (!variableName) return undefined;
+          return getInternalValue(variableName);
+        }
+      }
+
+      // ----------------------------------------------------------
+      // PLC is the source of truth when Device + Address exist.
+      // Do NOT fall back to simulationValue at runtime.
+      // ----------------------------------------------------------
+      if (hasPLCBinding(widget)) {
+        return tcpValues[String(widget.id)] ?? 0;
+      }
+
+      // ----------------------------------------------------------
+      // Non-PLC widgets can still use the existing logic variable.
+      // ----------------------------------------------------------
+      const variableName = p.variable || p.fieldKey;
+
+      if (!variableName) {
+        return undefined;
+      }
+
+      return fieldValues[variableName];
+    },
+    [
+      calculateTextBox,
+      comTextBoxValues,
+      inputDataValues,
+      fieldValues,
+      getInternalValue,
+      getTCPDevice,
+      getTCPRuntimeValue,
+      hasPLCBinding,
+      normalizeInputSource,
+      tcpValues,
+      valuesEqualRuntime,
+    ]
+  );
+
+  // ============================================================
+  // RESET
+  // ============================================================
+
+  const resetAll = useCallback(() => {
+    setFieldValues({});
+    setComTextBoxValues({});
+    setInputDataValues({});
+    inputDataWriteRef.current = {};
+    setLogs([]);
+    setChartHistory({});
+    setChartRunning({});
+    chartSampleRef.current = {};
+    chartTriggerRef.current = {};
+    chartStartTimeRef.current = {};
+
+    console.log(
+      `[DynamicCPPage] Reset all states for CP${cpNumber}`
+    );
+  }, [cpNumber]);
+
+  useEffect(() => {
+    resetAll();
+  }, [cpNumber]);
+
+  useEffect(() => {
+    return () => {
+      resetAll();
+    };
+  }, [resetAll]);
+
+  useEffect(() => {
+    const resetHandler = () => resetAll();
+
+    window.addEventListener("cp-reset", resetHandler);
+
+    return () => {
+      window.removeEventListener(
+        "cp-reset",
+        resetHandler
+      );
+    };
+  }, [resetAll]);
+
+  // ============================================================
+  // LOAD TCP DEVICES
+  // ============================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadTCPDevices = async () => {
+      try {
+        setTcpDeviceError("");
+
+        const response = await fetch(
+          `${API}/api/tcp/devices`
+        );
+
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}`
+          );
+        }
+
+        const data = await response.json();
+
+        const devices = Array.isArray(data)
+          ? data
+          : Array.isArray(data.devices)
+            ? data.devices
+            : [];
+
+        const normalized = devices
+          .filter(Boolean)
+          .map((device) => ({
+            ...device,
+            name:
+              device.name ||
+              device.device_name ||
+              device["Device Name"] ||
+              "",
+            host:
+              device.host ||
+              device.ip ||
+              device.IP ||
+              device["IP Address"] ||
+              "",
+            port:
+              Number(
+                device.port ||
+                device.Port ||
+                502
+              ) || 502,
+            unitId:
+              Number(
+                device.unitId ??
+                device.unit_id ??
+                device["Unit ID"] ??
+                device["Device ID"] ??
+                1
+              ) || 1,
+          }))
+          .filter((device) => device.name);
+
+        if (!cancelled) {
+          setTcpDevices(normalized);
+
+          console.log(
+            "[DynamicCPPage] TCP devices loaded:",
+            normalized
+          );
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setTcpDevices([]);
+          setTcpDeviceError(err.message);
+
+          console.error(
+            "[DynamicCPPage] TCP device load error:",
+            err
+          );
+        }
+      }
+    };
+
+    loadTCPDevices();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ============================================================
+  // LOAD PAGE BUILDER CONFIG
+  // ============================================================
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!cpNumber) {
+      setError("CP Number is not defined.");
+      setLoading(false);
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    fetch(
+      `${API}/api/page-config/${cpNumber}`
+    )
+      .then((response) =>
+        response.ok
+          ? response.json()
+          : { widgets: [] }
+      )
+      .then((data) => {
+        if (cancelled) return;
+
+        const legacyDynamic = Array.isArray(data?.widgets) ? data.widgets : [];
+        const savedPages = data?.pages && typeof data.pages === "object" ? data.pages : {};
+        const loadedPages = {};
+
+        // Dynamic Page is the permanent MAIN/default page.
+        // Preserve saved Dynamic widgets; fall back to legacy top-level widgets.
+        loadedPages.dynamic = {
+          name: "Dynamic Page",
+          icon: "🖥",
+          kind: "dynamic",
+          canvasWidth: 1920,
+          canvasHeight: 1080,
+          widgets: Array.isArray(savedPages.dynamic?.widgets)
+            ? savedPages.dynamic.widgets
+            : legacyDynamic,
+        };
+
+        // All other pages are normal pages created from Page Builder.
+        Object.entries(savedPages).forEach(([id, page]) => {
+          if (id === "dynamic") return;
+          if (!page || typeof page !== "object") return;
+
+          loadedPages[id] = {
+            name: page.name || id,
+            icon: page.icon || "📄",
+            kind: page.kind === "popup" ? "popup" : "custom",
+            canvasWidth: Number(page.canvasWidth || (page.kind === "popup" ? 800 : 1920)),
+            canvasHeight: Number(page.canvasHeight || (page.kind === "popup" ? 500 : 1080)),
+            widgets: Array.isArray(page.widgets) ? page.widgets : [],
+          };
+        });
+
+        // Always start on Dynamic Page.
+        setPages(loadedPages);
+        setActivePageId("dynamic");
+        setWidgets(loadedPages.dynamic.widgets);
+        setActivePopupPage(null);
+        setPopupMaximized(false);
+        setLoading(false);
+
+        // Page Builder resolution is the SOURCE/DESIGN coordinate system.
+        // Dynamic Page does NOT replace it with the runtime resolution.
+        // Page Builder design canvas is fixed to Full HD.
+        // Ignore legacy canvas dimensions from older layouts.
+        setDesignCanvas({ width: 1920, height: 1080 });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+
+        console.error(
+          "[DynamicCPPage] Page config error:",
+          err
+        );
+
+        setError(
+          "Failed to load page layout"
+        );
+
+        setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cpNumber]);
+
+  const runtimeWidgets = useMemo(
+    () => Object.values(pages).flatMap(page => Array.isArray(page?.widgets) ? page.widgets : []),
+    [pages]
+  );
+
+  // ============================================================
+  // POPUP TRIGGER — ONLY INTERNAL VARIABLES BELONGING TO ACTIVE CP
+  // Robust trigger handling:
+  // - Do NOT depend on a rising-edge transition to open the popup.
+  // - If the trigger is already active when the page/runtime finishes loading,
+  //   the popup will still open.
+  // - If the popup disappears unexpectedly while the trigger is still active,
+  //   it can recover automatically.
+  // - If the user explicitly closes the popup, keep the REOPEN state until the
+  //   trigger goes OFF.
+  // ============================================================
+  const popupTriggerStateRef = useRef({});
+
+  const activeCPInternalVariables = useMemo(() => (internalVariables || []).filter(v => {
+    const vcp = v?.cp_number ?? v?.cpNumber ?? v?.cp;
+    return vcp !== undefined && vcp !== null && String(vcp) === String(cpNumber);
+  }), [internalVariables, cpNumber]);
+
+  const activeCPInternalMap = useMemo(() => {
+    const map = new Map();
+    activeCPInternalVariables.forEach(v => {
+      if (v?.name) map.set(String(v.name), v);
+    });
+    return map;
+  }, [activeCPInternalVariables]);
+
+  useLayoutEffect(() => {
+    const popupWidgets = Object.values(pages).flatMap(page =>
+      Array.isArray(page?.widgets) ? page.widgets : []
+    ).filter(w => w?.type === "popup");
+
+    const configuredIds = new Set(popupWidgets.map(w => String(w.id)));
+
+    // Remove stale trigger/reopen states.
+    Object.keys(popupTriggerStateRef.current).forEach(id => {
+      if (!configuredIds.has(id)) delete popupTriggerStateRef.current[id];
+    });
+    Object.keys(popupClosedByUserRef.current).forEach(id => {
+      if (!configuredIds.has(id)) delete popupClosedByUserRef.current[id];
+    });
+
+    popupWidgets.forEach(widget => {
+      const p = widget?.props || {};
+      const id = String(widget?.id ?? "");
+      const variableName = String(p.triggerVariable || "").trim();
+      const target = String(p.targetPage || "").trim();
+
+      if (!id || !variableName) return;
+
+      // Strict CP ownership: only an Internal Variable belonging to the
+      // currently active CP is allowed to trigger this popup.
+      const variable = activeCPInternalMap.get(variableName);
+      if (!variable) {
+        popupTriggerStateRef.current[id] = false;
+        popupClosedByUserRef.current[id] = false;
+
+        if (String(activePopupPage || "") === target && target) {
+          setActivePopupPage(null);
+          setPopupMaximized(false);
+        }
+        return;
+      }
+
+      const actual = getInternalValue(variableName);
+      const expected = p.triggerValue ?? 1;
+      const isActive = valuesEqualRuntime(actual, expected);
+      // Trigger OFF: reset everything so the next ON can trigger normally.
+      if (!isActive) {
+        popupTriggerStateRef.current[id] = false;
+        popupClosedByUserRef.current[id] = false;
+
+        if (String(activePopupPage || "") === target && target) {
+          setActivePopupPage(null);
+          setPopupMaximized(false);
+        }
+        return;
+      }
+
+      // Trigger ON. Keep the state ON even if the popup was closed or
+      // temporarily disappeared; this allows the popup to recover.
+      popupTriggerStateRef.current[id] = true;
+
+      const targetPage = pages?.[target];
+      if (!target || target === "dynamic" || !targetPage) {
+        return;
+      }
+
+      // User explicitly closed this popup while the trigger is still ON.
+      // Do not force it back open; renderRuntimeWidget() will show REOPEN POPUP.
+      if (popupClosedByUserRef.current[id]) {
+        return;
+      }
+
+      // Another popup is currently open. Do not replace it.
+      if (activePopupPage) {
+        return;
+      }
+
+      // IMPORTANT: open based on the CURRENT trigger state, not only on
+      // !wasActive. This fixes the case where the trigger was already ON
+      // before pages/internal variables finished loading.
+      {
+        popupClosedByUserRef.current[id] = false;
+        setActivePopupPage(target);
+        setPopupMaximized(false);
+      }
+    });
+  }, [
+    pages,
+    activeCPInternalMap,
+    activePopupPage,
+    cpNumber,
+    valuesEqualRuntime,
+    getInternalValue,
+  ]);
+
+  useEffect(() => {
+    if (!runtimeWidgets.length) return;
+
+    const calculationWidgets = runtimeWidgets.filter(
+      (widget) =>
+        widget?.type === "textbox" &&
+        String(widget?.props?.textMode || "").trim().toLowerCase() ===
+        "calculation"
+    );
+
+    if (!calculationWidgets.length) return;
+
+    const updates = {};
+
+    calculationWidgets.forEach((widget) => {
+      const variable = String(
+        widget?.props?.calculationResultVariable || ""
+      ).trim();
+
+      if (!variable) return;
+
+      const result = calculateTextBox(widget);
+
+      if (result !== undefined) {
+        updates[variable] = result;
+      }
+    });
+
+    const keys = Object.keys(updates);
+    if (!keys.length) return;
+
+    let cancelled = false;
+
+    const persistResults = async () => {
+      for (const key of keys) {
+        if (cancelled) return;
+
+        if (getInternalVariable(key)) {
+          const currentValue = getInternalValue(key);
+          if (Number(currentValue) === Number(updates[key])) continue;
+
+          try {
+            await setInternalValue(key, updates[key]);
+          } catch (error) {
+            console.error(`[DynamicCPPage] Failed to store calculation result ${key}:`, error);
+          }
+        } else {
+          // Keep legacy Logic Builder variables working when the result
+          // variable has not been created in Internal Variables.
+          setFieldValues((previous) => {
+            if (previous[key] === updates[key]) return previous;
+            return { ...previous, [key]: updates[key] };
+          });
+        }
+      }
+    };
+
+    persistResults();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [runtimeWidgets, calculateTextBox, getInternalValue, getInternalVariable, setInternalValue]);
+
+  // ============================================================
+  // REGISTER PAGE BUILDER PLC BINDINGS
+  // ============================================================
+
+  useEffect(() => {
+    clearBindings();
+
+    if (!runtimeWidgets.length) {
+      return;
+    }
+
+    /*
+     * One binding = one PLC address.
+     *
+     * Button / Light / Gauge keep the original widget.id binding.
+     * Line Chart uses `${widget.id}:${series.id}` so one chart can
+     * read multiple PLC addresses independently.
+     * Test Table uses `${widget.id}:${row.id}` the same way.
+     * Icon-popup widgets (Manual Control / Calibration / Timing & Limit)
+     * use `${widget.id}:${field.id}` the same way.
+     */
+    runtimeWidgets.forEach((widget) => {
+      const type = widget?.type;
+      const p = widget?.props || {};
+
+      // ----------------------------------------------------------
+      // LINE CHART: multiple read bindings
+      // ----------------------------------------------------------
+      if (type === "linechart") {
+        const series = Array.isArray(p.series) ? p.series : [];
+
+        console.log(
+          `[DynamicCPPage] Registering line chart ${widget.id}: ${series.filter(s => s && s.enabled !== false).length} enabled series`
+        );
+
+        // TREND TRIGGER: value 1 starts recording, value 0 stops recording.
+        const triggerSource = String(
+          p.triggerDataSource || "device"
+        ).trim().toLowerCase();
+
+        if (p.triggerEnabled === true) {
+          if (triggerSource === "internal") {
+            const variableName = String(
+              p.triggerInternalVariable || ""
+            ).trim();
+
+            if (!variableName) {
+              console.warn(
+                `[DynamicCPPage] Line chart internal trigger variable is empty: ${widget.id}`
+              );
+            }
+          } else if (
+            p.triggerDevice &&
+            p.triggerAddress !== undefined &&
+            p.triggerAddress !== null &&
+            String(p.triggerAddress).trim() !== ""
+          ) {
+            const triggerDevice = getTCPDevice(p.triggerDevice);
+            const triggerAddressType = normalizeType(p.triggerAddressType);
+
+            if (!triggerDevice) {
+              console.warn(
+                `[DynamicCPPage] Line chart trigger device not found for ${widget.id}: ${p.triggerDevice}`
+              );
+            } else if (!triggerAddressType) {
+              console.warn(
+                `[DynamicCPPage] Invalid line chart trigger address type for ${widget.id}:`,
+                p.triggerAddressType
+              );
+            } else if (!isValidPLCBinding(type, triggerAddressType)) {
+              console.warn(
+                `[DynamicCPPage] Invalid line chart trigger binding: ${triggerAddressType}`
+              );
+            } else {
+              const triggerBindingId = `${widget.id}:__trend_trigger__`;
+
+              registerBinding({
+                widgetId: triggerBindingId,
+                widgetType: type,
+                device: triggerDevice,
+                addressType: triggerAddressType,
+                address: p.triggerAddress,
+                dataType: p.triggerDataType,
+              });
+
+              console.log(
+                `[DynamicCPPage] Line chart trigger binding: ${triggerBindingId} -> ${triggerDevice.name} / ${triggerAddressType} / ${p.triggerAddress}`
+              );
+            }
+          }
+        }
+
+        series.forEach((s, index) => {
+          if (s?.enabled === false) {
+            return;
+          }
+
+          const source = String(
+            s?.dataSource || (s?.fieldKey && !s?.device ? "internal" : "device")
+          ).trim().toLowerCase();
+
+          // Internal Variable series are read from the shared Internal Variable
+          // store in the capture effect below. They must never create a PLC
+          // binding.
+          if (source === "internal") {
+            const variableName = String(
+              s?.internalVariable || s?.fieldKey || ""
+            ).trim();
+
+            if (!variableName) {
+              console.warn(
+                `[DynamicCPPage] Line chart internal series variable is empty: ${widget.id}/${s.id || index}`
+              );
+            }
+            return;
+          }
+
+          if (!s?.device) {
+            console.warn(
+              `[DynamicCPPage] Line chart series has no device: ${widget.id}/${s.id || index}`
+            );
+            return;
+          }
+
+          if (
+            s.address === undefined ||
+            s.address === null ||
+            String(s.address).trim() === ""
+          ) {
+            console.warn(
+              `[DynamicCPPage] Line chart series has no address: ${widget.id}/${s.id || index}`
+            );
+            return;
+          }
+
+          const device = getTCPDevice(s.device);
+
+          if (!device) {
+            console.warn(
+              `[DynamicCPPage] Line chart device not found for ${widget.id}/${s.id || index}: ${s.device}`
+            );
+            return;
+          }
+
+          const addressType = normalizeType(s.addressType);
+
+          if (!addressType) {
+            console.warn(
+              `[DynamicCPPage] Invalid line chart address type for ${widget.id}/${s.id || index}:`,
+              s.addressType
+            );
+            return;
+          }
+
+          if (!isValidPLCBinding(type, addressType)) {
+            console.warn(
+              `[DynamicCPPage] Invalid line chart binding: ${addressType}`
+            );
+            return;
+          }
+
+          const bindingId = `${widget.id}:${s.id || `series_${index + 1}`}`;
+
+          registerBinding({
+            widgetId: bindingId,
+            widgetType: type,
+            device,
+            addressType,
+            address: s.address,
+            dataType: s.dataType,
+          });
+
+          console.log(
+            `[DynamicCPPage] Line chart PLC binding: ${bindingId} -> ${device.name} / ${addressType} / ${s.address}`
+          );
+        });
+
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // TEST TABLE: one binding per realtime TCP/IP row.
+      // RS232 realtime is updated from cp-scan below.
+      // Sequential is intentionally not polled here; Logic Builder owns it.
+      // ----------------------------------------------------------
+      if (type === "testtable") {
+        const rows = Array.isArray(p.rows) ? p.rows : [];
+
+        rows.forEach((row) => {
+          const mode = String(row.mode || "realtime").trim().toLowerCase();
+          const source = String(row.sourceType || "tcp").trim().toLowerCase();
+
+          if (mode !== "realtime" || source !== "tcp") return;
+          if (!row.device || row.address === undefined || row.address === null || String(row.address).trim() === "") return;
+
+          const device = getTCPDevice(row.device);
+          if (!device) {
+            console.warn(`[DynamicCPPage] Test Table TCP device not found: ${row.device}`);
+            return;
+          }
+
+          const addressType = normalizeType(row.addressType);
+          if (!addressType) return;
+
+          const bindingId = `${widget.id}:${row.id}`;
+          registerBinding({
+            widgetId: bindingId,
+            widgetType: "testtable",
+            device,
+            addressType,
+            address: row.address,
+            dataType: row.dataType,
+          });
+        });
+
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // ICON-POPUP WIDGETS: Manual Control / Calibration / Timing & Limit
+      // Each configured field is its own PLC binding, keyed the same
+      // way Line Chart series / Test Table rows are: `${widget.id}:${field.id}`.
+      // ----------------------------------------------------------
+      if (type === "manualcontrol" || type === "calibration" || type === "timinglimit") {
+        const fields = Array.isArray(p.fields) ? p.fields : [];
+
+        fields.forEach((field) => {
+          if (!field?.device) return;
+          if (field.address === undefined || field.address === null || String(field.address).trim() === "") return;
+
+          const device = getTCPDevice(field.device);
+          if (!device) {
+            console.warn(`[DynamicCPPage] ${type} field device not found: ${widget.id}/${field.id}`);
+            return;
+          }
+
+          const addressType = normalizeType(field.addressType);
+          if (!addressType) return;
+
+          // "jog" fields are write-only (like a Button); everything else is read (like a Light).
+          const capabilityType = field.kind === "jog" ? "button" : "light";
+
+          if (!isValidPLCBinding(capabilityType, addressType)) {
+            console.warn(`[DynamicCPPage] Invalid ${type} binding: ${addressType}`);
+            return;
+          }
+
+          registerBinding({
+            widgetId: `${widget.id}:${field.id}`,
+            widgetType: capabilityType,
+            device,
+            addressType,
+            address: field.address,
+            dataType: field.dataType,
+          });
+
+          console.log(
+            `[DynamicCPPage] ${type} field binding: ${widget.id}:${field.id} -> ${device.name} / ${addressType} / ${field.address}`
+          );
+        });
+
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // TextBox data sources:
+      // - Internal Variable: no PLC binding; runtime fieldValues is used.
+      // - TCP/IP + Realtime: use Modbus/TCP polling.
+      // - COM + Realtime: handled by cp-scan.
+      // Sequential remains handled by Logic Builder.
+      // ----------------------------------------------------------
+      if (type === "textbox") {
+        const textMode = String(p.textMode || "read").trim().toLowerCase();
+        const source = normalizeInputSource(p.inputSource);
+
+        // Static Text has no PLC binding.
+        if (textMode === "static") return;
+
+        // Calculation TextBox:
+        // Internal sources are read from fieldValues.
+        // TCP sources are registered individually below.
+        if (textMode === "calculation") {
+          const inputs = Array.isArray(p.calculationInputs)
+            ? p.calculationInputs
+            : [];
+
+          inputs.forEach((item, index) => {
+            const itemSource = String(
+              item?.sourceType || "internal"
+            ).trim().toLowerCase();
+
+            if (itemSource !== "tcp") return;
+            if (!item?.device) return;
+
+            if (
+              item?.address === undefined ||
+              item?.address === null ||
+              String(item.address).trim() === ""
+            ) {
+              return;
+            }
+
+            const device = getTCPDevice(item.device);
+            if (!device) return;
+
+            const addressType = normalizeType(item.addressType);
+            if (!addressType) return;
+
+            if (!isValidPLCBinding("textbox", addressType)) return;
+
+            const bindingId =
+              `${widget.id}:calc:${item.id || item.alias || `source_${index + 1}`}`;
+
+            registerBinding({
+              widgetId: bindingId,
+              widgetType: "textbox",
+              device,
+              addressType,
+              address: item.address,
+              dataType: item.dataType,
+            });
+          });
+
+          return;
+        }
+
+        // ----------------------------------------------------------
+        // INPUT DATA
+        //
+        // DATA and ENABLE TRIGGER are two independent PLC bindings.
+        // Example:
+        //   Trigger = Coil 1
+        //   Data    = Holding Register 5
+        //
+        // Bindings:
+        //   <widgetId>:__inputdata_trigger__
+        //   <widgetId>
+        // ----------------------------------------------------------
+        if (textMode === "inputdata") {
+          if (source === "tcp") {
+            if (
+              p.device &&
+              p.address !== undefined &&
+              p.address !== null &&
+              String(p.address).trim() !== ""
+            ) {
+              const dataDevice = getTCPDevice(p.device);
+              const dataAddressType = normalizeType(p.addressType);
+
+              if (
+                dataDevice &&
+                dataAddressType &&
+                isValidPLCBinding("textbox", dataAddressType)
+              ) {
+                registerBinding({
+                  widgetId: widget.id,
+                  widgetType: "textbox",
+                  device: dataDevice,
+                  addressType: dataAddressType,
+                  address: p.address,
+                  dataType: p.dataType,
+                });
+
+                console.log(
+                  `[DynamicCPPage] TextBox Input Data source: ${widget.id} -> ${dataDevice.name} / ${dataAddressType} / ${p.address}`
+                );
+              }
+            }
+          }
+
+          const triggerSource = String(
+            p.inputDataTriggerSource || "realtime"
+          ).trim().toLowerCase();
+
+          if (triggerSource === "plc") {
+            const triggerDeviceName = String(
+              p.inputDataTriggerDevice || ""
+            ).trim();
+            const triggerAddress = p.inputDataTriggerAddress;
+            const triggerAddressType = normalizeType(
+              p.inputDataTriggerAddressType
+            );
+
+            if (
+              triggerDeviceName &&
+              triggerAddress !== undefined &&
+              triggerAddress !== null &&
+              String(triggerAddress).trim() !== "" &&
+              triggerAddressType
+            ) {
+              const triggerDevice = getTCPDevice(triggerDeviceName);
+
+              if (
+                triggerDevice &&
+                isValidPLCBinding("textbox", triggerAddressType)
+              ) {
+                const triggerBindingId =
+                  `${widget.id}:__inputdata_trigger__`;
+
+                registerBinding({
+                  widgetId: triggerBindingId,
+                  widgetType: "textbox",
+                  device: triggerDevice,
+                  addressType: triggerAddressType,
+                  address: triggerAddress,
+                  dataType: p.inputDataTriggerDataType,
+                });
+
+                console.log(
+                  `[DynamicCPPage] TextBox Input Data trigger: ${triggerBindingId} -> ${triggerDevice.name} / ${triggerAddressType} / ${triggerAddress}`
+                );
+              }
+            }
+          }
+
+          // COM is event-driven by cp-scan; do not fall through to the
+          // generic TextBox PLC binding below.
+          return;
+        }
+
+        // ----------------------------------------------------------
+        // READ TRIGGER
+        // The trigger is an independent gate from the TextBox DATA SOURCE.
+        // It must be registered even when the TextBox data itself comes
+        // from an Internal Variable.
+        // ----------------------------------------------------------
+        if (textMode === "read") {
+          const triggerSource = String(
+            p.readTriggerSource || "realtime"
+          ).trim().toLowerCase();
+
+          if (triggerSource === "plc") {
+            const triggerDeviceName = String(
+              p.readTriggerDevice || ""
+            ).trim();
+            const triggerAddress = p.readTriggerAddress;
+            const triggerAddressType = normalizeType(
+              p.readTriggerAddressType
+            );
+
+            if (
+              triggerDeviceName &&
+              triggerAddress !== undefined &&
+              triggerAddress !== null &&
+              String(triggerAddress).trim() !== "" &&
+              triggerAddressType
+            ) {
+              const triggerDevice = getTCPDevice(triggerDeviceName);
+
+              if (
+                triggerDevice &&
+                isValidPLCBinding("textbox", triggerAddressType)
+              ) {
+                const triggerBindingId = `${widget.id}:__read_trigger__`;
+
+                registerBinding({
+                  widgetId: triggerBindingId,
+                  widgetType: "textbox",
+                  device: triggerDevice,
+                  addressType: triggerAddressType,
+                  address: triggerAddress,
+                  dataType: p.readTriggerDataType,
+                });
+
+                console.log(
+                  `[DynamicCPPage] TextBox read trigger binding: ${triggerBindingId} -> ${triggerDevice.name} / ${triggerAddressType} / ${triggerAddress}`
+                );
+              }
+            }
+          }
+        }
+
+        // Internal Variable and Reference DB modes are stored/read through
+        // the shared Internal Variable store, not PLC polling.
+        if (source === "internal" || source === "reference") {
+          return;
+        }
+
+        // TCP/IP is the only TextBox DATA source registered with Modbus/TCP.
+        if (source !== "tcp") {
+          return;
+        }
+
+        if (textMode === "write") {
+          const writeType = normalizeType(p.addressType);
+
+          if (
+            writeType !== "coil" &&
+            writeType !== "holding_register" &&
+            writeType !== TAG_ADDRESS_TYPE &&
+            !normalizeFinsArea(writeType)
+          ) {
+            console.warn(
+              `[DynamicCPPage] TextBox write binding must use Coil or Holding Register: ${widget.id}`
+            );
+            return;
+          }
+        }
+
+      } else if (
+        type !== "button" &&
+        type !== "light" &&
+        type !== "gauge" &&
+        type !== "alarmbanner" &&
+        type !== "progressbar" &&
+        type !== "selectorswitch"
+      ) {
+        return;
+      }
+
+      if (
+        (type === "alarmbanner" || type === "progressbar" || type === "selectorswitch") &&
+        String(p.dataSource || "device").trim().toLowerCase() === "internal"
+      ) {
+        return;
+      }
+
+      if (!p.device) {
+        return;
+      }
+
+      if (
+        p.address === undefined ||
+        p.address === null ||
+        String(p.address).trim() === ""
+      ) {
+        return;
+      }
+
+      const device = getTCPDevice(p.device);
+
+      // The page configuration can arrive before /api/tcp/devices.
+      // Do not report a false "device not found" warning during that
+      // initial loading window. The effect runs again when tcpDevices
+      // becomes available.
+      if (!device) {
+        if (tcpDevices.length > 0) {
+          console.warn(
+            `[DynamicCPPage] Device not found for widget ${widget.id}: ${p.device}`
+          );
+        }
+        return;
+      }
+
+      const addressType = normalizeType(p.addressType);
+
+      if (!addressType) {
+        console.warn(
+          `[DynamicCPPage] Invalid address type for widget ${widget.id}:`,
+          p.addressType
+        );
+        return;
+      }
+
+      if (!isValidPLCBinding(type, addressType)) {
+        console.warn(
+          `[DynamicCPPage] Invalid binding: ${type} cannot use ${addressType}`
+        );
+        return;
+      }
+
+      registerBinding({
+        widgetId: widget.id,
+        widgetType: type,
+        device,
+        addressType,
+        address: p.address,
+        dataType: p.dataType,
+      });
+
+      console.log(
+        `[DynamicCPPage] PLC binding: ${widget.id} -> ${device.name} / ${addressType} / ${p.address}`
+      );
+    });
+  }, [
+    runtimeWidgets,
+    tcpDevices,
+    clearBindings,
+    getTCPDevice,
+    normalizeType,
+    normalizeInputSource,
+    isValidPLCBinding,
+    registerBinding,
+  ]);
+
+  // ============================================================
+  // INPUT DATA TCP ACQUISITION
+  //
+  // useTCPPLC polls at 50 ms. The trigger and data addresses are
+  // independent. Data is accepted only while the trigger is ON.
+  // ============================================================
+  useEffect(() => {
+    if (!runtimeWidgets.length) return;
+
+    runtimeWidgets.forEach((widget) => {
+      if (widget?.type !== "textbox") return;
+
+      const p = widget.props || {};
+      if (
+        String(p.textMode || "").trim().toLowerCase() !==
+        "inputdata"
+      ) {
+        return;
+      }
+
+      if (normalizeInputSource(p.inputSource) !== "tcp") return;
+      if (!isInputDataTriggerAllowed(widget)) return;
+
+      const rawValue = tcpValues[String(widget.id)];
+      if (rawValue === undefined || rawValue === null) return;
+
+      acceptInputData(widget, rawValue);
+    });
+  }, [
+    runtimeWidgets,
+    tcpValues,
+    normalizeInputSource,
+    isInputDataTriggerAllowed,
+    acceptInputData,
+  ]);
+
+  // ============================================================
+  // REALTIME LINE CHART SAMPLER
+  //
+  // Data acquisition and chart sampling are intentionally separated.
+  // PLC polling can run at 50 ms while each chart independently samples
+  // at its configured interval.
+  // ============================================================
+
+  const chartWidgetsRef = useRef([]);
+  const chartTCPValuesRef = useRef({});
+  const chartInternalGetterRef = useRef(getInternalValue);
+
+  chartWidgetsRef.current = runtimeWidgets;
+  chartTCPValuesRef.current = tcpValues;
+  chartInternalGetterRef.current = getInternalValue;
+
+  // ------------------------------------------------------------
+  // TRIGGER STATE
+  // ------------------------------------------------------------
+  useEffect(() => {
+    const chartWidgets = runtimeWidgets.filter(
+      widget => widget?.type === "linechart"
+    );
+
+    if (!chartWidgets.length) return;
+
+    const now = Date.now();
+    const nextRunning = {};
+    const chartsToClear = new Set();
+
+    chartWidgets.forEach(widget => {
+      const p = widget.props || {};
+      const triggerSource = String(
+        p.triggerDataSource || "device"
+      ).trim().toLowerCase();
+      const triggerVariableName = String(
+        p.triggerInternalVariable || ""
+      ).trim();
+
+      const triggerConfigured =
+        p.triggerEnabled === true &&
+        (
+          (triggerSource === "internal" && !!triggerVariableName) ||
+          (
+            triggerSource !== "internal" &&
+            p.triggerDevice &&
+            p.triggerAddress !== undefined &&
+            p.triggerAddress !== null &&
+            String(p.triggerAddress).trim() !== ""
+          )
+        );
+
+      if (!triggerConfigured) {
+        if (!chartStartTimeRef.current[widget.id]) {
+          chartStartTimeRef.current[widget.id] = now;
+          chartSampleRef.current[widget.id] = 0;
+        }
+
+        chartTriggerRef.current[widget.id] = {
+          running: true,
+          raw: undefined,
+        };
+
+        nextRunning[widget.id] = true;
+        return;
+      }
+
+      const triggerBindingId = `${widget.id}:__trend_trigger__`;
+      const rawTrigger =
+        triggerSource === "internal"
+          ? getInternalValue(triggerVariableName)
+          : tcpValues[triggerBindingId];
+
+      const numericTrigger = Number(rawTrigger);
+      const startValue = Number(p.triggerStartValue ?? 1);
+      const stopValue = Number(p.triggerStopValue ?? 0);
+
+      const previous = chartTriggerRef.current[widget.id];
+      const previousRunning = previous?.running === true;
+      let running = previousRunning;
+
+      if (Number.isFinite(numericTrigger)) {
+        if (numericTrigger === startValue) running = true;
+        else if (numericTrigger === stopValue) running = false;
+      }
+
+      // New START cycle.
+      if (running && !previousRunning) {
+        chartStartTimeRef.current[widget.id] = now;
+        chartSampleRef.current[widget.id] = 0;
+
+        if (p.clearHistoryOnStart !== false) {
+          chartsToClear.add(widget.id);
+        }
+
+        console.log(
+          `[DynamicCPPage] Line chart trigger ${widget.id}: ${rawTrigger} -> RUNNING`
+        );
+      }
+
+      // Trigger already ON when page/config is first loaded.
+      if (running && !chartStartTimeRef.current[widget.id]) {
+        chartStartTimeRef.current[widget.id] = now;
+        chartSampleRef.current[widget.id] = 0;
+
+        if (p.clearHistoryOnStart !== false) {
+          chartsToClear.add(widget.id);
+        }
+      }
+
+      chartTriggerRef.current[widget.id] = {
+        running,
+        raw: numericTrigger,
+      };
+
+      nextRunning[widget.id] = running;
+
+      if (!running && previous?.running !== false) {
+        console.log(
+          `[DynamicCPPage] Line chart trigger ${widget.id}: ${rawTrigger} -> STOPPED`
+        );
+      }
+    });
+
+    setChartRunning(previous => {
+      let changed = false;
+      const next = { ...previous };
+
+      Object.entries(nextRunning).forEach(([id, running]) => {
+        if (next[id] !== running) {
+          next[id] = running;
+          changed = true;
+        }
+      });
+
+      return changed ? next : previous;
+    });
+
+    if (chartsToClear.size) {
+      setChartHistory(previous => {
+        const next = { ...previous };
+        chartsToClear.forEach(id => {
+          next[id] = [];
+        });
+        return next;
+      });
+    }
+  }, [runtimeWidgets, tcpValues, getInternalValue]);
+
+  // ------------------------------------------------------------
+  // DEDICATED CHART SAMPLER
+  //
+  // The scheduler wakes every 10 ms and samples each chart only when
+  // its own configured interval is due. This supports 50/100/200/500/
+  // 1000 ms and other settings independently.
+  //
+  // TCP/PLC data itself is acquired by useTCPPLC at 50 ms, so a PLC
+  // chart cannot contain genuinely new PLC samples faster than 50 ms.
+  // ------------------------------------------------------------
+  useEffect(() => {
+    let cancelled = false;
+
+    const scheduler = setInterval(() => {
+      if (cancelled) return;
+
+      const chartWidgets = chartWidgetsRef.current.filter(
+        widget => widget?.type === "linechart"
+      );
+
+      if (!chartWidgets.length) return;
+
+      const now = Date.now();
+      const samples = [];
+
+      chartWidgets.forEach(widget => {
+        const p = widget.props || {};
+        const trigger = chartTriggerRef.current[widget.id];
+
+        const triggerSource = String(
+          p.triggerDataSource || "device"
+        ).trim().toLowerCase();
+        const triggerVariableName = String(
+          p.triggerInternalVariable || ""
+        ).trim();
+
+        const triggerConfigured =
+          p.triggerEnabled === true &&
+          (
+            (triggerSource === "internal" && !!triggerVariableName) ||
+            (
+              triggerSource !== "internal" &&
+              p.triggerDevice &&
+              p.triggerAddress !== undefined &&
+              p.triggerAddress !== null &&
+              String(p.triggerAddress).trim() !== ""
+            )
+          );
+
+        if (triggerConfigured && trigger?.running !== true) return;
+
+        if (!chartStartTimeRef.current[widget.id]) {
+          chartStartTimeRef.current[widget.id] = now;
+        }
+
+        const rawInterval = Number(p.sampleInterval);
+        const interval = Number.isFinite(rawInterval)
+          ? Math.max(10, Math.round(rawInterval))
+          : 50;
+
+        const lastSample = Number(
+          chartSampleRef.current[widget.id] || 0
+        );
+
+        if (lastSample !== 0 && now - lastSample < interval) {
+          return;
+        }
+
+        const startTime = Number(
+          chartStartTimeRef.current[widget.id] || now
+        );
+
+        const elapsedSeconds = Math.max(
+          0,
+          (now - startTime) / 1000
+        );
+
+        const maxDuration = Math.max(
+          1,
+          Number(p.historySeconds ?? 60)
+        );
+
+        if (elapsedSeconds > maxDuration) return;
+
+        const series = Array.isArray(p.series)
+          ? p.series.filter(s => s && s.enabled !== false)
+          : [];
+
+        const tcpValuesLatest = chartTCPValuesRef.current;
+        const getInternalLatest = chartInternalGetterRef.current;
+
+        const point = {
+          elapsed: elapsedSeconds,
+        };
+
+        let hasValue = false;
+
+        series.forEach((seriesItem, index) => {
+          const source = String(
+            seriesItem?.dataSource ||
+              (seriesItem?.fieldKey && !seriesItem?.device
+                ? "internal"
+                : "device")
+          ).trim().toLowerCase();
+
+          const variableName = String(
+            seriesItem?.internalVariable ||
+              seriesItem?.fieldKey ||
+              ""
+          ).trim();
+
+          const raw =
+            source === "internal"
+              ? getInternalLatest(variableName)
+              : tcpValuesLatest[
+                  `${widget.id}:${seriesItem.id || `series_${index + 1}`}`
+                ];
+
+          const numeric = Number(raw);
+
+          if (Number.isFinite(numeric)) {
+            point[
+              seriesItem.id || `series_${index + 1}`
+            ] = numeric;
+            hasValue = true;
+          }
+        });
+
+        if (hasValue) {
+          chartSampleRef.current[widget.id] = now;
+          samples.push({
+            widget,
+            point,
+            interval,
+          });
+        }
+      });
+
+      if (!samples.length) return;
+
+      setChartHistory(previous => {
+        const next = { ...previous };
+
+        samples.forEach(({ widget, point, interval }) => {
+          const p = widget.props || {};
+          const maxPoints = Math.min(
+            5000,
+            Math.max(
+              10,
+              Math.ceil(
+                (Number(p.historySeconds ?? 60) * 1000) /
+                  interval
+              ) + 1
+            )
+          );
+
+          const history = Array.isArray(previous[widget.id])
+            ? previous[widget.id]
+            : [];
+
+          // Bounded append. Avoid filtering the whole history on
+          // every 50 ms update.
+          next[widget.id] = [...history, point].slice(-maxPoints);
+        });
+
+        return next;
+      });
+    }, 10);
+
+    return () => {
+      cancelled = true;
+      clearInterval(scheduler);
+    };
+  }, []);
+
+  // ============================================================
+  // RUNTIME DISPLAY RESOLUTION
+  // ============================================================
+
+  // The selected runtime resolution is stored per CP in localStorage so
+  // operators can choose the HMI/monitor resolution without changing the
+  // Page Builder design.
+  useEffect(() => {
+    if (!cpNumber) return;
+    try {
+      const raw = localStorage.getItem(`hmi-runtime-resolution:${cpNumber}`);
+      if (!raw) return;
+      // Runtime display is fixed to Full HD; ignore legacy saved resolutions.
+      setRuntimeResolution(DEFAULT_RUNTIME_RESOLUTION);
+    } catch (err) {
+      console.warn("[DynamicCPPage] Invalid saved runtime resolution", err);
+    }
+  }, [cpNumber]);
+
+  const changeRuntimeResolution = useCallback(() => {
+    const next = DEFAULT_RUNTIME_RESOLUTION;
+    setRuntimeResolution(next);
+    if (cpNumber) {
+      try {
+        localStorage.setItem(`hmi-runtime-resolution:${cpNumber}`, JSON.stringify(next));
+      } catch { }
+    }
+  }, [cpNumber]);
+
+  const formatMessageValue = useCallback((value) => {
+    if (value === undefined) return "undefined";
+    if (value === null) return "null";
+    if (typeof value === "object") {
+      try { return JSON.stringify(value); } catch { return String(value); }
+    }
+    return String(value);
+  }, []);
+
+  // Runtime startup message.
+  useEffect(() => {
+    if (!cpNumber) return;
+    addLog(
+      `CP${String(cpNumber).padStart(2, "0")} runtime started`,
+      "var(--accent-green)",
+      { source: "SYSTEM", level: "INFO" }
+    );
+  }, [cpNumber, addLog]);
+
+  // Report the configured TCP/IP device list once it is loaded.
+  useEffect(() => {
+    if (!Array.isArray(tcpDevices) || tcpDevices.length === 0) return;
+
+    tcpDevices.forEach((device) => {
+      addLog(
+        `TCP/IP device configured — ${device.name} (${device.host}:${device.port})`,
+        "var(--accent-green)",
+        { source: "DEVICE", level: "INFO" }
+      );
+    });
+  }, [tcpDevices, addLog]);
+
+  // ============================================================
+  // CENTRAL MESSAGE / COMMUNICATION LOG
+  // ============================================================
+  // The Message widget consumes the same `logs` state used by the
+  // existing diagnostic log. Communication events are intentionally
+  // logged only when their value/status changes, not on every 50 ms poll.
+  const previousTCPValuesRef = useRef({});
+  const previousTCPStatusRef = useRef({});
+  const previousTCPErrorsRef = useRef({});
+  const previousInternalValuesRef = useRef({});
+  const tcpMessageInitializedRef = useRef(false);
+  const internalMessageInitializedRef = useRef(false);
+
+  // TCP/IP connection status + errors.
+  // useTCPPLC maintains status per physical binding/address. We expose
+  // the transition as a human-readable device message.
+  useEffect(() => {
+    const currentStatus = tcpConnectionStatus || {};
+    const currentErrors = tcpErrors || {};
+
+    if (!tcpMessageInitializedRef.current) {
+      previousTCPStatusRef.current = { ...currentStatus };
+      previousTCPErrorsRef.current = { ...currentErrors };
+      tcpMessageInitializedRef.current = true;
+
+      // Initial state: report already-connected bindings as INITIAL CONNECTED.
+      Object.entries(currentStatus).forEach(([key, connected]) => {
+        if (connected === true) {
+          addLog(
+            `TCP/IP initial connection OK — ${key}`,
+            "var(--accent-green)",
+            { source: "DEVICE", level: "INFO" }
+          );
+        }
+      });
+
+      Object.entries(currentErrors).forEach(([key, message]) => {
+        if (message) {
+          addLog(
+            `TCP/IP initial connection error — ${key}: ${message}`,
+            "var(--accent-red)",
+            { source: "DEVICE", level: "ERROR" }
+          );
+        }
+      });
+
+      return;
+    }
+
+    const previousStatus = previousTCPStatusRef.current || {};
+    const previousErrors = previousTCPErrorsRef.current || {};
+
+    const keys = new Set([
+      ...Object.keys(previousStatus),
+      ...Object.keys(currentStatus),
+    ]);
+
+    keys.forEach((key) => {
+      const before = previousStatus[key];
+      const after = currentStatus[key];
+
+      if (before !== after && after === true) {
+        addLog(
+          `TCP/IP connected — ${key}`,
+          "var(--accent-green)",
+          { source: "DEVICE", level: "INFO" }
+        );
+      } else if (before !== after && after === false) {
+        const reason = currentErrors[key] || "communication lost";
+        addLog(
+          `TCP/IP disconnected — ${key}: ${reason}`,
+          "var(--accent-red)",
+          { source: "DEVICE", level: "ERROR" }
+        );
+      }
+    });
+
+    const errorKeys = new Set([
+      ...Object.keys(previousErrors),
+      ...Object.keys(currentErrors),
+    ]);
+
+    errorKeys.forEach((key) => {
+      const before = previousErrors[key];
+      const after = currentErrors[key];
+
+      if (after && after !== before) {
+        addLog(
+          `TCP/IP error — ${key}: ${after}`,
+          "var(--accent-red)",
+          { source: "TCP", level: "ERROR" }
+        );
+      }
+    });
+
+    previousTCPStatusRef.current = { ...currentStatus };
+    previousTCPErrorsRef.current = { ...currentErrors };
+  }, [tcpConnectionStatus, tcpErrors, addLog]);
+
+  // TCP/IP data changes.
+  // Only configured runtime bindings are logged so unrelated internal
+  // implementation keys do not flood the Message widget.
+  useEffect(() => {
+    const current = tcpValues || {};
+    const previous = previousTCPValuesRef.current || {};
+
+    if (!tcpMessageInitializedRef.current) {
+      previousTCPValuesRef.current = { ...current };
+      return;
+    }
+
+    const bindingDescriptions = new Map();
+
+    (runtimeWidgets || []).forEach((widget) => {
+      if (!widget) return;
+
+      const p = widget.props || {};
+      const type = String(widget.type || "").toLowerCase();
+
+      if (type === "linechart") {
+        const series = Array.isArray(p.series) ? p.series : [];
+        series.forEach((seriesItem) => {
+          if (String(seriesItem?.sourceType || "tcp").toLowerCase() !== "tcp") return;
+          const key = `${widget.id}:${seriesItem.id}`;
+          if (!Object.prototype.hasOwnProperty.call(current, key)) return;
+          bindingDescriptions.set(
+            key,
+            `${p.title || "LineChart"} / ${seriesItem.name || seriesItem.alias || seriesItem.id}`
+          );
+        });
+        return;
+      }
+
+      if (type === "testtable") {
+        const rows = Array.isArray(p.rows) ? p.rows : [];
+        rows.forEach((row) => {
+          if (String(row?.sourceType || "tcp").toLowerCase() !== "tcp") return;
+          const key = `${widget.id}:${row.id}`;
+          if (!Object.prototype.hasOwnProperty.call(current, key)) return;
+          bindingDescriptions.set(
+            key,
+            `${p.title || "TestTable"} / ${row.item || row.id}`
+          );
+        });
+        return;
+      }
+
+      const source = normalizeInputSource(p.inputSource);
+      const dataSource = String(p.dataSource || "device").trim().toLowerCase();
+
+      if (
+        (source === "tcp" || dataSource === "device") &&
+        hasPLCBinding(widget) &&
+        Object.prototype.hasOwnProperty.call(current, String(widget.id))
+      ) {
+        bindingDescriptions.set(
+          String(widget.id),
+          `${type || "Widget"} ${widget.id} / ${p.device || "TCP device"} / ${p.addressType || ""} ${p.address ?? ""}`.trim()
+        );
+      }
+    });
+
+    bindingDescriptions.forEach((description, key) => {
+      const value = current[key];
+      const before = previous[key];
+
+      if (before !== undefined && !Object.is(before, value)) {
+        addLog(
+          `${description} — value: ${formatMessageValue(before)} → ${formatMessageValue(value)}`,
+          "var(--accent-blue)",
+          { source: "TCP", level: "RX" }
+        );
+      }
+    });
+
+    previousTCPValuesRef.current = { ...current };
+  }, [
+    tcpValues,
+    runtimeWidgets,
+    hasPLCBinding,
+    normalizeInputSource,
+    addLog,
+    formatMessageValue,
+  ]);
+
+  // Internal Variable changes.
+  // useInternalVariables polls at 50 ms, so compare snapshots rather than
+  // creating a message on every poll cycle.
+  useEffect(() => {
+    const current = {};
+    (internalVariables || []).forEach((variable) => {
+      if (!variable?.name) return;
+      current[String(variable.name)] = variable.value;
+    });
+
+    if (!internalMessageInitializedRef.current) {
+      previousInternalValuesRef.current = { ...current };
+      internalMessageInitializedRef.current = true;
+      return;
+    }
+
+    const previous = previousInternalValuesRef.current || {};
+
+    Object.entries(current).forEach(([name, value]) => {
+      if (!Object.prototype.hasOwnProperty.call(previous, name)) return;
+
+      if (!Object.is(previous[name], value)) {
+        addLog(
+          `${name}: ${formatMessageValue(previous[name])} → ${formatMessageValue(value)}`,
+          "var(--accent-purple)",
+          { source: "INTERNAL", level: "INFO" }
+        );
+      }
+    });
+
+    previousInternalValuesRef.current = { ...current };
+  }, [internalVariables, addLog, formatMessageValue]);
+
+  // Reset communication-log baselines together with the runtime reset.
+  useEffect(() => {
+    const handler = () => {
+      previousTCPValuesRef.current = {};
+      previousTCPStatusRef.current = {};
+      previousTCPErrorsRef.current = {};
+      previousInternalValuesRef.current = {};
+      tcpMessageInitializedRef.current = false;
+      internalMessageInitializedRef.current = false;
+    };
+
+    window.addEventListener("cp-reset", handler);
+    return () => window.removeEventListener("cp-reset", handler);
+  }, []);
+
+    // ============================================================
+  // RS232 / SCANNER LOGIC
+  // ============================================================
+
+  const handleScan = useCallback(
+    async (source, value) => {
+      console.log(
+        `[handleScan] source=${source}, cpNumber=${cpNumber}`
+      );
+
+      try {
+        const response = await fetch(
+          `${API}/api/logic-run/${cpNumber}`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+            body: JSON.stringify({
+              device: source,
+              value,
+              fields: fieldValues,
+            }),
+          }
+        );
+
+        const data =
+          await response.json();
+
+        if (!data.success) {
+          addLog(
+            `Logic error: ${data.message}`,
+            "var(--accent-red)"
+          );
+          return;
+        }
+
+        const commands =
+          data.commands || [];
+
+        for (const command of commands) {
+          switch (command.cmd) {
+            case "set_field":
+              setFieldValues(
+                (previous) => ({
+                  ...previous,
+                  [command.key]:
+                    command.value,
+                })
+              );
+              break;
+
+            case "log":
+              addLog(
+                command.message,
+                command.color ||
+                "var(--accent-green)"
+              );
+              break;
+
+            default:
+              console.warn(
+                "Unknown command:",
+                command
+              );
+          }
+        }
+      } catch (err) {
+        addLog(
+          `Scan error: ${err.message}`,
+          "var(--accent-red)"
+        );
+
+        console.error(err);
+      }
+    },
+    [
+      cpNumber,
+      fieldValues,
+      addLog,
+    ]
+  );
+
+  useEffect(() => {
+    const handler = (event) => {
+      if (
+        String(event.detail?.cpNumber) !==
+        String(cpNumber)
+      ) {
+        return;
+      }
+
+      const source = String(event.detail?.source ?? "");
+      const value = String(event.detail?.value ?? "");
+      const scanKind = String(event.detail?.kind || "com").trim().toLowerCase();
+
+      console.log(
+        `[DynamicCPPage] Received cp-scan for ${source} → ${value}`
+      );
+
+      // ------------------------------------------------------------
+      // COM TEXTBOX
+       // ------------------------------------------------------------
+       // Keep COM routing tied to the selected sourceDevice.
+       // Do not use legacy comPort/device/portName/source fallbacks.
+       const normalizeDeviceToken = (v) =>
+         String(v ?? "")
+           .trim()
+           .toLowerCase()
+           .replace(/\s+/g, "");
+
+       const valuesEqual = (actual, expected) => {
+         const a = String(actual ?? "").trim().toLowerCase();
+         const e = String(expected ?? "").trim().toLowerCase();
+         if (a === e) return true;
+         const an = Number(actual);
+         const en = Number(expected);
+         return Number.isFinite(an) && Number.isFinite(en) && an === en;
+       };
+
+       const sourceToken = normalizeDeviceToken(source);
+
+       setComTextBoxValues((previous) => {
+         const next = { ...previous };
+         let changed = false;
+
+         runtimeWidgets.forEach((widget) => {
+           if (widget?.type !== "textbox") return;
+
+           const p = widget.props || {};
+           const inputSource = normalizeInputSource(p.inputSource);
+           const mode = String(p.textMode || "read").trim().toLowerCase();
+
+           if (inputSource !== "com" || mode !== "read") return;
+
+           const configuredSource = normalizeDeviceToken(p.sourceDevice);
+           if (!configuredSource || configuredSource !== sourceToken) return;
+
+           const triggerSource = String(
+             p.readTriggerSource || "realtime"
+           ).trim().toLowerCase();
+
+           let triggerAllowed = true;
+
+           if (triggerSource === "internal") {
+             const variableName = String(
+               p.readTriggerVariable || ""
+             ).trim();
+             const current = variableName
+               ? getInternalValue(variableName)
+               : undefined;
+             triggerAllowed = valuesEqual(
+               current,
+               p.readTriggerValue ?? 1
+             );
+           } else if (triggerSource === "plc") {
+             const triggerBindingId = `${widget.id}:__read_trigger__`;
+             const currentPLCTrigger =
+               tcpValuesRef.current[triggerBindingId];
+
+             triggerAllowed = valuesEqual(
+               currentPLCTrigger,
+               p.readTriggerValue ?? 1
+             );
+
+             console.log(
+               `[DynamicCPPage] COM PLC trigger check: widget=${widget.id}, binding=${triggerBindingId}, current=${currentPLCTrigger}, expected=${p.readTriggerValue ?? 1}, allowed=${triggerAllowed}`
+             );
+           }
+
+           if (!triggerAllowed) {
+             const key = String(widget.id);
+
+             // Never retain/replay COM data collected while the PLC
+             // read-trigger is OFF.
+             if (Object.prototype.hasOwnProperty.call(next, key)) {
+               delete next[key];
+               changed = true;
+             }
+
+             console.log(
+               `[DynamicCPPage] COM scan BLOCKED: widget=${widget.id}, source=${source}, trigger=${triggerSource} — buffer cleared`
+             );
+             return;
+           }
+
+           if (next[String(widget.id)] !== value) {
+             next[String(widget.id)] = value;
+             changed = true;
+           }
+
+           console.log(
+             `[DynamicCPPage] COM TextBox ACCEPTED: ${widget.id} <- ${source} = ${value}`
+           );
+         });
+
+         return changed ? next : previous;
+       });
+
+      // ------------------------------------------------------------
+      // COM INPUT DATA
+      //
+      // cp-scan provides the source payload. The same enable-trigger
+      // logic is used as TCP Input Data.
+      // ------------------------------------------------------------
+      runtimeWidgets.forEach((widget) => {
+        if (widget?.type !== "textbox") return;
+
+        const p = widget.props || {};
+        if (
+          normalizeInputSource(p.inputSource) !== "com" ||
+          String(p.textMode || "").trim().toLowerCase() !== "inputdata"
+        ) {
+          return;
+        }
+
+        const configuredSource = normalizeDeviceToken(p.sourceDevice);
+        if (!configuredSource || configuredSource !== sourceToken) return;
+
+        const triggerSource = String(
+          p.inputDataTriggerSource || "realtime"
+        ).trim().toLowerCase();
+
+        let triggerAllowed = true;
+
+        if (triggerSource === "internal") {
+          const variableName = String(
+            p.inputDataTriggerVariable || ""
+          ).trim();
+
+          triggerAllowed =
+            Boolean(variableName) &&
+            valuesEqual(
+              getInternalValue(variableName),
+              p.inputDataTriggerValue ?? 1
+            );
+        } else if (triggerSource === "plc") {
+          triggerAllowed = valuesEqual(
+            tcpValuesRef.current[
+              `${widget.id}:__inputdata_trigger__`
+            ],
+            p.inputDataTriggerValue ?? 1
+          );
+        }
+
+        if (!triggerAllowed) return;
+
+        acceptInputData(widget, value);
+      });
+
+       // COM + REALTIME TEST TABLE ROWS
+      // ------------------------------------------------------------
+      setTestTableComValues((previous) => {
+        const next = { ...previous };
+        let changed = false;
+
+        runtimeWidgets.forEach((widget) => {
+          if (widget?.type !== "testtable") return;
+
+          const rows = Array.isArray(widget.props?.rows) ? widget.props.rows : [];
+
+          rows.forEach((row) => {
+            const mode = String(row.mode || "realtime").trim().toLowerCase();
+            const sourceType = String(row.sourceType || "tcp").trim().toLowerCase();
+
+            if (mode !== "realtime" || sourceType !== "com") return;
+
+            const configuredSources = [
+              row.sourceDevice,
+              row.comPort,
+              row.device,
+            ]
+              .filter(Boolean)
+              .map(normalizeDeviceToken);
+
+            if (!configuredSources.includes(sourceToken)) return;
+
+            const key = `${widget.id}:${row.id}`;
+            if (next[key] !== value) {
+              next[key] = value;
+              changed = true;
+            }
+          });
+        });
+
+        return changed ? next : previous;
+      });
+
+      // Central Message widget: every incoming scanner/COM/device-trigger
+      // event is recorded before the existing Logic Builder flow runs.
+      const sourceText = String(source || "").trim() || "unknown";
+      const isLikelyDeviceTrigger =
+        scanKind === "device-trigger" ||
+        String(sourceText).toLowerCase().includes("trigger");
+
+      addLog(
+        `${isLikelyDeviceTrigger ? "Device Trigger" : "COM"} RX [${sourceText}] — ${String(value ?? "")}`,
+        "var(--accent-blue)",
+        {
+          source: isLikelyDeviceTrigger ? "DEVICE" : "COM",
+          level: "RX",
+        }
+      );
+
+      // Keep the existing Logic Builder scan flow unchanged.
+      //
+      // Device Trigger scanner supplies an ACK callback. The scanner must keep
+      // the backend event in the queue until this Logic Builder request has
+      // completely finished; otherwise Level mode (1 -> 1) can create the next
+      // event while the previous /api/logic-run is still running.
+      const acknowledge = event.detail?.acknowledge;
+      const isDeviceTrigger =
+        scanKind === "device-trigger";
+
+      if (isDeviceTrigger && typeof acknowledge === "function") {
+        Promise.resolve(handleScan(source, value))
+          .catch((error) => {
+            console.error(
+              "[DynamicCPPage] Device Trigger processing failed:",
+              error
+            );
+          })
+          .finally(() => {
+            acknowledge();
+          });
+      } else {
+        // RS232 / legacy cp-scan behavior remains unchanged.
+        handleScan(source, value);
+      }
+    };
+
+    window.addEventListener(
+      "cp-scan",
+      handler
+    );
+
+    return () => {
+      window.removeEventListener(
+        "cp-scan",
+        handler
+      );
+    };
+  }, [
+    cpNumber,
+    handleScan,
+    normalizeInputSource,
+    widgets,
+    runtimeWidgets,
+    getInternalValue,
+    acceptInputData,
+    addLog,
+  ]);
+
+  // ============================================================
+  // PLC READ-TRIGGER BUFFER CLEAR
+  // ============================================================
+  // A COM scan received while the PLC trigger is OFF must never be
+  // replayed later when the trigger becomes ON.
+  useEffect(() => {
+    setComTextBoxValues((previous) => {
+      let changed = false;
+      const next = { ...previous };
+
+      (runtimeWidgets || []).forEach((widget) => {
+        if (widget?.type !== "textbox") return;
+
+        const p = widget.props || {};
+        const mode = String(p.textMode || "read").trim().toLowerCase();
+        const source = normalizeInputSource(p.inputSource);
+        const triggerSource = String(
+          p.readTriggerSource || "realtime"
+        ).trim().toLowerCase();
+
+        if (mode !== "read" || source !== "com" || triggerSource !== "plc") {
+          return;
+        }
+
+        const triggerBindingId = `${widget.id}:__read_trigger__`;
+        const triggerCurrent = tcpValues[triggerBindingId];
+        const triggerExpected = p.readTriggerValue ?? 1;
+
+        if (!valuesEqualRuntime(triggerCurrent, triggerExpected)) {
+          const key = String(widget.id);
+          if (Object.prototype.hasOwnProperty.call(next, key)) {
+            delete next[key];
+            changed = true;
+          }
+        }
+      });
+
+      return changed ? next : previous;
+    });
+  }, [runtimeWidgets, tcpValues, normalizeInputSource]);
+
+  // ============================================================
+  // PAGE NAVIGATION
+  // ============================================================
+
+  const navigateToPage = useCallback((targetPageId) => {
+    const id = String(targetPageId || "").trim();
+
+    if (!id || !pages[id]) {
+      addLog(
+        `Target page not found: ${id || "(empty)"}`,
+        "var(--accent-red)"
+      );
+      return;
+    }
+
+    // IMPORTANT:
+    // Dynamic Page is the permanent runtime page.
+    // Every other Page Builder page opens inside the popup window.
+    // Do NOT replace activePageId/widgets here, otherwise the Dynamic
+    // runtime is replaced and the popup never appears.
+    if (id !== "dynamic") {
+      setActivePopupPage(id);
+      setPopupMaximized(false);
+
+      console.log(
+        `[DynamicCPPage] Open popup page: ${id} (${pages[id].name || id})`
+      );
+      return;
+    }
+
+    // Explicit request to return to the Dynamic Page.
+    setActivePopupPage(null);
+    setPopupMaximized(false);
+    setActivePageId("dynamic");
+    setWidgets(
+      Array.isArray(pages.dynamic?.widgets)
+        ? pages.dynamic.widgets
+        : []
+    );
+
+    console.log("[DynamicCPPage] Returned to Dynamic Page");
+  }, [addLog, pages]);
+
+  // ============================================================
+  // BUTTON PLC WRITE
+  // ============================================================
+
+  const handleButtonChange =
+    useCallback(
+      async (widget, value) => {
+        const p = widget?.props || {};
+
+        /*
+         * If this button is PLC bound:
+         * write directly to configured Coil or Holding Register.
+         */
+        if (hasPLCBinding(widget)) {
+          const device =
+            getTCPDevice(p.device);
+
+          const addressType =
+            normalizeType(
+              p.addressType
+            );
+
+          try {
+            const result =
+              await writeTCPValue({
+                widgetId: widget.id,
+                device,
+                addressType,
+                address: p.address,
+                dataType: p.dataType,
+                value,
+              });
+
+            if (
+              result &&
+              result.success === false
+            ) {
+              throw new Error(
+                result.message ||
+                "PLC write failed"
+              );
+            }
+
+            console.log(
+              `[DynamicCPPage] PLC write: ${device.name} / ${addressType} / ${p.address} = ${value}`
+            );
+
+            return;
+          } catch (err) {
+            console.error(
+              `[DynamicCPPage] PLC write failed for ${widget.id}:`,
+              err
+            );
+
+            addLog(
+              `PLC write failed: ${err.message}`,
+              "var(--accent-red)"
+            );
+
+            return;
+          }
+        }
+
+        /*
+         * If the button is wired to a Logic Builder flow, run it
+         * exactly like a scanner trigger (device = triggerDevice).
+         * The flow's own scan_input node stores the field and any
+         * downstream nodes' set_field commands update fieldValues.
+         */
+        if (p.triggerLogic) {
+          handleScan(p.triggerDevice || p.fieldKey || p.variable || "Button", value);
+          return;
+        }
+
+        /*
+         * Otherwise, preserve Page Builder variable behavior.
+         */
+        const variableName =
+          p.variable ||
+          p.fieldKey;
+
+        if (variableName) {
+          setFieldValues(
+            (previous) => ({
+              ...previous,
+              [variableName]:
+                value,
+            })
+          );
+        }
+      },
+      [
+        addLog,
+        getTCPDevice,
+        handleScan,
+        hasPLCBinding,
+        normalizeType,
+        writeTCPValue,
+      ]
+    );
+
+  // ============================================================
+  // SELECTOR SWITCH WRITE
+  //
+  // Reads and writes the SAME Holding Register (or Internal Variable) —
+  // same pattern as Text Box's Write mode. Position changes are picked
+  // from a fixed list, not typed, so there's no validation to do here
+  // beyond routing to the right sink.
+  // ============================================================
+  const handleSelectorSwitchChange = useCallback(
+    async (widget, value) => {
+      const p = widget?.props || {};
+      const source = String(p.dataSource || "device").trim().toLowerCase();
+
+      if (source === "internal") {
+        const variableName = String(p.internalVariable || "").trim();
+        if (!variableName) {
+          addLog("Selector Switch internal variable name is empty", "var(--accent-red)");
+          return;
+        }
+        try {
+          await setInternalValue(variableName, value);
+        } catch (err) {
+          addLog(`Selector Switch internal write failed: ${err.message}`, "var(--accent-red)");
+        }
+        return;
+      }
+
+      const device = getTCPDevice(p.device);
+      const addressType = normalizeType(p.addressType);
+
+      if (!device || !addressType) {
+        addLog("Selector Switch has no device/address configured", "var(--accent-red)");
+        return;
+      }
+
+      try {
+        const result = await writeTCPValue({
+          widgetId: widget.id,
+          device,
+          addressType,
+          address: p.address,
+          dataType: p.dataType,
+          value,
+        });
+
+        if (result && result.success === false) {
+          throw new Error(result.message || "PLC write failed");
+        }
+      } catch (err) {
+        addLog(`Selector Switch write failed: ${err.message}`, "var(--accent-red)");
+      }
+    },
+    [
+      acceptInputData,
+      addLog,
+      getTCPDevice,
+      normalizeType,
+      setInternalValue,
+      writeTCPValue,
+    ]
+  );
+
+  // ============================================================
+  // TEXTBOX TCP/IP WRITE
+  // ============================================================
+  const handleTextBoxWrite = useCallback(
+    async (widget, rawValue) => {
+      const p = widget?.props || {};
+      const mode = String(p.textMode || "read").trim().toLowerCase();
+      const source = normalizeInputSource(p.inputSource);
+
+      // ----------------------------------------------------------
+      // INPUT DATA / REFERENCE DB
+      // ----------------------------------------------------------
+      // Reference DB values are INPUT DATA, not PLC WRITE data.
+      // The RuntimeTextBox can call onWrite() for both a typed value
+      // and a selected dropdown value, so route both through the same
+      // Input Data -> Internal Variable pipeline.
+      //
+      // IMPORTANT:
+      // - Do not require textMode === "write" here.
+      // - Do not use p.variable for Reference DB.
+      // - The destination is inputDataDestinationVariable.
+      // - acceptInputData() performs datatype conversion and the actual
+      //   setInternalValue() write.
+      if (mode === "inputdata" && source === "reference") {
+        const destination = String(
+          p.inputDataDestinationVariable ||
+          p.destinationVariable ||
+          ""
+        ).trim();
+
+        if (!destination) {
+          addLog(
+            "Reference DB TextBox destination Internal Variable is empty",
+            "var(--accent-red)"
+          );
+          return;
+        }
+
+        await acceptInputData(widget, rawValue);
+        return;
+      }
+
+      if (mode !== "write") return;
+      const variableName = String(p.variable || "").trim();
+      const dataType = String(p.dataType || "number").trim().toLowerCase();
+
+      // ----------------------------------------------------------
+      // INTERNAL VARIABLE WRITE
+      // ----------------------------------------------------------
+      // The variable name is the key in DynamicCPPage.fieldValues.
+      // No PLC/device is involved.
+      if (source === "internal") {
+        if (!variableName) {
+          addLog("TextBox internal variable name is empty", "var(--accent-red)");
+          return;
+        }
+
+        let value = rawValue;
+
+        if (dataType === "boolean") {
+          const normalized = String(rawValue ?? "").trim().toLowerCase();
+          if (["1", "true", "on"].includes(normalized)) value = 1;
+          else if (["0", "false", "off"].includes(normalized)) value = 0;
+          else {
+            addLog("Internal boolean value must be 0/1 or ON/OFF", "var(--accent-red)");
+            return;
+          }
+        } else if (dataType === "integer") {
+          value = Number.parseInt(String(rawValue).trim(), 10);
+          if (!Number.isFinite(value)) {
+            addLog("Internal variable value must be an integer", "var(--accent-red)");
+            return;
+          }
+        } else if (dataType === "number") {
+          value = Number(String(rawValue).trim());
+          if (!Number.isFinite(value)) {
+            addLog("Internal variable value must be numeric", "var(--accent-red)");
+            return;
+          }
+        } else {
+          value = String(rawValue ?? "");
+        }
+
+        try {
+          await setInternalValue(variableName, value);
+
+          console.log(
+            `[DynamicCPPage] TextBox internal variable write: ${widget.id} -> ${variableName} =`,
+            value
+          );
+
+          addLog(
+            `TextBox variable ${variableName} = ${String(value)}`,
+            "var(--accent-green)"
+          );
+        } catch (error) {
+          console.error(`[DynamicCPPage] Internal variable write failed for ${variableName}:`, error);
+          addLog(`Internal variable write failed: ${error.message}`, "var(--accent-red)");
+        }
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // TCP/IP WRITE
+      // ----------------------------------------------------------
+      if (source !== "tcp") {
+        addLog("TextBox write requires Internal Variable or TCP/IP source", "var(--accent-red)");
+        return;
+      }
+
+      const device = getTCPDevice(p.device);
+      const addressType = normalizeType(p.addressType);
+
+      if (!device || !addressType || p.address === undefined || p.address === null || String(p.address).trim() === "") {
+        addLog("TextBox TCP/IP write configuration is incomplete", "var(--accent-red)");
+        return;
+      }
+
+      const isModbusType = addressType === "coil" || addressType === "holding_register";
+      const isOtherPlcType = addressType === TAG_ADDRESS_TYPE || Boolean(normalizeFinsArea(addressType));
+
+      if (!isModbusType && !isOtherPlcType) {
+        addLog("TextBox PLC write supports Coil / Holding Register, FINS areas or EtherNet/IP tags only", "var(--accent-red)");
+        return;
+      }
+
+      let value;
+
+      if (dataType === "boolean") {
+        const normalized = String(rawValue ?? "").trim().toLowerCase();
+        if (["1", "true", "on"].includes(normalized)) value = 1;
+        else if (["0", "false", "off"].includes(normalized)) value = 0;
+        else {
+          addLog("TextBox boolean value must be 0/1 or ON/OFF", "var(--accent-red)");
+          return;
+        }
+      } else if (dataType === "integer") {
+        value = Number.parseInt(String(rawValue).trim(), 10);
+        if (!Number.isFinite(value)) {
+          addLog("TextBox value must be an integer", "var(--accent-red)");
+          return;
+        }
+      } else {
+        value = Number(String(rawValue).trim());
+        if (!Number.isFinite(value)) {
+          addLog("TextBox TCP/IP value must be numeric", "var(--accent-red)");
+          return;
+        }
+      }
+
+      if (addressType === "coil") {
+        value = value ? 1 : 0;
+      } else if (addressType === "holding_register" && (!Number.isInteger(value) || value < 0 || value > 65535)) {
+        addLog("Holding Register value must be an integer from 0 to 65535", "var(--accent-red)");
+        return;
+      }
+
+      try {
+        const result = await writeTCPValue({
+          widgetId: widget.id,
+          device,
+          addressType,
+          address: p.address,
+          dataType: p.dataType,
+          value,
+        });
+
+        if (result && result.success === false) {
+          throw new Error(result.message || "PLC write failed");
+        }
+
+        console.log(
+          `[DynamicCPPage] TextBox PLC write: ${widget.id} -> ${device.name} / ${addressType} / ${p.address} = ${value}`
+        );
+      } catch (err) {
+        console.error(`[DynamicCPPage] TextBox PLC write failed for ${widget.id}:`, err);
+        addLog(`TextBox PLC write failed: ${err.message}`, "var(--accent-red)");
+      }
+    },
+    [
+      addLog,
+      getTCPDevice,
+      normalizeInputSource,
+      normalizeType,
+      setFieldValues,
+      setInternalValue,
+      writeTCPValue,
+    ]
+  );
+
+  // ============================================================
+  // TEST TABLE VALUE RESOLUTION
+  // ============================================================
+  const getTestTableValue = useCallback((widget, row) => {
+    const mode = String(row?.mode || "realtime").trim().toLowerCase();
+    const source = String(row?.sourceType || "tcp").trim().toLowerCase();
+    const key = `${widget.id}:${row.id}`;
+
+    if (mode === "realtime" && source === "tcp") {
+      return tcpValues[key];
+    }
+
+    if (mode === "realtime" && source === "com") {
+      return testTableComValues[key];
+    }
+
+    // Sequential: Logic Builder can expose the value using either
+    // testtable:<widget>:<row>, the testing item text, or fieldKey.
+    return (
+      fieldValues[`testtable:${widget.id}:${row.id}`] ??
+      fieldValues[`testtable:${widget.id}:${row.item}`] ??
+      fieldValues[row.item] ??
+      fieldValues[row.fieldKey]
+    );
+  }, [tcpValues, testTableComValues, fieldValues]);
+
+  const openPopupPage = useCallback((page) => {
+    const id = String(page || "").trim();
+
+    if (!id || id === "dynamic" || !pages[id]) {
+      if (id && id !== "dynamic") {
+        addLog(
+          `Popup page not found: ${id}`,
+          "var(--accent-red)"
+        );
+      }
+      return;
+    }
+
+    setActivePopupPage(id);
+    setPopupMaximized(false);
+
+    console.log(
+      `[DynamicCPPage] Open popup page: ${id} (${pages[id].name || id})`
+    );
+  }, [addLog, pages]);
+
+  const closePopupPage = useCallback(() => {
+    const closedPage = String(activePopupPage || "").trim();
+    if (closedPage) {
+      const popupWidget = runtimeWidgets.find(widget =>
+        widget?.type === "popup" &&
+        String(widget?.props?.targetPage || "").trim() === closedPage
+      );
+      if (popupWidget) {
+        popupClosedByUserRef.current[String(popupWidget.id)] = true;
+      }
+    }
+    setActivePopupPage(null);
+    setPopupMaximized(false);
+  }, [activePopupPage, runtimeWidgets]);
+
+  const renderRuntimeWidget = useCallback((widget) => {
+    const { type, id } = widget;
+    const runtimeValue = getRuntimeValue(widget);
+
+    if (type === "button") return <RuntimeButton key={id} widget={widget} value={runtimeValue} onChange={(value) => handleButtonChange(widget, value)} onNavigate={navigateToPage} />;
+    if (type === "light") return <RuntimeLight key={id} widget={widget} value={runtimeValue} />;
+    if (type === "shape") return <RuntimeShape key={id} widget={widget} />;
+    if (type === "textbox") return (
+      <RuntimeTextBox
+        key={id}
+        widget={widget}
+        value={runtimeValue}
+        onWrite={(value) => handleTextBoxWrite(widget, value)}
+      />
+    );
+    if (type === "linechart") return <RuntimeLineChart key={id} widget={widget} history={chartHistory[id] || []} running={chartRunning[id] !== false} />;
+    if (type === "gauge") return <RuntimeGauge key={id} widget={widget} value={runtimeValue} />;
+    if (type === "testtable") return <RuntimeTestTable key={id} widget={widget} getValue={getTestTableValue} />;
+    if (type === "camerafeed") return <RuntimeCameraFeed key={id} widget={widget} cpNumber={cpNumber} />;
+    if (type === "image") return <RuntimeImage key={id} widget={widget} />;
+    if (type === "alarmbanner") return <RuntimeAlarmBanner key={id} widget={widget} value={runtimeValue} />;
+    if (type === "progressbar") return <RuntimeProgressBar key={id} widget={widget} value={runtimeValue} />;
+    if (type === "selectorswitch") return <RuntimeSelectorSwitch key={id} widget={widget} value={runtimeValue} onChange={(value) => handleSelectorSwitchChange(widget, value)} />;
+    if (type === "message") return (
+      <RuntimeMessage
+        key={id}
+        widget={widget}
+        logs={logs}
+        onClear={() => setLogs([])}
+      />
+    );
+
+    if (type === "popup") {
+      const p = widget?.props || {};
+      const target = String(p.targetPage || "").trim();
+      const reopenEnabled = p.reopenEnabled !== false;
+      const closedByUser = popupClosedByUserRef.current[String(id)] === true;
+
+      // Use ONLY the Internal Variable belonging to this active CP.
+      const variableName = String(p.triggerVariable || "").trim();
+      const activeVariable = activeCPInternalMap.get(variableName);
+      const triggerRaw = variableName ? getInternalValue(variableName) : undefined;
+      const triggerActive = Boolean(activeVariable) && valuesEqualRuntime(triggerRaw, p.triggerValue ?? 1);
+
+      if (!reopenEnabled || !target || !pages[target] || !triggerActive || !closedByUser || activePopupPage) {
+        return null;
+      }
+
+      const width = Math.max(40, Number(p.width ?? 180));
+      const height = Math.max(28, Number(p.height ?? 48));
+
+      return (
+        <div
+          key={id}
+          className="absolute z-[80] flex items-center justify-center overflow-hidden rounded-lg cursor-pointer select-none"
+          style={{
+            left: Number(widget?.x ?? 0),
+            top: Number(widget?.y ?? 0),
+            width,
+            height,
+            background: p.reopenBackground || "var(--accent-green, #22c55e)",
+            color: p.reopenTextColor || "#ffffff",
+            border: `1px solid ${p.reopenBorderColor || "rgba(255,255,255,0.35)"}`,
+            borderRadius: Number(p.borderRadius ?? 8),
+            opacity: Number(p.reopenOpacity ?? 1),
+            boxSizing: "border-box",
+            fontSize: Number(p.reopenFontSize ?? 12),
+            fontWeight: 700,
+            boxShadow: "0 6px 18px rgba(0,0,0,0.22)",
+          }}
+          title={`Reopen ${pages[target]?.name || target}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            popupClosedByUserRef.current[String(id)] = false;
+            openPopupPage(target);
+          }}
+        >
+          {String(p.reopenText || "REOPEN POPUP")}
+        </div>
+      );
+    }
+
+    // Manual / Calibration / Timing Limit are no longer special widgets.
+    // They are now normal custom pages created through Page Builder.
+    return null;
+  }, [cpNumber, chartHistory, chartRunning, getRuntimeValue, handleButtonChange, handleTextBoxWrite, handleSelectorSwitchChange, getTestTableValue, tcpValues, writeTCPValue, getTCPDevice, normalizeType, openPopupPage, navigateToPage, logs, fieldValues, getInternalValue, activeCPInternalMap, valuesEqualRuntime, pages, activePopupPage]);
+
+  // ============================================================
+  // RENDER STATES
+  // ============================================================
+
+  if (!cpNumber) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-[var(--accent-red)] text-xs font-mono">
+        Error: No CP Number provided.
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <div className="flex items-center gap-2 text-[var(--accent-green)] text-xs">
+          <div className="w-4 h-4 border-2 border-[var(--accent-green)] border-t-transparent rounded-full animate-spin" />
+          Loading page layout…
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
+        <span className="text-3xl opacity-30">
+          ⚠
+        </span>
+
+        <p className="text-[var(--accent-red)] text-sm">
+          {error}
+        </p>
+
+        <p className="text-[var(--text-muted)] text-xs">
+          Make sure you have saved a layout
+          in the Page Builder.
+        </p>
+      </div>
+    );
+  }
+
+  if (!activePageId || widgets.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
+        <span className="text-4xl opacity-20">{activePageId ? "🔧" : "📄"}</span>
+
+        <p className="text-[var(--text-primary)] font-semibold">
+          {activePageId ? `Page "${pages[activePageId]?.name || activePageId}" is empty` : `No page configured for CP${cpNumber}`}
+        </p>
+
+        <p className="text-[var(--text-muted)] text-xs">
+          Open Page Builder (Engineer →
+          Settings) to design this CP page.
+        </p>
+      </div>
+    );
+  }
+
+  // The OUTER canvas is the selected runtime resolution.
+  // The INNER design remains in Page Builder pixels and is transformed
+  // to fill the runtime canvas exactly.
+  // ============================================================
+  // RENDER PAGE
+  // ============================================================
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative flex-1 bg-[var(--bg-canvas)] overflow-hidden font-sans flex items-center justify-center"
+      style={{ minWidth: 0, minHeight: 0 }}
+    >
+      <div
+        style={{
+          // Runtime HMI is one complete runtimeResolution-sized surface,
+          // laid out at its NATURAL (untransformed) size and then visually
+          // shrunk to fit the actual available viewport via `scale()`.
+          // Setting width/height alone (without this transform) does not
+          // resize the content painted inside it — that was the bug: the
+          // box's declared size and its rendered content size never agreed,
+          // so nothing ever actually got smaller on a narrower screen.
+          width: runtimeResolution.width,
+          height: runtimeResolution.height,
+          position: "absolute",
+          // IMPORTANT: X=0 in Page Builder must remain the LEFT EDGE
+          // of the usable Dynamic Page canvas. Do not center the HMI
+          // horizontally because that would add an invisible X offset
+          // even when the first widget is at x=0.
+          left: `${viewportOffsetX}px`,
+          top: 0,
+          margin: 0,
+          transform: `scale(${viewportScaleX}, ${viewportScaleY})`,
+          transformOrigin: "top left",
+          flex: "0 0 auto",
+        }}
+      >
+        {/* Clean HMI surface: no debug labels or runtime overlays are drawn
+            inside the 1920×1080 coordinate space. */}
+        <div
+          className="relative origin-top-left"
+          style={{
+            width: designCanvas.width,
+            height: designCanvas.height,
+            transform: `scale(${scaleX}, ${scaleY})`,
+            transformOrigin: "top left",
+          }}
+        >
+          {widgets.map(renderRuntimeWidget)}
+        </div>
+      </div>
+
+
+      {activePopupPage && popupPage && (
+        <div
+          className="fixed inset-0 z-[1000] flex items-center justify-center p-3 sm:p-5"
+          style={{
+            background: "rgba(3, 8, 14, 0.78)",
+            backdropFilter: "blur(7px)",
+            WebkitBackdropFilter: "blur(7px)",
+          }}
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              activePopupWidget?.props?.closeOnOutside !== false
+            ) {
+              closePopupPage();
+            }
+          }}
+        >
+          <section
+            className={
+              popupMaximized
+                ? "relative w-full h-full overflow-hidden rounded-xl"
+                : "relative overflow-hidden rounded-xl"
+            }
+            style={{
+              width: popupMaximized ? "100%" : `min(${Math.max(240, activePopupWidth)}px, 94vw)`,
+              height: popupMaximized ? "100%" : `min(${Math.max(160, activePopupHeight)}px, 88vh)`,
+              background: "var(--bg-surface, #f7fafc)",
+              border: "1px solid rgba(148, 163, 184, 0.55)",
+              boxShadow:
+                "0 24px 80px rgba(0,0,0,0.48), 0 8px 28px rgba(0,0,0,0.24)",
+            }}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            {/* Professional window title bar */}
+            <header
+              className="absolute inset-x-0 top-0 z-30 h-[50px] flex items-center justify-between px-3 sm:px-4"
+              style={{
+                background:
+                  "linear-gradient(180deg, #12202d 0%, #0b1621 100%)",
+                borderBottom: "1px solid rgba(148,163,184,0.22)",
+              }}
+            >
+              <div className="flex items-center min-w-0 gap-3">
+                <div
+                  className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                  style={{
+                    background: "rgba(34,197,94,0.12)",
+                    border: "1px solid rgba(34,197,94,0.35)",
+                    color: "#86efac",
+                  }}
+                >
+                  <span className="text-sm">
+                    {popupPage.icon || "📄"}
+                  </span>
+                </div>
+
+                <div className="min-w-0 leading-none">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[12px] font-bold text-white truncate">
+                      {popupPage.name || activePopupPage}
+                    </span>
+                    <span
+                      className="px-1.5 py-[3px] rounded text-[7px] font-bold tracking-[0.08em]"
+                      style={{
+                        color: "#86efac",
+                        background: "rgba(34,197,94,0.12)",
+                        border: "1px solid rgba(34,197,94,0.28)",
+                      }}
+                    >
+                      POPUP
+                    </span>
+                  </div>
+                  <div className="mt-1 text-[7px] text-slate-400 tracking-wide">
+                    CP{cpNumber} • RUNTIME PAGE
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <div
+                  className="hidden sm:flex items-center gap-1.5 px-2.5 h-7 rounded-md mr-1"
+                  style={{
+                    color: "#86efac",
+                    background: "rgba(34,197,94,0.08)",
+                    border: "1px solid rgba(34,197,94,0.20)",
+                  }}
+                >
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{
+                      background: "#22c55e",
+                      boxShadow: "0 0 7px rgba(34,197,94,0.8)",
+                    }}
+                  />
+                  <span className="text-[7px] font-bold tracking-wide">
+                    RUNTIME ACTIVE
+                  </span>
+                </div>
+
+                {/* <button
+                  type="button"
+                  title={popupMaximized ? "Restore" : "Maximize"}
+                  onClick={() => setPopupMaximized((value) => !value)}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                  style={{
+                    background: "rgba(148,163,184,0.07)",
+                    border: "1px solid rgba(148,163,184,0.18)",
+                  }}
+                >
+                  {popupMaximized ? "❐" : "□"}
+                </button>
+
+                <button
+                  type="button"
+                  title="Close"
+                  onClick={closePopupPage}
+                  className="w-8 h-8 rounded-md flex items-center justify-center text-slate-300 hover:text-white transition-colors"
+                  style={{
+                    background: "rgba(148,163,184,0.07)",
+                    border: "1px solid rgba(148,163,184,0.18)",
+                  }}
+                >
+                  ✕
+                </button> */}
+              </div>
+            </header>
+
+            {/* Compact context bar */}
+            <div
+              className="absolute top-[50px] inset-x-0 z-20 h-[30px] flex items-center justify-between px-4"
+              style={{
+                background: "#eef3f7",
+                borderBottom: "1px solid #d7e0e8",
+              }}
+            >
+              <div className="flex items-center gap-2 text-[7px] font-semibold tracking-wide">
+                <span className="text-slate-400">PAGE</span>
+                <span className="text-slate-500">/</span>
+                <span className="text-slate-700 truncate">
+                  {popupPage.name || activePopupPage}
+                </span>
+              </div>
+
+              <div className="text-[7px] font-mono text-slate-400">
+                CP: {String(cpNumber).padStart(2, "0")}
+              </div>
+            </div>
+
+            {/* Actual popup viewport */}
+            <div
+              ref={popupViewportRef}
+              className="absolute inset-x-0 bottom-[28px] top-[80px] overflow-hidden flex items-center justify-center"
+              style={{
+                background:
+                  "linear-gradient(145deg, #f3f7fa 0%, #fbfcfd 48%, #f5f1e7 100%)",
+              }}
+            >
+              {popupWidgets.length === 0 ? (
+                <div className="text-center px-6">
+                  <div className="text-4xl opacity-20 mb-3">
+                    {popupPage.icon || "📄"}
+                  </div>
+                  <div className="text-slate-700 font-bold text-sm">
+                    {popupPage.name || activePopupPage}
+                  </div>
+                  <div className="text-slate-400 text-xs mt-1">
+                    This page is empty. Open Page Builder to design it.
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="relative shrink-0"
+                  style={{
+                    width: popupBounds.width,
+                    height: popupBounds.height,
+                    transform: `scale(${popupScale})`,
+                    transformOrigin: "center center",
+                  }}
+                >
+                  <div
+                    className="absolute overflow-hidden"
+                    style={{
+                      left: 0,
+                      top: 0,
+                      width: popupBounds.width,
+                      height: popupBounds.height,
+                    }}
+                  >
+                    <div
+                      className="absolute"
+                      style={{
+                        left: -popupBounds.minX,
+                        top: -popupBounds.minY,
+                        width: popupDesignCanvas.width,
+                        height: popupDesignCanvas.height,
+                      }}
+                    >
+                      {popupWidgets.map(renderRuntimeWidget)}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Footer/status bar */}
+            <footer
+              className="absolute bottom-0 inset-x-0 z-20 h-[28px] flex items-center justify-between px-3"
+              style={{
+                background: "#f8fafc",
+                borderTop: "1px solid #d7e0e8",
+              }}
+            >
+              <span className="text-[7px] font-mono text-slate-400">
+                Dynamic Runtime • Live Widget Mode
+              </span>
+
+              <span className="flex items-center gap-1.5 text-[7px] font-semibold text-slate-500">
+                <span
+                  className="w-1.5 h-1.5 rounded-full"
+                  style={{ background: "#22c55e" }}
+                />
+                Active
+              </span>
+            </footer>
+          </section>
+        </div>
+      )}
+
+      {/* Optional communication diagnostic */}
+      {tcpDeviceError && (
+        <div className="fixed bottom-2 right-2 px-3 py-1.5 rounded-lg bg-[var(--border-soft)]/95 border border-[var(--status-red-bg)] text-[var(--accent-red-soft)] text-[9px] font-mono shadow-xl">
+          TCP device list: {tcpDeviceError}
+        </div>
+      )}
+    </div>
+  );
+}

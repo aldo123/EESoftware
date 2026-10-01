@@ -1,0 +1,23 @@
+{
+    "Control Point": {
+        "Control Point Code": "BM01-VM01-CP01",
+        "Control Point Family": "CP01 EE Software",
+        "Control Point Name": "CP01 - Equipment Software",
+        "Data Point": "CP01 EE",
+        "Interlock ByPass": "No",
+        "Process": "CP101"
+    },
+    "Documents": {
+        "Max Document Size": "10485760"
+    },
+    "Tester": {
+        "Max Retest Number": "1"
+    },
+    "Traceability Server": {
+        "Database Server": "127.0.0.1",
+        "TraceabilityCatalog": "interlock",
+        "TraceabilityPassword": "1234",
+        "TraceabilitySslMode": "REQUIRED",
+        "TraceabilityUserId": "root"
+    }
+}

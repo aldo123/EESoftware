@@ -1,0 +1,35 @@
+{
+  "02": {
+    "kpi_format": "pass1_pass2_fpy1_fpy2_total",
+    "sn_column": "sn",
+    "fpy_formula": {
+      "numerator": "pass",
+      "denominator": "total_qty",
+      "multiplier": 100.0
+    },
+    "fpy1_formula": {
+      "numerator": "pass1",
+      "denominator": "total_qty",
+      "multiplier": 100.0
+    },
+    "fpy2_formula": {
+      "numerator": "pass",
+      "denominator": "total_qty",
+      "multiplier": 100.0
+    },
+    "shifts": [
+      {
+        "id": "shift1",
+        "label": "Shift 1",
+        "start": "08:00",
+        "end": "19:30"
+      },
+      {
+        "id": "shift2",
+        "label": "Shift 2",
+        "start": "20:00",
+        "end": "07:30"
+      }
+    ]
+  }
+}

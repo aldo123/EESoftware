@@ -1,0 +1,140 @@
+{
+  "cp": "101",
+  "nodes": [
+    {
+      "config": {
+        "change_timeout_seconds": "0",
+        "conditions": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "compare_source": "fixed",
+            "compare_variable_name": "",
+            "compare_variable_name2": "",
+            "database_data_column": "",
+            "database_lookup_column": "sn",
+            "database_table": "",
+            "device_name": "",
+            "operator": "not_equals",
+            "protocol": "tcp",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "value": "",
+            "value2": "",
+            "variable_name": "snball"
+          }
+        ],
+        "race_group": "",
+        "timeout_seconds": "10",
+        "wait_mode": "on_change"
+      },
+      "id": "n1790842333409_8",
+      "type": "multi_condition_gate",
+      "x": 111.1328125,
+      "y": 151.8828125
+    },
+    {
+      "config": {
+        "change_timeout_seconds": "0",
+        "conditions": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "compare_source": "fixed",
+            "compare_variable_name": "",
+            "compare_variable_name2": "",
+            "database_data_column": "",
+            "database_lookup_column": "sn",
+            "database_table": "",
+            "device_name": "",
+            "operator": "not_equals",
+            "protocol": "tcp",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "value": "",
+            "value2": "",
+            "variable_name": "snhipot"
+          }
+        ],
+        "race_group": "",
+        "timeout_seconds": "10",
+        "wait_mode": "on_change"
+      },
+      "id": "n1790842392963_10",
+      "type": "multi_condition_gate",
+      "x": 378.1328125,
+      "y": 145.8828125
+    },
+    {
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "connection_type": "internal",
+            "device": "",
+            "device_name": "",
+            "trigger_mode": "level",
+            "trigger_value": "1",
+            "variable_name": "dc"
+          }
+        ],
+        "trigger_mode": "level"
+      },
+      "id": "n1790842553289_17",
+      "type": "device_trigger",
+      "x": 181.1328125,
+      "y": 30.8828125
+    },
+    {
+      "config": {
+        "address": "0",
+        "address_type": "holding_register",
+        "append_cr": false,
+        "append_lf": false,
+        "data_type": "",
+        "decode_mode": "value",
+        "delimiter_hex": "",
+        "destination_variable_name": "test",
+        "device_name": "Hipot",
+        "encoding": "utf-8",
+        "protocol": "udp_serial",
+        "read_length": "1",
+        "read_size": "0",
+        "request_hex": "",
+        "request_mode": "text",
+        "request_text": "*IDN?",
+        "response_mode": "text",
+        "response_timeout": "1",
+        "wait_response": true
+      },
+      "id": "n1790845001568_1",
+      "type": "read_communication",
+      "x": 109.1328125,
+      "y": 270.5078125
+    }
+  ],
+  "connections": [
+    {
+      "fromId": "n1790842553289_17",
+      "fromPort": "next",
+      "id": "n1790842555738_19",
+      "toId": "n1790842333409_8"
+    },
+    {
+      "fromId": "n1790842553289_17",
+      "fromPort": "next",
+      "id": "n1790842557927_20",
+      "toId": "n1790842392963_10"
+    },
+    {
+      "fromId": "n1790842333409_8",
+      "fromPort": "true",
+      "id": "n1790845039040_3",
+      "toId": "n1790845001568_1"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "cp": "03",
+  "nodes": [
+    {
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "connection_type": "internal",
+            "device": "",
+            "device_name": "",
+            "trigger_value": "1",
+            "variable_name": "Load"
+          }
+        ]
+      },
+      "id": "n1789838839210_4",
+      "type": "device_trigger",
+      "x": 395.1328125,
+      "y": 42.5078125
+    },
+    {
+      "config": {
+        "expose_check": false,
+        "template_id": "productinfo",
+        "template_name": "ProductInfo"
+      },
+      "id": "n1789847590956_3",
+      "type": "subflow_call",
+      "x": 587.1328125,
+      "y": 132.5078125
+    }
+  ],
+  "connections": [
+    {
+      "fromId": "n1789838839210_4",
+      "fromPort": "next",
+      "id": "n1789847677688_10",
+      "toId": "n1789847590956_3"
+    }
+  ]
+}

@@ -1,0 +1,697 @@
+{
+  "id": "check_limit",
+  "name": "Check Limit",
+  "description": "",
+  "nodes": [
+    {
+      "config": {
+        "address": "0",
+        "address_type": "holding_register",
+        "device_name": "",
+        "field_key": "",
+        "protocol": "tcp",
+        "read_source": "none",
+        "variable_name": ""
+      },
+      "id": "gi",
+      "type": "group_input",
+      "x": 82,
+      "y": 16
+    },
+    {
+      "config": {
+        "address": "0",
+        "address_type": "holding_register",
+        "device_name": "",
+        "port": "true",
+        "protocol": "tcp",
+        "value": "1",
+        "value_field_key": "",
+        "value_source": "static",
+        "variable_name": "",
+        "write_target": "none"
+      },
+      "id": "go",
+      "type": "group_output",
+      "x": 230,
+      "y": 951
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "not_equals",
+            "value": "Dummystep1",
+            "value2": "",
+            "variable_name": "ProductSNHPT"
+          },
+          {
+            "operator": "not_equals",
+            "value": "Dummyhipot",
+            "value2": "",
+            "variable_name": "ProductSNHPT"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "instant"
+      },
+      "id": "n1789055165206_4",
+      "type": "multi_condition_gate",
+      "x": 159.7578125,
+      "y": 676.5078125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "equals",
+            "value": "Dummystep1",
+            "value2": "",
+            "variable_name": "ProductSNHPT"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "instant"
+      },
+      "id": "n1789055287492_10",
+      "type": "multi_condition_gate",
+      "x": 365.7578125,
+      "y": 675.5078125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "equals",
+            "value": "Dummyhipot",
+            "value2": "",
+            "variable_name": "ProductSNHPT"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "instant"
+      },
+      "id": "n1789055290941_11",
+      "type": "multi_condition_gate",
+      "x": 567.7578125,
+      "y": 665.5078125
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "LSLPSTEP1",
+            "variable_name": "LSLSTEP1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "LSLPSTEP2",
+            "variable_name": "LSLSTEP2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "LSLPSTEP3",
+            "variable_name": "LSLSTEP3"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "USLPSTEP1",
+            "variable_name": "USLSTEP1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "USLPSTEP2",
+            "variable_name": "USLSTEP2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "USLPSTEP3",
+            "variable_name": "USLSTEP3"
+          }
+        ]
+      },
+      "id": "n1789055335703_15",
+      "type": "write_output",
+      "x": 11.7578125,
+      "y": 793.5078125
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "LSLDSSTEP1",
+            "variable_name": "LSLSTEP1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "LSLDSSTEP2",
+            "variable_name": "LSLSTEP2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "LSLDSSTEP3",
+            "variable_name": "LSLSTEP3"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "USLDSSTEP1",
+            "variable_name": "USLSTEP1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "USLDSSTEP2",
+            "variable_name": "USLSTEP2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "USLDSSTEP3",
+            "variable_name": "USLSTEP3"
+          }
+        ]
+      },
+      "id": "n1789055649693_26",
+      "type": "write_output",
+      "x": 227.7578125,
+      "y": 797.5078125
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "LSLDHSTEP1",
+            "variable_name": "LSLSTEP1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "LSLDHSTEP2",
+            "variable_name": "LSLSTEP2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "LSLDHSTEP3",
+            "variable_name": "LSLSTEP3"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "USLDHSTEP1",
+            "variable_name": "USLSTEP1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "USLDHSTEP2",
+            "variable_name": "USLSTEP2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "internal_variable",
+            "value_variable_name": "USLDHSTEP3",
+            "variable_name": "USLSTEP3"
+          }
+        ]
+      },
+      "id": "n1789055653414_27",
+      "type": "write_output",
+      "x": 456.7578125,
+      "y": 789.5078125
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "1",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "static",
+            "value_variable_name": "",
+            "variable_name": "Start"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "3",
+            "value_address": "0",
+            "value_address_type": "holding_register",
+            "value_device_name": "",
+            "value_protocol": "tcp",
+            "value_source": "static",
+            "value_variable_name": "",
+            "variable_name": "StatusHPT"
+          }
+        ]
+      },
+      "id": "n1789057119663_4",
+      "type": "write_output",
+      "x": 79.7578125,
+      "y": 121.5078125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "equals",
+            "value": "TRUE",
+            "value2": "",
+            "variable_name": "Start"
+          },
+          {
+            "operator": "not_equals",
+            "value": "",
+            "value2": "",
+            "variable_name": "ProductSNHPT"
+          },
+          {
+            "operator": "not_equals",
+            "value": "",
+            "value2": "",
+            "variable_name": "CarrierSN"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "poll"
+      },
+      "id": "n1789057168369_6",
+      "type": "multi_condition_gate",
+      "x": 186.7578125,
+      "y": 211.5078125
+    },
+    {
+      "config": {
+        "group_name": "",
+        "mode": "selected",
+        "targets": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "Start"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ProductSNHPT"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "CarrierSN"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "StatusHPT"
+          }
+        ]
+      },
+      "id": "n1789290644216_1",
+      "type": "reset_node",
+      "x": 469.1328125,
+      "y": 353.5078125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "equals",
+            "value": "No",
+            "value2": "",
+            "variable_name": "BypassHPTInterlock"
+          }
+        ],
+        "timeout_seconds": "1",
+        "wait_mode": "instant"
+      },
+      "id": "n1789295927206_3",
+      "type": "multi_condition_gate",
+      "x": 104.1328125,
+      "y": 318.5078125
+    },
+    {
+      "config": {
+        "duration_seconds": "2"
+      },
+      "id": "n1789316076589_1",
+      "type": "timer",
+      "x": 502.1328125,
+      "y": 214.5078125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "data_column": "sn",
+            "device_name": "",
+            "operator": "exists",
+            "sn_column": "sn",
+            "sn_variable_name": "ProductSNHPT",
+            "source_type": "database",
+            "table_name": "master_table",
+            "value": "",
+            "value2": "",
+            "variable_name": "",
+            "database_table": "hipot"
+          },
+          {
+            "data_column": "cp",
+            "operator": "equals",
+            "sn_column": "sn",
+            "sn_variable_name": "ProductSNHPT",
+            "source_type": "database",
+            "table_name": "master_table",
+            "value": "10",
+            "value2": "",
+            "variable_name": "",
+            "database_table": "master_table",
+            "database_data_column": "cp"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "instant"
+      },
+      "id": "n1789318038665_1",
+      "type": "multi_condition_gate",
+      "x": 4,
+      "y": 424.5078125
+    }
+  ],
+  "connections": [
+    {
+      "fromId": "n1789055165206_4",
+      "fromPort": "true",
+      "id": "n1789055354138_21",
+      "toId": "n1789055335703_15"
+    },
+    {
+      "fromId": "n1789055335703_15",
+      "fromPort": "next",
+      "id": "n1789055366730_22",
+      "toId": "go"
+    },
+    {
+      "fromId": "n1789055287492_10",
+      "fromPort": "true",
+      "id": "n1789055659549_29",
+      "toId": "n1789055649693_26"
+    },
+    {
+      "fromId": "n1789055290941_11",
+      "fromPort": "true",
+      "id": "n1789055661750_31",
+      "toId": "n1789055653414_27"
+    },
+    {
+      "fromId": "n1789055649693_26",
+      "fromPort": "next",
+      "id": "n1789055664322_32",
+      "toId": "go"
+    },
+    {
+      "fromId": "n1789055653414_27",
+      "fromPort": "next",
+      "id": "n1789055668103_34",
+      "toId": "go"
+    },
+    {
+      "fromId": "gi",
+      "fromPort": "next",
+      "id": "n1789057121828_5",
+      "toId": "n1789057119663_4"
+    },
+    {
+      "fromId": "n1789057119663_4",
+      "fromPort": "next",
+      "id": "n1789289874563_3",
+      "toId": "n1789057168369_6"
+    },
+    {
+      "fromId": "n1789057168369_6",
+      "fromPort": "true",
+      "id": "n1789309163282_11",
+      "toId": "n1789295927206_3"
+    },
+    {
+      "fromId": "n1789316076589_1",
+      "fromPort": "next",
+      "id": "n1789316108667_3",
+      "toId": "n1789290644216_1"
+    },
+    {
+      "fromId": "n1789057168369_6",
+      "fromPort": "false",
+      "id": "n1789316113768_6",
+      "toId": "n1789316076589_1"
+    },
+    {
+      "fromId": "n1789295927206_3",
+      "fromPort": "false",
+      "id": "n1789317876212_16",
+      "toId": "n1789055165206_4"
+    },
+    {
+      "fromId": "n1789295927206_3",
+      "fromPort": "false",
+      "id": "n1789317879080_17",
+      "toId": "n1789055287492_10"
+    },
+    {
+      "fromId": "n1789295927206_3",
+      "fromPort": "false",
+      "id": "n1789317882218_19",
+      "toId": "n1789055290941_11"
+    },
+    {
+      "fromId": "n1789318038665_1",
+      "fromPort": "true",
+      "id": "n1789318111451_3",
+      "toId": "n1789055165206_4"
+    },
+    {
+      "fromId": "n1789318038665_1",
+      "fromPort": "false",
+      "id": "n1789318132815_8",
+      "toId": "n1789316076589_1"
+    },
+    {
+      "fromId": "n1789318038665_1",
+      "fromPort": "true",
+      "id": "n1789318136267_9",
+      "toId": "n1789055287492_10"
+    },
+    {
+      "fromId": "n1789318038665_1",
+      "fromPort": "true",
+      "id": "n1789318139846_11",
+      "toId": "n1789055290941_11"
+    },
+    {
+      "fromId": "n1789295927206_3",
+      "fromPort": "true",
+      "id": "n1789349701464_1",
+      "toId": "n1789318038665_1"
+    }
+  ]
+}

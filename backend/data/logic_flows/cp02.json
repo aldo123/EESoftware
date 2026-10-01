@@ -1,0 +1,616 @@
+{
+  "cp": "02",
+  "nodes": [
+    {
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "connection_type": "modbus_tcp",
+            "device": "",
+            "device_name": "PLC",
+            "trigger_value": "1",
+            "variable_name": ""
+          }
+        ]
+      },
+      "id": "n1788774632149_1",
+      "type": "device_trigger",
+      "x": 277.7578125,
+      "y": 50.73046875
+    },
+    {
+      "config": {
+        "expose_check": true,
+        "template_id": "CheckSN",
+        "template_name": "CheckSN"
+      },
+      "id": "n1788776020868_31",
+      "type": "subflow_call",
+      "x": 217.7578125,
+      "y": 214.5078125
+    },
+    {
+      "config": {
+        "duration_seconds": "2"
+      },
+      "id": "n1788776742731_9",
+      "type": "timer",
+      "x": 792.7578125,
+      "y": 605.7578125
+    },
+    {
+      "config": {
+        "group_name": "1",
+        "mode": "group",
+        "targets": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "HPTStep1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "HPTStep2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "HPTStep3"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "Start"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultHpt"
+          }
+        ]
+      },
+      "id": "n1788776776848_14",
+      "type": "reset_node",
+      "x": 908.7578125,
+      "y": 759.7578125
+    },
+    {
+      "config": {
+        "mappings": [
+          {
+            "column_key": "sn",
+            "variable_name": "ProductSNHPT"
+          },
+          {
+            "column_key": "step1",
+            "variable_name": "ResultS1"
+          },
+          {
+            "column_key": "step2",
+            "variable_name": "ResultS2"
+          },
+          {
+            "column_key": "step3",
+            "variable_name": "ResultS3"
+          },
+          {
+            "column_key": "carrier",
+            "variable_name": "CarrierSN"
+          },
+          {
+            "column_key": "result",
+            "variable_name": "ResultHPT"
+          },
+          {
+            "column_key": "step1usl",
+            "variable_name": "USLSTEP1"
+          },
+          {
+            "column_key": "step2usl",
+            "variable_name": "USLSTEP2"
+          },
+          {
+            "column_key": "step3usl",
+            "variable_name": "USLSTEP3"
+          },
+          {
+            "column_key": "step1lsl",
+            "variable_name": "LSLSTEP1"
+          },
+          {
+            "column_key": "step2lsl",
+            "variable_name": "LSLSTEP2"
+          },
+          {
+            "column_key": "step3lsl",
+            "variable_name": "LSLSTEP3"
+          }
+        ]
+      },
+      "id": "n1788849637610_2",
+      "type": "write_sn_list",
+      "x": 242.7578125,
+      "y": 428.1328125
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "OK",
+            "value_field_key": "",
+            "value_source": "static",
+            "variable_name": "ResultHPT"
+          }
+        ]
+      },
+      "id": "n1788853301890_31",
+      "type": "write_output",
+      "x": 37.7578125,
+      "y": 333.1328125
+    },
+    {
+      "config": {
+        "writes": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "protocol": "tcp",
+            "target": "internal",
+            "value": "NG",
+            "value_field_key": "",
+            "value_source": "static",
+            "variable_name": "ResultHPT"
+          }
+        ]
+      },
+      "id": "n1788853306100_32",
+      "type": "write_output",
+      "x": 429.7578125,
+      "y": 326.1328125
+    },
+    {
+      "config": {
+        "group_name": "1",
+        "mode": "selected",
+        "targets": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultHPT"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultS1"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultS2"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ResultS3"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "CarrierSN"
+          },
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "device_name": "",
+            "kind": "internal",
+            "protocol": "tcp",
+            "variable_name": "ProductSNHPT"
+          }
+        ]
+      },
+      "id": "n1788853380847_40",
+      "type": "reset_node",
+      "x": 689.7578125,
+      "y": 765.7578125
+    },
+    {
+      "config": {
+        "expose_check": true,
+        "template_id": "check_limit",
+        "template_name": "Check Limit"
+      },
+      "id": "n1789057063630_2",
+      "type": "subflow_call",
+      "x": 386.7578125,
+      "y": 136.5078125
+    },
+    {
+      "config": {
+        "db_mappings": [
+          {
+            "destination_column": "sn",
+            "source_column": "sn"
+          },
+          {
+            "destination_column": "carrier",
+            "source_column": "carrier"
+          },
+          {
+            "destination_column": "step1lsl",
+            "source_column": "step1lsl"
+          },
+          {
+            "destination_column": "step1usl",
+            "source_column": "step1usl"
+          },
+          {
+            "destination_column": "step1",
+            "source_column": "step1"
+          },
+          {
+            "destination_column": "step2lsl",
+            "source_column": "step2lsl"
+          },
+          {
+            "destination_column": "step2usl",
+            "source_column": "step2usl"
+          },
+          {
+            "destination_column": "step2",
+            "source_column": "step2"
+          },
+          {
+            "destination_column": "step3lsl",
+            "source_column": "step3lsl"
+          },
+          {
+            "destination_column": "step3usl",
+            "source_column": "step3usl"
+          },
+          {
+            "destination_column": "step3",
+            "source_column": "step3"
+          },
+          {
+            "destination_column": "result",
+            "source_column": "result"
+          }
+        ],
+        "destination_table": "hipot",
+        "mappings": [
+          {
+            "destination_column": "date_time",
+            "source_column": "date_time"
+          },
+          {
+            "destination_column": "sn",
+            "source_column": "sn"
+          },
+          {
+            "destination_column": "step1lsl",
+            "source_column": "step1lsl"
+          },
+          {
+            "destination_column": "step1usl",
+            "source_column": "step1usl"
+          },
+          {
+            "destination_column": "step1",
+            "source_column": "step1"
+          },
+          {
+            "destination_column": "step2lsl",
+            "source_column": "step2lsl"
+          },
+          {
+            "destination_column": "step2usl",
+            "source_column": "step2usl"
+          },
+          {
+            "destination_column": "step2",
+            "source_column": "step2"
+          },
+          {
+            "destination_column": "step3lsl",
+            "source_column": "step3lsl"
+          },
+          {
+            "destination_column": "step3usl",
+            "source_column": "step3usl"
+          },
+          {
+            "destination_column": "step3",
+            "source_column": "step3"
+          },
+          {
+            "destination_column": "result",
+            "source_column": "result"
+          },
+          {
+            "destination_column": "carrier",
+            "source_column": "sn",
+            "source_type": "sn_list",
+            "value": "",
+            "variable_name": ""
+          }
+        ],
+        "table_name": "hipot"
+      },
+      "id": "n1789228256019_1",
+      "type": "write_sn_database",
+      "x": 43.7578125,
+      "y": 719.8828125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "operator": "contains",
+            "value": "No",
+            "value2": "",
+            "variable_name": "BypassHPTInterlock"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "instant"
+      },
+      "id": "n1789232001584_9",
+      "type": "multi_condition_gate",
+      "x": 238.7578125,
+      "y": 534.8828125
+    },
+    {
+      "config": {
+        "destination_table": "master_table",
+        "mappings": [
+          {
+            "destination_column": "cp",
+            "fixed_value": "11",
+            "source_column": "",
+            "source_type": "fixed_value",
+            "value": "11",
+            "variable_name": ""
+          }
+        ],
+        "target_primary_key_variable": "ProductSNHPT",
+        "update_target_variable": "ProductSNHPT",
+        "write_mode": "update"
+      },
+      "id": "n1789295625956_1",
+      "type": "write_sn_database",
+      "x": 342.1328125,
+      "y": 850.5078125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "data_column": "cp",
+            "operator": "equals",
+            "sn_column": "sn",
+            "sn_variable_name": "ProductSNHPT",
+            "source_type": "database",
+            "table_name": "master_table",
+            "value": "11",
+            "value2": "",
+            "variable_name": "SNCPdatabase"
+          }
+        ],
+        "timeout_seconds": "2",
+        "wait_mode": "instant"
+      },
+      "id": "n1789302356522_15",
+      "type": "multi_condition_gate",
+      "x": 277.1328125,
+      "y": 967.2578125
+    },
+    {
+      "config": {
+        "conditions": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "data_column": "",
+            "device_name": "",
+            "operator": "contains",
+            "sn_column": "sn",
+            "sn_variable_name": "",
+            "source_type": "internal_variable",
+            "table_name": "",
+            "value": "OK",
+            "value2": "",
+            "variable_name": "ResultHPT"
+          }
+        ],
+        "timeout_seconds": "10",
+        "wait_mode": "instant"
+      },
+      "id": "n1789357819417_1",
+      "type": "multi_condition_gate",
+      "x": 246.1328125,
+      "y": 694.5078125
+    },
+    {
+      "config": {
+        "mappings": [
+          {
+            "source_column": "status",
+            "variable_name": "tes"
+          }
+        ],
+        "source_table": "machine_status",
+        "target_data_source": "internal_variable",
+        "target_database_column": "machine_name",
+        "target_internal_variable": "equipment"
+      },
+      "id": "n1790497714394_3",
+      "type": "read_sn_database",
+      "x": 813.1328125,
+      "y": 172.2578125
+    },
+    {
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "address": "0",
+            "address_type": "holding_register",
+            "connection_type": "internal",
+            "device": "",
+            "device_name": "",
+            "trigger_value": "1",
+            "variable_name": "Run"
+          }
+        ]
+      },
+      "id": "n1790499349826_4",
+      "type": "device_trigger",
+      "x": 663.1328125,
+      "y": 56.2578125
+    }
+  ],
+  "connections": [
+    {
+      "fromId": "n1788776742731_9",
+      "fromPort": "next",
+      "id": "n1788776780834_16",
+      "toId": "n1788776776848_14"
+    },
+    {
+      "fromId": "n1788776020868_31",
+      "fromPort": "false",
+      "id": "n1788853310465_34",
+      "toId": "n1788853306100_32"
+    },
+    {
+      "fromId": "n1788853306100_32",
+      "fromPort": "next",
+      "id": "n1788853312926_35",
+      "toId": "n1788849637610_2"
+    },
+    {
+      "fromId": "n1788776020868_31",
+      "fromPort": "true",
+      "id": "n1788853315285_37",
+      "toId": "n1788853301890_31"
+    },
+    {
+      "fromId": "n1788853301890_31",
+      "fromPort": "next",
+      "id": "n1788853323309_39",
+      "toId": "n1788849637610_2"
+    },
+    {
+      "fromId": "n1788776742731_9",
+      "fromPort": "next",
+      "id": "n1788853384870_41",
+      "toId": "n1788853380847_40"
+    },
+    {
+      "fromId": "n1788774632149_1",
+      "fromPort": "next",
+      "id": "n1789057074261_3",
+      "toId": "n1789057063630_2"
+    },
+    {
+      "fromId": "n1789057063630_2",
+      "fromPort": "true",
+      "id": "n1789057566951_16",
+      "toId": "n1788776020868_31"
+    },
+    {
+      "fromId": "n1788849637610_2",
+      "fromPort": "next",
+      "id": "n1789232002867_11",
+      "toId": "n1789232001584_9"
+    },
+    {
+      "fromId": "n1789232001584_9",
+      "fromPort": "true",
+      "id": "n1789232005394_12",
+      "toId": "n1789228256019_1"
+    },
+    {
+      "fromId": "n1789302356522_15",
+      "fromPort": "true",
+      "id": "n1789302385390_19",
+      "toId": "n1788776742731_9"
+    },
+    {
+      "fromId": "n1789232001584_9",
+      "fromPort": "false",
+      "id": "n1789302571912_21",
+      "toId": "n1788776742731_9"
+    },
+    {
+      "fromId": "n1789295625956_1",
+      "fromPort": "next",
+      "id": "n1789350305810_4",
+      "toId": "n1789302356522_15"
+    },
+    {
+      "fromId": "n1789357819417_1",
+      "fromPort": "true",
+      "id": "n1789357822586_2",
+      "toId": "n1789295625956_1"
+    },
+    {
+      "fromId": "n1789232001584_9",
+      "fromPort": "true",
+      "id": "n1789357825413_3",
+      "toId": "n1789357819417_1"
+    },
+    {
+      "fromId": "n1789228256019_1",
+      "fromPort": "next",
+      "id": "n1789358248111_7",
+      "toId": "n1789302356522_15"
+    },
+    {
+      "fromId": "n1790499349826_4",
+      "fromPort": "next",
+      "id": "n1790499366945_5",
+      "toId": "n1790497714394_3"
+    }
+  ]
+}

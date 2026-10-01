@@ -1,0 +1,1270 @@
+import { useState, useEffect, useRef, useCallback } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { ModalBackdrop, ModalPanel, dropdownVariants, EASE_OUT } from "./components/motion";
+import InterlockModal from "./modal/InterlockModal";
+import SettingModal from "./modal/SettingModal";
+import MaintenancePage from "./modal/MaintenanceModal";
+import SNListPage from "./modal/SnlistModal";
+import ReferencePage from "./modal/ReferenceModal";
+import CpkAnalyzerPage from "./modal/CpkAnalyzerModal";
+import DashboardPage from "./modal/DashboardModal";
+import PageBuilder from "./modal/PageBuilder";
+import LogicBuilder from "./modal/LogicBuilder";
+import InternalVariable from "./modal/InternalVariable";
+import Specification from "./modal/Specification";
+import UDPSerialTerminal from "./modal/UDPSerialTerminal";
+import ComSerialTerminal from "./modal/ComSerialTerminal";
+import { API } from "./service/api";
+import DynamicCPPage from "./pages/DynamicCPPage";
+import { useRS232Scanner } from "./hooks/useRS232Scanner";
+import { useDeviceTriggerScanner } from "./hooks/useDeviceTriggerScanner";
+import { useTCPPLC } from "./hooks/useTCPPLC";
+import { useTCPRaw } from "./hooks/useTCPRaw";
+import { useTCPEthernet } from "./hooks/useTCPEthernet";
+import { useFINS } from "./hooks/useFINS";
+import { useUDP } from "./hooks/useUDP";
+
+// ── Icons ─────────────────────────────────────────────────────
+const IconGear = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3" />
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+  </svg>
+);
+
+const IconUser = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" />
+  </svg>
+);
+
+const IconKey = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4" />
+  </svg>
+);
+
+const IconRefresh = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="23 4 23 10 17 10" /><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+  </svg>
+);
+
+const IconInterlock = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
+);
+
+const IconSetting2 = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="20" y2="12" /><line x1="12" y1="18" x2="20" y2="18" />
+    <circle cx="2" cy="6" r="1" fill="currentColor" /><circle cx="6" cy="12" r="1" fill="currentColor" /><circle cx="10" cy="18" r="1" fill="currentColor" />
+  </svg>
+);
+
+const IconLogic = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="6" y1="3" x2="6" y2="15" />
+    <circle cx="18" cy="6" r="3" />
+    <circle cx="6" cy="18" r="3" />
+    <path d="M18 9a9 9 0 0 1-9 9" />
+  </svg>
+);
+
+const IconMenu = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="3" y1="6" x2="21" y2="6" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+    <line x1="3" y1="18" x2="21" y2="18" />
+  </svg>
+);
+
+// ── Menu items ────────────────────────────────────────────────
+const MENU_ITEMS = ["Main", "Dashboard", "Downtime", "SN List", "Reference", "CPK Analyzer"];
+
+// ── Field (reused) ─────────────────────────────────────────────
+function Field({ icon, placeholder, value, onChange, onKeyDown, type = "text" }) {
+  return (
+    <div className="flex items-center bg-[var(--bg-input)] border border-[var(--border-soft)] focus-within:border-[#22C55E]/60 rounded-xl px-3 h-11 gap-2.5 transition-colors group">
+      <span className="text-[var(--text-muted)] group-focus-within:text-[#22C55E] transition-colors shrink-0">{icon}</span>
+      <input
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={onChange}
+        onKeyDown={onKeyDown}
+        className="flex-1 bg-transparent text-[var(--text-primary)] text-sm placeholder-[var(--text-faint)] outline-none"
+      />
+    </div>
+  );
+}
+
+// ── Dropdown menu ──────────────────────────────────────────────
+function DropdownMenu({ anchorRef, items, onClose }) {
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    function handle(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target) &&
+        anchorRef.current && !anchorRef.current.contains(e.target)) {
+        onClose();
+      }
+    }
+    document.addEventListener("mousedown", handle);
+    return () => document.removeEventListener("mousedown", handle);
+  }, [onClose, anchorRef]);
+
+  return (
+    <motion.div
+      ref={menuRef}
+      className="absolute right-0 top-full mt-1 w-52 z-50 rounded-xl overflow-hidden border border-[var(--border)] shadow-2xl"
+      style={{ background: "var(--bg-surface-2)" }}
+      variants={dropdownVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
+    >
+      {items.map((item, i) =>
+        item === "---" ? (
+          <div key={i} className="h-px bg-[var(--border-soft)] mx-3" />
+        ) : (
+          <button
+            key={i}
+            onClick={() => { item.action(); onClose(); }}
+            className="w-full text-left px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[#2563EB] hover:text-white transition-colors flex items-center gap-2.5"
+          >
+            <span className="text-[var(--text-muted)] group-hover:text-white">{item.icon}</span>
+            {item.label}
+          </button>
+        )
+      )}
+    </motion.div>
+  );
+}
+
+// ── Modal: Change Password ─────────────────────────────────────
+function ChangePasswordModal({ onClose, user }) {
+  const [newPass, setNewPass] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const save = async () => {
+    if (!newPass.trim()) { setError("Please enter new password"); return; }
+    setLoading(true);
+    try {
+      const r = await fetch(`${API}/api/users/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: user?.username, password: newPass }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Failed");
+      onClose();
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  };
+
+  return (
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="w-[400px] rounded-2xl border border-[#22C55E]/30 overflow-hidden shadow-2xl" style={{ background: "var(--bg-surface-2)" }}>
+        <div className="px-6 pt-6 pb-4">
+          <p className="text-[#22C55E] font-bold text-lg mb-5">Change Password</p>
+          <Field
+            icon={<IconKey />}
+            placeholder="New Password"
+            value={newPass}
+            onChange={e => setNewPass(e.target.value)}
+            type="password"
+            onKeyDown={e => e.key === "Enter" && save()}
+          />
+          {error && <p className="text-[#FCA5A5] text-xs mt-2">{error}</p>}
+        </div>
+        <div className="px-6 pb-6 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-sm transition-colors">
+            Cancel
+          </button>
+          <button onClick={save} disabled={loading} className="flex-1 py-2.5 rounded-xl bg-[#22C55E] hover:bg-[#16A34A] text-[#052E16] font-bold text-sm transition-colors disabled:opacity-40">
+            {loading ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </ModalPanel>
+    </ModalBackdrop>
+  );
+}
+
+// ── Modal: Downtime ────────────────────────────────────────────
+function DowntimeModal({ onClose, onSelect }) {
+  return (
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="w-[520px] rounded-2xl border border-[var(--border)] overflow-hidden shadow-2xl" style={{ background: "var(--bg-surface)" }}>
+        <div className="px-8 pt-8 pb-6 text-center">
+          <p className="text-[#22C55E] font-bold text-xl mb-1">SELECT DOWNTIME TYPE</p>
+          <p className="text-[var(--text-secondary)] text-sm mb-8">Please choose downtime category</p>
+          <div className="flex gap-4">
+            <button
+              onClick={() => onSelect("maintenance")}
+              className="flex-1 h-24 rounded-xl bg-[#DC2626] hover:bg-[#B91C1C] text-white font-bold text-sm transition-colors flex flex-col items-center justify-center gap-2"
+            >
+              <span className="text-2xl">🔧</span>
+              CALL MAINTENANCE
+            </button>
+            <button
+              onClick={() => onSelect("material")}
+              className="flex-1 h-24 rounded-xl bg-[#F59E0B] hover:bg-[#D97706] text-white font-bold text-sm transition-colors flex flex-col items-center justify-center gap-2"
+            >
+              <span className="text-2xl">📦</span>
+              WAITING MATERIAL
+            </button>
+          </div>
+        </div>
+        <div className="px-8 pb-6 flex justify-end">
+          <button onClick={onClose} className="px-5 py-2 rounded-xl border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-sm transition-colors">
+            Cancel
+          </button>
+        </div>
+      </ModalPanel>
+    </ModalBackdrop>
+  );
+}
+
+// ── Modal: Relogin ─────────────────────────────────────────────
+function ReloginModal({ onClose, onLoginSuccess }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [cardId, setCardId] = useState("");
+  const [showPwd, setShowPwd] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleLogin = async () => {
+    setError("");
+    setLoading(true);
+    try {
+      let endpoint = "";
+      let payload = {};
+      if (username && password) {
+        endpoint = "/api/login/password";
+        payload = { username, password };
+      } else if (cardId) {
+        endpoint = "/api/login/card";
+        payload = { id_card: cardId };
+      } else {
+        setError("Please enter username/password or scan ID card");
+        setLoading(false);
+        return;
+      }
+      const r = await fetch(`${API}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Login failed");
+      onLoginSuccess(d.user);
+      onClose();
+    } catch (e) {
+      setError(e.message);
+    }
+    setLoading(false);
+  };
+
+  return (
+    <ModalBackdrop className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <ModalPanel className="w-[420px] bg-[var(--bg-surface)] border border-[#22C55E] rounded-2xl overflow-hidden shadow-2xl">
+        <div className="flex flex-col items-center pt-6 pb-2">
+          <div className="w-16 h-16 rounded-full bg-[#22C55E] flex items-center justify-center mb-2">
+            <span className="text-2xl">🔒</span>
+          </div>
+          <p className="text-[var(--text-secondary)] text-sm">Engineer Access Required</p>
+        </div>
+
+        <div className="px-6 py-4 space-y-4">
+          <div>
+            <label className="text-[var(--text-secondary)] text-xs block mb-1">UserName</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#22C55E]"
+              placeholder="👤 Username"
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="text-[var(--text-secondary)] text-xs block mb-1">Password</label>
+            <div className="flex">
+              <input
+                type={showPwd ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] rounded-l-lg px-3 py-2 text-sm focus:outline-none focus:border-[#22C55E]"
+                placeholder="🔒 Password"
+              />
+              <button
+                onClick={() => setShowPwd(!showPwd)}
+                className="bg-[#1A5C34] hover:bg-[#166534] text-white px-3 rounded-r-lg border border-[var(--border)] border-l-0"
+              >
+                {showPwd ? "🙈" : "👁"}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <button
+              onClick={onClose}
+              className="flex-1 py-2 bg-[#374151] hover:bg-[#4B5563] text-white rounded-lg text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleLogin}
+              disabled={loading}
+              className="flex-1 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] text-white font-semibold rounded-lg text-sm disabled:opacity-50"
+            >
+              {loading ? "Logging in..." : "OK"}
+            </button>
+          </div>
+
+          <div className="border-t border-[var(--border)] pt-3">
+            <div className="flex items-center gap-2">
+              <div className="w-11 h-11 bg-[var(--bg-elevated)] border border-[var(--border)] rounded-lg flex items-center justify-center text-[var(--text-secondary)] text-lg">
+                🪪
+              </div>
+              <input
+                type="text"
+                value={cardId}
+                onChange={(e) => setCardId(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleLogin()}
+                className="flex-1 bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-[#22C55E]"
+                placeholder="Scan / tempel ID Card di sini..."
+              />
+            </div>
+          </div>
+
+          {error && <div className="text-[#EF4444] text-xs text-center">{error}</div>}
+        </div>
+      </ModalPanel>
+    </ModalBackdrop>
+  );
+}
+
+
+// ── Main export ───────────────────────────────────────────────
+export default function MainPage({ user: initialUser, onLogout }) {
+  const [user, setUser] = useState(initialUser || { username: "Guest", role: "" });
+  const [activeMenu, setActiveMenu] = useState("Main");
+  // Bumped whenever Page Builder saves a layout, so the live Dynamic Page
+  // remounts and re-fetches the new layout instead of needing a manual
+  // page reload to see the change.
+  const [dynamicPageRefreshKey, setDynamicPageRefreshKey] = useState(0);
+  const [time, setTime] = useState(new Date());
+  const [dbStatus, setDbStatus] = useState(null);
+  const [commDevices, setCommDevices] = useState([]);
+  const [machineStatus, setMachineStatus] = useState("IDLE");
+
+  // Protocol-specific communication configuration/state.
+  // The original MainPage communication logic below is intentionally kept;
+  // these states are additive and feed the new protocol-specific hooks.
+  const [modbusDevices, setModbusDevices] = useState([]);
+  const [rawTcpDevices, setRawTcpDevices] = useState([]);
+  const [ethernetDevices, setEthernetDevices] = useState([]);
+  const [udpDevices, setUdpDevices] = useState([]);
+  const [finsDevices, setFinsDevices] = useState([]);
+  const [rs232ProtocolDevices, setRs232ProtocolDevices] = useState([]);
+
+  // State untuk info CP dan Process Code
+  const [cpInfo, setCpInfo] = useState({
+    name: "CP20 V-Mini",
+    code: "BW01-VM2",
+    family: "CP02-PCBAVM2"
+  });
+  const [processCode, setProcessCode] = useState("");
+
+  // Communication hooks are mounted directly in MainPage.
+  // Modbus remains the original useTCPPLC hook; Raw TCP, EtherNet/IP,
+  // and Serial-over-UDP use their own protocol-specific hooks.
+  const cpNumber = processCode.replace(/[^0-9]/g, "");
+  const isCpActive = activeMenu === "Main" && !!cpNumber;
+
+  const modbusRuntime = useTCPPLC({
+    devices: modbusDevices,
+    enabled: isCpActive,
+    pollInterval: 20,
+  });
+
+  const rawTcpRuntime = useTCPRaw({
+    devices: rawTcpDevices,
+    enabled: true,
+    statusInterval: 0,
+  });
+
+  const ethernetRuntime = useTCPEthernet({
+    devices: ethernetDevices,
+    enabled: true,
+    statusInterval: 0,
+  });
+
+  const udpRuntime = useUDP({
+    devices: udpDevices,
+    enabled: true,
+    statusInterval: 0,
+  });
+
+  const finsRuntime = useFINS({
+    devices: finsDevices,
+    enabled: true,
+    statusInterval: 0,
+  });
+
+  // State untuk sync downtime dengan MaintenancePage
+  const [downtimeActive, setDowntimeActive] = useState(false);
+  const [downtimeStart, setDowntimeStart] = useState(null);
+  const [downtimeId, setDowntimeId] = useState(null);
+  const [downtimeLoading, setDowntimeLoading] = useState(false);
+
+  const [showSettingMenu, setShowSettingMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showDowntime, setShowDowntime] = useState(false);
+  const [showChangePass, setShowChangePass] = useState(false);
+  const [showInterlock, setShowInterlock] = useState(false);
+  const [showSetting, setShowSetting] = useState(false);
+  const [showRelogin, setShowRelogin] = useState(false);
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [showLogic, setShowLogic] = useState(false);
+  const [showInternalVariable, setShowInternalVariable] = useState(false);
+  const [showSpecification, setShowSpecification] = useState(false);
+  const [showUDPTerminal, setShowUDPTerminal] = useState(false);
+  const [showComTerminal, setShowComTerminal] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // ── Runtime System Variables: logged-in user ─────────────────
+  // MainPage already owns the authenticated user object. Keep these two
+  // System Internal Variables synchronized with that session user.
+  useEffect(() => {
+    const CURRENT_USER = String(user?.username || "");
+    const USER_ROLE = String(user?.role || "");
+
+    fetch(`${API}/api/internal-variables/runtime`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      body: JSON.stringify({ CURRENT_USER, USER_ROLE }),
+    }).catch((err) => {
+      console.warn(
+        "[SYSTEM VARIABLE] Failed to sync CURRENT_USER / USER_ROLE:",
+        err
+      );
+    });
+  }, [user?.username, user?.role]);
+
+  const settingBtnRef = useRef(null);
+  const userBtnRef = useRef(null);
+
+  // ── Clock ──────────────────────────────────────────────────
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  // ── DB health ─────────────────────────────────────────────
+  useEffect(() => {
+    const check = () =>
+      fetch(`${API}/api/health`)
+        .then(r => r.json())
+        .then(d => setDbStatus(d.db_connected))
+        .catch(() => setDbStatus(false));
+    check();
+    const t = setInterval(check, 3000);
+    return () => clearInterval(t);
+  }, []);
+
+  // ── Maintenance / Downtime status sync ──────────────────────
+  // MainPage is the persistent owner of the header status.
+  // The Maintenance page also reads the same backend source of truth
+  // (/api/maintenance/machine-status), so MainPage must poll it too.
+  // Without this, machineStatus starts again from IDLE whenever the
+  // Maintenance page is unmounted/remounted or the application is
+  // refreshed, even though downtime_runtime_state is still active.
+  useEffect(() => {
+    let cancelled = false;
+
+    const syncMaintenanceStatus = async () => {
+      try {
+        const res = await fetch(`${API}/api/maintenance/machine-status`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+
+        if (cancelled || !res.ok || !data?.success) return;
+
+        const active = Boolean(
+          data.downtime_active &&
+          data.downtime_id &&
+          data.downtime_start
+        );
+
+        if (active) {
+          const normalizedType =
+            String(data.downtime_type || data.status || "").toUpperCase();
+
+          const nextStatus =
+            normalizedType === "MACHINE DOWN"
+              ? "MACHINE DOWN"
+              : normalizedType === "WAITING MATERIAL"
+                ? "WAITING MATERIAL"
+                : "IDLE";
+
+          setMachineStatus(nextStatus);
+          setDowntimeActive(true);
+          setDowntimeId(data.downtime_id || null);
+
+          const startValue = data.downtime_start_iso || data.downtime_start;
+          const start = startValue ? new Date(startValue) : null;
+          setDowntimeStart(
+            start && !Number.isNaN(start.getTime()) ? start : null
+          );
+        } else {
+          // Match MaintenancePage behavior when no CURRENT downtime exists.
+          setMachineStatus("IDLE");
+          setDowntimeActive(false);
+          setDowntimeStart(null);
+          setDowntimeId(null);
+        }
+      } catch (err) {
+        // Keep the last known state when the maintenance endpoint is
+        // temporarily unavailable. Do not force the UI back to IDLE.
+        console.warn("[MAINTENANCE STATUS] Sync failed:", err);
+      }
+    };
+
+    syncMaintenanceStatus();
+    const intervalId = setInterval(syncMaintenanceStatus, 2000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, []);
+
+  // ── CP info & Process Code from interlock.json ───────────────
+  useEffect(() => {
+    fetch(`${API}/api/interlock`)
+      .then(r => r.json())
+      .then(d => {
+        const cp = d?.["Control Point"] || {};
+        setCpInfo({
+          name: cp["Control Point Name"] || "CP20 V-Mini",
+          code: cp["Control Point Code"] || "BW01-VM2",
+          family: cp["Control Point Family"] || "CP02-PCBAVM2",
+        });
+        const process = cp["Process"] || "";
+        setProcessCode(process);
+      })
+      .catch(() => { });
+  }, []);
+
+  // ── RS232 status loader ───────────────────────────────────────
+  // IMPORTANT: this loader updates RS232 only. It MUST NOT overwrite
+  // commDevices. The protocol-specific loader below owns the complete
+  // Main Page list for Modbus TCP, Raw TCP/IP, EtherNet/IP and UDP.
+  useEffect(() => {
+    let cancelled = false;
+
+    const refreshRS232 = async () => {
+      try {
+        const response = await fetch(`${API}/api/comm-status`, { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (cancelled) return;
+
+        const devices = Array.isArray(data?.devices) ? data.devices : [];
+        setRs232ProtocolDevices(devices.map((dev) => ({
+          ...dev,
+          name: dev?.name ?? dev?.["Device Name"] ?? "RS232",
+          type: "RS232",
+          protocol: "RS232",
+          connected: dev?.connected === true,
+          connection:
+            dev?.com_port ?? dev?.["COM Port"] ?? dev?.comPort ??
+            dev?.port ?? dev?.Port ?? dev?.com ?? dev?.COM ?? "",
+        })));
+      } catch (error) {
+        console.error("[COMM DEVICE][RS232] Failed to refresh status:", error);
+      }
+    };
+
+    refreshRS232();
+    const timer = setInterval(refreshRS232, 3000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Protocol-specific device loader ─────────────────────────
+  // Keep the original communication loader above untouched. This additive
+  // loader reads each protocol's own endpoint so every hook receives the
+  // complete device configuration needed for realtime monitoring.
+  const refreshProtocolConfigs = useCallback(async () => {
+    try {
+      // A failure in one protocol must never clear/block the other protocols.
+      const results = await Promise.allSettled([
+        modbusRuntime.getTCPDevices(),
+        rawTcpRuntime.getTCPDevices(),
+        ethernetRuntime.getTCPDevices(),
+        udpRuntime.getTCPDevices(),
+        finsRuntime.getTCPDevices(),
+      ]);
+
+      const [modbus, raw, ethernet, udp, fins] = results;
+
+      if (modbus.status === "fulfilled") {
+        const next = Array.isArray(modbus.value?.devices) ? modbus.value.devices : [];
+        setModbusDevices(prev => JSON.stringify(prev) === JSON.stringify(next) ? prev : next);
+      } else {
+        console.warn("[COMM PROTOCOL][MODBUS] Device refresh failed:", modbus.reason);
+      }
+
+      if (raw.status === "fulfilled") {
+        const next = Array.isArray(raw.value?.devices) ? raw.value.devices : [];
+        setRawTcpDevices(prev => JSON.stringify(prev) === JSON.stringify(next) ? prev : next);
+      } else {
+        console.warn("[COMM PROTOCOL][RAW TCP] Device refresh failed:", raw.reason);
+      }
+
+      if (ethernet.status === "fulfilled") {
+        const next = Array.isArray(ethernet.value?.devices) ? ethernet.value.devices : [];
+        setEthernetDevices(prev => JSON.stringify(prev) === JSON.stringify(next) ? prev : next);
+      } else {
+        console.warn("[COMM PROTOCOL][ETHERNET/IP] Device refresh failed:", ethernet.reason);
+      }
+
+      if (udp.status === "fulfilled") {
+        const next = Array.isArray(udp.value?.devices) ? udp.value.devices : [];
+        setUdpDevices(prev => JSON.stringify(prev) === JSON.stringify(next) ? prev : next);
+      } else {
+        console.warn("[COMM PROTOCOL][UDP] Device refresh failed:", udp.reason);
+      }
+
+      if (fins.status === "fulfilled") {
+        const next = Array.isArray(fins.value?.devices) ? fins.value.devices : [];
+        setFinsDevices(prev => JSON.stringify(prev) === JSON.stringify(next) ? prev : next);
+      } else {
+        console.warn("[COMM PROTOCOL][FINS] Device refresh failed:", fins.reason);
+      }
+    } catch (err) {
+      console.error("[COMM PROTOCOL] Failed to load protocol configurations:", err);
+    }
+  }, [
+    modbusRuntime.getTCPDevices,
+    rawTcpRuntime.getTCPDevices,
+    ethernetRuntime.getTCPDevices,
+    udpRuntime.getTCPDevices,
+    finsRuntime.getTCPDevices,
+  ]);
+
+  useEffect(() => {
+    refreshProtocolConfigs();
+    const protocolConfigTimer = setInterval(refreshProtocolConfigs, 3000);
+    return () => clearInterval(protocolConfigTimer);
+  }, [refreshProtocolConfigs]);
+
+  // ── Realtime protocol status -> MainPage sidebar ─────────────
+  // Each protocol hook independently checks its backend status every 250 ms.
+  // MainPage simply combines those results with the original RS232 status.
+  const protocolConnectionText = useCallback((device, status = {}) => {
+    const type = String(device?.type || device?.Type || "TCP").toUpperCase();
+    const protocol = String(device?.protocol || device?.Protocol || "").toLowerCase();
+
+    if ((type === "UDP" || protocol.includes("udp")) && !protocol.includes("fins")) {
+      const localIp = device?.local_ip ?? device?.localHost ?? device?.["Local IP Address"] ?? device?.["Local IP"] ?? "";
+      const localPort = device?.local_port ?? device?.localPort ?? device?.["Local Port"] ?? "";
+      const remoteIp = device?.remote_ip ?? device?.remoteHost ?? device?.["Remote IP Address"] ?? device?.["Remote IP"] ?? device?.["IP Address"] ?? "";
+      const remotePort = device?.remote_port ?? device?.remotePort ?? device?.["Remote Port"] ?? device?.Port ?? "";
+      return `${localIp || "0.0.0.0"}:${localPort || 0} → ${remoteIp}:${remotePort}`;
+    }
+
+    const ip = status?.ip ?? status?.IP ?? device?.ip ?? device?.IP ?? device?.["IP Address"] ?? device?.host ?? "";
+    const port = status?.port ?? status?.Port ?? device?.port ?? device?.Port ?? "";
+    return ip && port ? `${ip}:${port}` : ip || "";
+  }, []);
+
+  const protocolDisplayName = useCallback((device, defaultProtocol) => {
+    const type = String(device?.type || device?.Type || "").toUpperCase();
+    const p = String(device?.protocol || device?.Protocol || defaultProtocol || "").toLowerCase().replace(/[-_]/g, " ");
+    if (p === "fins udp") return "FINS/UDP";
+    if (p === "fins tcp") return "FINS/TCP";
+    if (type === "UDP" || p === "udp" || p === "udp serial") return "UDP";
+    if (p === "raw tcp" || p === "raw tcp/ip" || p === "tcp/ip" || p === "raw") return "RAW TCP";
+    if (p === "ethernet/ip" || p === "ethernet ip" || p === "ethernetip" || p === "enip" || p === "cip") return "EtherNet/IP";
+    return "Modbus TCP";
+  }, []);
+
+  useEffect(() => {
+    const makeRows = (devices, statusMap, defaultProtocol) =>
+      (Array.isArray(devices) ? devices : []).map((device) => {
+        const name = device?.name ?? device?.["Device Name"] ?? "TCP";
+        const status = statusMap?.[name];
+        return {
+          ...device,
+          name,
+          type: String(device?.type || device?.Type || "TCP").toUpperCase(),
+          protocol: protocolDisplayName(device, defaultProtocol),
+          connected: status?.connected !== undefined
+            ? status.connected === true
+            : device?.connected === true,
+          connection: protocolConnectionText(device, status),
+        };
+      });
+
+    const protocolRows = [
+      ...makeRows(modbusDevices, modbusRuntime.deviceStatus, "modbus_tcp"),
+      ...makeRows(rawTcpDevices, rawTcpRuntime.deviceStatus, "raw_tcp"),
+      ...makeRows(ethernetDevices, ethernetRuntime.deviceStatus, "ethernet_ip"),
+      ...makeRows(udpDevices, udpRuntime.deviceStatus, "udp_serial"),
+      ...makeRows(finsDevices, finsRuntime.deviceStatus, "fins_tcp"),
+    ];
+
+    setCommDevices((previous) => {
+      const originalRs232 = Array.isArray(rs232ProtocolDevices)
+        ? rs232ProtocolDevices
+        : [];
+      const next = [...originalRs232, ...protocolRows];
+      return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
+    });
+  }, [
+    modbusDevices,
+    rawTcpDevices,
+    ethernetDevices,
+    udpDevices,
+    finsDevices,
+    rs232ProtocolDevices,
+    modbusRuntime.deviceStatus,
+    rawTcpRuntime.deviceStatus,
+    ethernetRuntime.deviceStatus,
+    udpRuntime.deviceStatus,
+    finsRuntime.deviceStatus,
+    protocolConnectionText,
+    protocolDisplayName,
+  ]);
+
+  // ── RS232 Scanner polling ─────────────────────────────────
+  // 🟢 Aktifkan polling saat halaman Main aktif dan cpNumber tersedia
+  // RS232 Scanner
+  useRS232Scanner(cpNumber, isCpActive);
+  // Modbus TCP/RTU "Device Trigger" nodes (register polling)
+  useDeviceTriggerScanner(cpNumber, isCpActive);
+
+  // TCP/PLC protocol hooks are mounted above and remain active here.
+
+  // ── Helpers ───────────────────────────────────────────────
+  const fmtTime = d => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const fmtDate = d => d.toLocaleDateString("en-US", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+  const fmtWW = d => {
+    const start = new Date(d.getFullYear(), 0, 1);
+    return `WW${Math.ceil(((d - start) / 86400000 + start.getDay() + 1) / 7)}`;
+  };
+
+  const isEngineer = String(user.role || "").toUpperCase() === "ENGINEER";
+
+  // ── Machine status ────────────────────────────────────────
+  const machineStatusConfig = {
+    "IDLE": { dot: "bg-[#CBD5E1]", label: "⚪ IDLE", color: "#CBD5E1" },
+    "RUNNING": { dot: "bg-[#22C55E]", label: "🟢 RUNNING", color: "#22C55E" },
+    "MACHINE DOWN": { dot: "bg-[#EF4444]", label: "🔴 MACHINE DOWN", color: "#EF4444" },
+    "WAITING MATERIAL": { dot: "bg-[#F59E0B]", label: "🟡 WAITING MATERIAL", color: "#F59E0B" },
+  };
+  const msConf = machineStatusConfig[machineStatus] || machineStatusConfig["IDLE"];
+
+  // ── Handler untuk pilihan downtime ──────────────────────────
+  const handleDowntimeSelect = async (type) => {
+    setShowDowntime(false);
+    if (downtimeLoading) return;
+
+    setDowntimeLoading(true);
+    try {
+      const downtimeType = type === "maintenance" ? "MACHINE DOWN" : "WAITING MATERIAL";
+      const payload = {
+        technician: user?.username || "system",
+        shift: "Shift A",
+        machine_code: cpInfo.code || "CP2-PCBAVM3",
+        downtime_type: downtimeType,
+      };
+
+      const res = await fetch(`${API}/api/maintenance/downtime/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        const start = new Date(data.start_time);
+        setDowntimeActive(true);
+        setDowntimeStart(start);
+        setDowntimeId(data.downtime_id);
+        setMachineStatus(downtimeType);
+      } else {
+        alert(`Gagal memulai downtime: ${data.message || "Unknown error"}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setDowntimeLoading(false);
+    }
+  };
+
+  const refreshCommDevices = async () => {
+    // Keep the original refresh path and additionally refresh the new
+    // protocol-specific hook device lists.
+    refreshProtocolConfigs();
+    try {
+      const [rs232Res, tcpStatusRes, tcpDevicesRes] =
+        await Promise.all([
+          fetch(`${API}/api/comm-status`),
+          fetch(`${API}/api/tcp/status`),
+          fetch(`${API}/api/tcp/devices`)
+        ]);
+
+      const rs232Data = rs232Res.ok
+        ? await rs232Res.json()
+        : { devices: [] };
+
+      const tcpStatus = tcpStatusRes.ok
+        ? await tcpStatusRes.json()
+        : {};
+
+      const tcpDeviceData = tcpDevicesRes.ok
+        ? await tcpDevicesRes.json()
+        : { devices: [] };
+
+      const getCom = dev =>
+        dev?.com_port ??
+        dev?.["COM Port"] ??
+        dev?.comPort ??
+        dev?.port ??
+        dev?.Port ??
+        dev?.com ??
+        dev?.COM ??
+        "";
+
+      const getTcp = (dev, status = {}) => {
+        const ip =
+          status.ip ??
+          status.IP ??
+          dev?.ip ??
+          dev?.IP ??
+          dev?.["IP Address"] ??
+          dev?.host ??
+          "";
+
+        const port =
+          status.port ??
+          status.Port ??
+          dev?.port ??
+          dev?.Port ??
+          "";
+
+        return ip && port ? `${ip}:${port}` : ip || "";
+      };
+
+      const rs232Devices = (rs232Data.devices || []).map(dev => ({
+        name: dev.name ?? dev["Device Name"] ?? "RS232",
+        type: "RS232",
+        connected: !!dev.connected,
+        connection: getCom(dev)
+      }));
+
+      const tcpDevices = (tcpDeviceData.devices || []).map(dev => {
+        const name = dev.name ?? dev["Device Name"] ?? "TCP";
+        const status = tcpStatus[name] || {};
+
+        return {
+          name,
+          type: "TCP",
+          connected: !!status.connected,
+          connection: getTcp(dev, status)
+        };
+      });
+
+      const configuredNames = new Set(
+        tcpDevices.map(dev => dev.name)
+      );
+
+      Object.entries(tcpStatus).forEach(([name, status]) => {
+        if (configuredNames.has(name)) return;
+
+        tcpDevices.push({
+          name,
+          type: "TCP",
+          connected: !!status?.connected,
+          connection: getTcp({}, status)
+        });
+      });
+
+      setCommDevices([
+        ...rs232Devices,
+        ...tcpDevices
+      ]);
+    } catch (err) {
+      console.error(
+        "[COMM DEVICE] Failed to refresh devices:",
+        err
+      );
+    }
+  };
+
+  // ── Relogin handler ────────────────────────────────────────
+  const handleReloginSuccess = (userData) => {
+    setUser(userData);
+  };
+
+  // ── Render konten berdasarkan menu aktif ───────────────────
+  // IMPORTANT:
+  // DynamicCPPage is rendered OUTSIDE the active-menu switch so its
+  // runtime/effects stay mounted while the user opens Dashboard,
+  // Calibration, SN List, etc. Only its visual layer is hidden.
+  const renderContent = () => {
+    switch (activeMenu) {
+      case "Main":
+        // DynamicCPPage is handled by the persistent runtime layer below.
+        // When no CP/process is configured, show the normal MainContent.
+        if (processCode && cpNumber) return null;
+        return <MainContent />;
+
+      case "Downtime":
+        return (
+          <MaintenancePage
+            user={user}
+            machineStatus={machineStatus}
+            downtimeActive={downtimeActive}
+            downtimeStart={downtimeStart}
+            downtimeId={downtimeId}
+            onStatusChange={(status) => setMachineStatus(status)}
+            onDowntimeStart={(start, id) => {
+              setDowntimeActive(true);
+              setDowntimeStart(start);
+              setDowntimeId(id);
+            }}
+            onDowntimeEnd={() => {
+              setDowntimeActive(false);
+              setDowntimeStart(null);
+              setDowntimeId(null);
+              setMachineStatus("IDLE");
+            }}
+          />
+        );
+      case "SN List": return <SNListPage user={user} />;
+      case "Reference": return <ReferencePage user={user} />;
+      case "CPK Analyzer": return <CpkAnalyzerPage />;
+      case "Dashboard": return <DashboardPage cpNumber={cpNumber} />;
+      default:
+        return <MainContent />;
+    }
+  };
+
+  // ── Menu items ─────────────────────────────────────────────
+  const settingMenuItems = [
+    { icon: <IconInterlock />, label: "Interlock", action: () => setShowInterlock(true) },
+    "---",
+    { icon: <IconSetting2 />, label: "Setting", action: () => setShowSetting(true) },
+    { icon: <IconLogic />, label: "Logic Builder", action: () => setShowLogic(true) },
+    { icon: <span>🎨</span>, label: "Page Builder", action: () => setShowBuilder(true) },
+    { icon: <span>▦</span>, label: "Internal Variables", action: () => { if (!cpNumber) return; setShowInternalVariable(true); } },
+    { icon: <span>▤</span>, label: "Specification", action: () => { if (!cpNumber) return; setShowSpecification(true); } },
+    { icon: <span>⌁</span>, label: "UDP Terminal", action: () => setShowUDPTerminal(true) },
+    { icon: <span>⌘</span>, label: "COM Terminal", action: () => setShowComTerminal(true) },
+
+
+  ];
+
+  const userMenuItems = [
+    { icon: <IconKey />, label: "Change Password", action: () => setShowChangePass(true) },
+    "---",
+    { icon: <IconRefresh />, label: "Relogin", action: () => setShowRelogin(true) },
+    "---",
+    { icon: <span className="text-[#EF4444]">✕</span>, label: "Logout", action: () => onLogout?.() },
+  ];
+
+  return (
+    <div className="w-screen h-screen bg-[var(--bg-canvas)] flex flex-col overflow-hidden font-sans transition-colors">
+      {/* HEADER */}
+      <header className="h-[72px] bg-[var(--bg-surface-2)] border-b border-[var(--border-soft)] flex items-center px-5 shrink-0 z-30 transition-colors">
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            onClick={() => setSidebarOpen(p => !p)}
+            title={sidebarOpen ? "Hide sidebar" : "Show sidebar"}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-primary)] hover:text-white hover:bg-[#2563EB] transition-colors shrink-0"
+          >
+            <IconMenu />
+          </button>
+          <div className="relative">
+            <span className="text-[28px] font-black text-[#22C55E] leading-none tracking-tighter">WIK</span>
+            <span className="absolute -top-0.5 -right-2 w-1.5 h-1.5 rounded-full bg-[#22C55E] animate-pulse" />
+          </div>
+          <div className="ml-2 flex flex-col leading-tight">
+            <span className="text-[var(--text-primary)] text-[10px]">Technology</span>
+            <span className="text-[var(--text-primary)] text-[10px]">attuned to Nature</span>
+          </div>
+        </div>
+
+        {/* Title tengah: Control Point Name */}
+        <div className="flex-1 flex flex-col items-center select-none">
+          <p className="text-[#22C55E] font-bold text-xl leading-tight">{cpInfo.name}</p>
+          <p className="text-[var(--text-primary)] text-[10px] font-mono mt-0.5">
+            {fmtDate(time)} &nbsp; {fmtTime(time)} &nbsp; {fmtWW(time)}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-4 shrink-0">
+          {/* Line Code & Spec Code */}
+          <div className="text-right leading-tight hidden lg:block">
+            <p className="text-[var(--text-primary)] text-[10px] font-mono">Line Code : {cpInfo.code}</p>
+            <p className="text-[var(--text-primary)] text-[10px] font-mono">Spec Code : {cpInfo.family}</p>
+          </div>
+          <div className="w-px h-8 bg-[var(--border-soft)]" />
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-[10px] font-bold font-mono" style={{ color: msConf.color }}>{msConf.label}</p>
+            <button
+              onClick={() => setShowDowntime(true)}
+              disabled={downtimeLoading}
+              className="h-7 px-3 rounded-lg bg-[#DC2626] hover:bg-[#B91C1C] text-white text-[10px] font-bold transition-colors flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <span>⏸</span> Downtime
+            </button>
+          </div>
+          <div className="w-px h-8 bg-[var(--border-soft)]" />
+          <div className="relative" ref={settingBtnRef}>
+            <button onClick={() => { setShowSettingMenu(p => !p); setShowUserMenu(false); }} disabled={!isEngineer} className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-primary)] hover:text-white hover:bg-[#2563EB] transition-colors disabled:opacity-30 disabled:cursor-not-allowed">
+              <IconGear />
+            </button>
+            <AnimatePresence>
+              {showSettingMenu && <DropdownMenu anchorRef={settingBtnRef} items={settingMenuItems} onClose={() => setShowSettingMenu(false)} />}
+            </AnimatePresence>
+          </div>
+          <div className="relative" ref={userBtnRef}>
+            <button onClick={() => { setShowUserMenu(p => !p); setShowSettingMenu(false); }} className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--text-primary)] hover:text-white hover:bg-[#2563EB] transition-colors">
+              <IconUser />
+            </button>
+            <AnimatePresence>
+              {showUserMenu && <DropdownMenu anchorRef={userBtnRef} items={userMenuItems} onClose={() => setShowUserMenu(false)} />}
+            </AnimatePresence>
+          </div>
+          <div className="leading-tight text-left">
+            <p className="text-[var(--text-primary)] text-[11px] font-semibold">{user.username}</p>
+            <p className="text-[var(--text-primary)] text-[10px]">{user.role}</p>
+          </div>
+        </div>
+      </header>
+
+      {/* BODY */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* SIDEBAR KIRI (collapsible) */}
+        <motion.aside
+          initial={false}
+          animate={{ width: sidebarOpen ? 150 : 0 }}
+          transition={{ duration: 0.22, ease: EASE_OUT }}
+          className="bg-[var(--bg-surface-2)] border-r border-[var(--border-soft)] flex flex-col shrink-0 overflow-hidden transition-colors"
+        >
+          <div className="w-[150px] h-full flex flex-col">
+            <nav className="pt-2 flex flex-col gap-0.5">
+              {MENU_ITEMS.map(label => {
+                const disabled = (label === "Downtime" || label === "Reference") && !isEngineer;
+                const active = activeMenu === label;
+                return (
+                  <button
+                    key={label}
+                    disabled={disabled}
+                    onClick={() => !disabled && setActiveMenu(label)}
+                    className={`relative w-full text-left px-4 py-2.5 text-[11px] font-semibold transition-colors ${active
+                      ? "text-white"
+                      : disabled
+                        ? "text-[var(--text-faint)] cursor-not-allowed"
+                        : "text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)]"
+                      }`}
+                  >
+                    {active && (
+                      <motion.span
+                        layoutId="active-menu-pill"
+                        className="absolute inset-0 bg-[#16A34A]"
+                        transition={{ type: "spring", stiffness: 500, damping: 40 }}
+                      />
+                    )}
+                    <span className="relative">{label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+            <div className="flex-1" />
+            {/* COMM DEVICE di sidebar kiri */}
+            <div className="mx-2 mb-3 rounded-lg border border-[var(--border)] overflow-hidden" style={{ background: "var(--bg-surface-2)" }}>
+              <div className="px-3 pt-3 pb-1">
+                <p className="text-[#22C55E] text-[9px] font-bold tracking-widest uppercase mb-2">
+                  COMM DEVICE
+                </p>
+
+                <div className="flex flex-col gap-1">
+                  {commDevices.length === 0 && (
+                    <p className="text-[var(--text-primary)] text-[9px] font-mono">
+                      No devices
+                    </p>
+                  )}
+
+                  {commDevices.map((dev, index) => (
+                    <div
+                      key={`${dev.name}-${dev.connection || index}`}
+                      className="flex items-center gap-1.5 min-w-0"
+                    >
+                      {/* Status */}
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${dev.connected
+                            ? "bg-[#22C55E]"
+                            : "bg-[#EF4444]"
+                          }`}
+                      />
+
+                      {/* Device Name */}
+                      <span
+                        className={`text-[9px] font-mono truncate shrink-0 ${dev.connected
+                            ? "text-[#22C55E]"
+                            : "text-[#EF4444]"
+                          }`}
+                      >
+                        {dev.name}
+                      </span>
+
+                      {/* COM / IP */}
+                      {dev.connection && (
+                        <span
+                          className={`text-[8px] font-mono truncate min-w-0 ${dev.connected
+                              ? "text-[var(--text-muted)]"
+                              : "text-[#EF4444]/70"
+                            }`}
+                        >
+                          {dev.connection}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="px-3 pb-2 pt-1 border-t border-[var(--border-soft)] mt-1">
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dbStatus === null ? "bg-[#64748B] animate-pulse" : dbStatus ? "bg-[#22C55E]" : "bg-[#EF4444]"}`} />
+                  <span className={`text-[9px] font-mono ${dbStatus === null ? "text-[var(--text-muted)]" : dbStatus ? "text-[#22C55E]" : "text-[#EF4444]"}`}>Database</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.aside>
+
+        {/* KONTEN UTAMA + SIDEBAR KANAN (kondisional) */}
+        <div className="flex flex-1 overflow-hidden">
+          {/*
+           * Persistent Dynamic Page runtime
+           * --------------------------------
+           * DO NOT put this component inside the activeMenu switch or
+           * AnimatePresence. Doing so unmounts it whenever the navbar
+           * changes and kills its timers/PLC polling/widget activity.
+           *
+           * We keep it mounted and only hide the visual layer. React
+           * effects, timers, runtime state and communication therefore
+           * continue running in the background.
+           */}
+          <div
+            className={
+              `flex-1 flex flex-col overflow-hidden relative ` +
+              (activeMenu === "Main" && processCode && cpNumber
+                ? ""
+                : "hidden")
+            }
+            aria-hidden={!(activeMenu === "Main" && processCode && cpNumber)}
+          >
+            {processCode && cpNumber ? (
+              <DynamicCPPage
+                key={`${cpNumber}-${dynamicPageRefreshKey}`}
+                user={user}
+                cpNumber={cpNumber}
+              />
+            ) : null}
+          </div>
+
+          {/* Normal pages. DynamicCPPage is intentionally excluded here. */}
+          <div
+            className={
+              `flex-1 flex flex-col overflow-hidden relative ` +
+              (activeMenu === "Main" && processCode && cpNumber ? "hidden" : "")
+            }
+          >
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeMenu}
+                className="flex-1 flex flex-col overflow-hidden"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.18, ease: "easeOut" }}
+              >
+                {renderContent()}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
+      </div>
+
+      {/* ── MODALS ───────────────────────────────────────────── */}
+      <AnimatePresence>
+        {showDowntime && <DowntimeModal key="downtime" onClose={() => setShowDowntime(false)} onSelect={handleDowntimeSelect} />}
+        {showChangePass && <ChangePasswordModal key="changepass" user={user} onClose={() => setShowChangePass(false)} />}
+        {showInterlock && <InterlockModal key="interlock" open={showInterlock} onClose={() => setShowInterlock(false)} />}
+        {showSetting && <SettingModal key="setting" onClose={() => setShowSetting(false)} onSaved={refreshCommDevices} />}
+        {showRelogin && <ReloginModal key="relogin" onClose={() => setShowRelogin(false)} onLoginSuccess={handleReloginSuccess} />}
+
+        {/* Page Builder – kirim cpNumber yang benar */}
+        {showBuilder && (<PageBuilder key="builder" cpNumber={cpNumber || "2"} availableDevices={commDevices} onClose={() => setShowBuilder(false)} onSaved={() => setDynamicPageRefreshKey(k => k + 1)} />)}
+        {showLogic && (<LogicBuilder key="logic" cpNumber={cpNumber || "2"} onClose={() => setShowLogic(false)} />)}
+        {showInternalVariable && (
+          <InternalVariable
+            key={`internal-variable-${cpNumber || "none"}`}
+            cpNumber={cpNumber}
+            onClose={() => setShowInternalVariable(false)}
+          />
+        )}
+        {showSpecification && (
+          <Specification
+            key={`specification-${cpNumber || "none"}`}
+            cpNumber={cpNumber}
+            onClose={() => setShowSpecification(false)}
+          />
+        )}
+        {showUDPTerminal && (
+          <UDPSerialTerminal
+            key="udp-serial-terminal"
+            onClose={() => setShowUDPTerminal(false)}
+          />
+        )}
+        {showComTerminal && (
+          <ComSerialTerminal
+            key="com-serial-terminal"
+            onClose={() => setShowComTerminal(false)}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Placeholder pages ──────────────────────────────────────────
+function MainContent() {
+  return (
+    <div className="flex-1 flex items-center justify-center text-[var(--text-primary)] font-mono text-sm select-none">
+      <div className="text-center">
+        <div className="text-4xl mb-3 opacity-20">⚙</div>
+        <p>CP02-PCBAVM2 — Main Process</p>
+      </div>
+    </div>
+  );
+}

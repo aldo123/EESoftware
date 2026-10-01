@@ -1,0 +1,52 @@
+[
+    {
+        "key": "name",
+        "label": "Name",
+        "width": 150
+    },
+    {
+        "key": "description",
+        "label": "Description",
+        "width": 150
+    },
+    {
+        "key": "program",
+        "label": "Program",
+        "width": 150
+    },
+    {
+        "key": "producttype",
+        "label": "Producttype",
+        "width": 150
+    },
+    {
+        "key": "line",
+        "label": "Line",
+        "width": 150
+    },
+    {
+        "key": "partner",
+        "label": "Partner",
+        "width": 150
+    },
+    {
+        "key": "voltage",
+        "label": "Voltage",
+        "width": 150
+    },
+    {
+        "key": "plug",
+        "label": "Plug",
+        "width": 150
+    },
+    {
+        "key": "colour",
+        "label": "Colour",
+        "width": 150
+    },
+    {
+        "key": "customer",
+        "label": "Customer",
+        "width": 150
+    }
+]
