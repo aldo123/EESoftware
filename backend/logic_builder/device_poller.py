@@ -25,8 +25,7 @@ POLL_INTERVAL = 0.05  # seconds
 
 _buffers = {}       # trigger_key -> deque of fired values
 _buffers_lock = threading.Lock()
-_last_values = {}   # trigger_key -> last read value
-_last_modes = {}    # trigger_key -> last configured trigger mode
+_last_values = {}   # trigger_key -> last read value, for rising-edge detection
 
 
 def trigger_key(cfg: dict) -> str:
@@ -136,65 +135,16 @@ def _poll_once():
             _last_errors[key] = str(e)
             continue  # device not connected / read failed — retry next cycle
 
-        # Normalize equivalent PLC values before comparing the trigger.
-        # 1, 1.0, True and "1" are treated as the same value.
-        def _norm(v):
-            s = "" if v is None else str(v).strip()
-            low = s.lower()
-            if low in ("true", "on", "high"):
-                return "1"
-            if low in ("false", "off", "low"):
-                return "0"
-            try:
-                f = float(s)
-                if f.is_integer():
-                    return str(int(f))
-            except (TypeError, ValueError):
-                pass
-            return s
-
-        trigger_value = _norm(cfg.get("trigger_value", "1"))
-        current_value = _norm(value)
-
+        trigger_value = str(cfg.get("trigger_value", "1"))
         previous = _last_values.get(key)
-        previous_norm = None if previous is None else _norm(previous)
-
-        mode = str(cfg.get("trigger_mode", "level") or "level").strip().lower()
-        if mode not in ("level", "rising_edge"):
-            mode = "level"
-
-        previous_mode = _last_modes.get(key)
-        _last_modes[key] = mode
         _last_values[key] = value
 
-        is_match = current_value == trigger_value
-        was_match = previous_norm is not None and previous_norm == trigger_value
-
-        should_fire = False
-
-        if mode == "level":
-            # LEVEL:
-            # Keep processing while the trigger remains satisfied, but allow
-            # only ONE outstanding event at a time. After the frontend consumes
-            # the event with /pop, the next poll can create the next event.
-            should_fire = is_match
-        else:
-            # RISING EDGE:
-            # Only a real non-trigger -> trigger transition fires.
-            should_fire = (
-                is_match
-                and previous is not None
-                and not was_match
-            )
-
-        if should_fire:
+        # Rising edge only — fire once when the value first reaches trigger_value,
+        # not on every poll while it stays there (same idea as a PLC pulse input).
+        if previous != trigger_value and value == trigger_value:
             with _buffers_lock:
-                # Only one event may be outstanding for a trigger.
-                # This prevents a 50 ms poll loop from flooding the queue.
-                buf = _buffers.setdefault(key, deque(maxlen=1))
-                if not buf:
-                    buf.append(value)
-                    print(f"[DEVICE TRIGGER] '{key}' fired ({mode}) -> {value}")
+                _buffers.setdefault(key, deque(maxlen=20)).append(value)
+            print(f"[DEVICE TRIGGER] '{key}' fired -> {value}")
     if _poll_count <= 3 or _poll_count % 50 == 0:
         print(f"[DEVICE TRIGGER] poll #{_poll_count}, nodes found: {seen_any}, values: {_last_values}, errors: {_last_errors}")
 
@@ -222,7 +172,6 @@ def debug_status():
         "poll_count": _poll_count,
         "thread_alive": _poll_thread.is_alive(),
         "last_values": dict(_last_values),
-        "last_modes": dict(_last_modes),
         "last_errors": dict(_last_errors),
         "flows_dir": FLOWS_DIR,
         "flows_dir_exists": os.path.isdir(FLOWS_DIR),

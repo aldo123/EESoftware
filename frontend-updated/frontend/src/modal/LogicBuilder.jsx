@@ -57,7 +57,7 @@ function IconTrash() { return <svg width="12" height="12" viewBox="0 0 24 24" fi
 const DEFAULT_NODE_CONFIG = {
   device_trigger: {
     sources: [
-      { connection_type: "modbus_tcp", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", trigger_mode: "level", variable_name: "" },
+      { connection_type: "modbus_tcp", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", variable_name: "" },
     ],
     fieldKey: "",
   },
@@ -613,7 +613,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
     setLocalConfig(prev => ({ ...prev, method_params: { ...(prev.method_params || {}), [key]: val } }));
   };
 
-  const EMPTY_TRIGGER_SOURCE = { connection_type: "modbus_tcp", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", trigger_mode: "level", variable_name: "" };
+  const EMPTY_TRIGGER_SOURCE = { connection_type: "modbus_tcp", device: "", device_name: "", address_type: "holding_register", address: "0", trigger_value: "1", variable_name: "" };
   // Device Trigger supports Modbus TCP, Modbus RTU, Omron FINS and Internal Variable only.
   // Any legacy unsupported source is converted to a blank Modbus TCP source.
   const normalizeTriggerSource = (src) => {
@@ -621,12 +621,8 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
     const normalized = allowed.includes(src?.connection_type)
       ? { ...src }
       : { ...EMPTY_TRIGGER_SOURCE };
-    return {
-      ...normalized,
-      // New Device Trigger nodes default to Level. Legacy flows without
-      // trigger_mode are also displayed and saved as Level.
-      trigger_mode: normalized.trigger_mode === "rising_edge" ? "rising_edge" : "level",
-    };
+    // Device Trigger has one behavior only: Rising Edge.
+    return { ...normalized, trigger_mode: "rising_edge" };
   };
   const triggerSources = Array.isArray(c.sources) ? c.sources.map(normalizeTriggerSource)
     : c.connection_type ? [normalizeTriggerSource({ connection_type: c.connection_type, device: c.device, device_name: c.device_name, address_type: c.address_type, address: c.address, trigger_value: c.trigger_value, trigger_mode: c.trigger_mode, variable_name: c.variable_name })]
@@ -901,15 +897,15 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
     if (node.type === "device_trigger") {
       const sources = (Array.isArray(localConfig.sources) ? localConfig.sources : triggerSources).map(src => ({
         ...src,
-        trigger_mode: src.trigger_mode === "rising_edge" ? "rising_edge" : "level",
+        trigger_mode: "rising_edge",
       }));
       onChange({
         ...node,
         config: {
           ...localConfig,
           sources,
-          // Keep the node-level key for compatibility with any legacy tooling.
-          trigger_mode: sources[0]?.trigger_mode || "level",
+          // Keep the node-level key for compatibility with legacy tooling/poller.
+          trigger_mode: "rising_edge",
         },
       });
     } else {
@@ -980,16 +976,6 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
 
               {(src.connection_type === "modbus_tcp" || src.connection_type === "modbus_rtu" || src.connection_type === "fins" || src.connection_type === "ethernet_ip") && (<>
                 <PlcAddressFields protocol={triggerProtocolOf(src.connection_type)} cfg={src} onPatch={patch => updateTriggerSource(idx, patch)} devices={plcDeviceLists} />
-                <Field label="Trigger Mode">
-                  <Select
-                    value={src.trigger_mode || "level"}
-                    onChange={v => updateTriggerSource(idx, { trigger_mode: v })}
-                    options={[
-                      { value: "level", label: "Level — Process if satisfied" },
-                      { value: "rising_edge", label: "Rising Edge — 0 → 1 only" },
-                    ]}
-                  />
-                </Field>
                 <Field label="Trigger Value"><Input value={src.trigger_value} onChange={v => updateTriggerSource(idx, { trigger_value: v })} placeholder="1" /></Field>
               </>)}
 
@@ -1006,16 +992,6 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
                     ))}
                   </select>
                 </Field>
-                <Field label="Trigger Mode">
-                  <Select
-                    value={src.trigger_mode || "level"}
-                    onChange={v => updateTriggerSource(idx, { trigger_mode: v })}
-                    options={[
-                      { value: "level", label: "Level — Process if satisfied" },
-                      { value: "rising_edge", label: "Rising Edge — 0 → 1 only" },
-                    ]}
-                  />
-                </Field>
                 <Field label="Trigger Value"><Input value={src.trigger_value} onChange={v => updateTriggerSource(idx, { trigger_value: v })} placeholder="1" /></Field>
               </>)}
             </div>
@@ -1030,7 +1006,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
           </button>
 
           <p className="text-[var(--text-muted)] text-[9px] mt-1">
-            Semua source di atas OR — <b>salah satu</b> yang terpenuhi bisa memicu flow. <b>Level</b> akan process sekali saat nilai sudah terpenuhi, termasuk jika sejak awal nilainya sudah sama dengan Trigger Value, lalu menunggu nilai keluar dari kondisi sebelum bisa process lagi. <b>Rising Edge</b> hanya process saat terjadi perubahan dari nilai berbeda → Trigger Value.
+            Semua source di atas OR — <b>salah satu</b> yang mencapai Trigger Value akan memicu flow. Device Trigger menggunakan <b>Rising Edge</b>: hanya perubahan dari nilai berbeda → Trigger Value yang memicu, lalu harus keluar dari kondisi sebelum dapat memicu lagi.
           </p>
         </>)}
 

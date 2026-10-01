@@ -3206,30 +3206,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
       );
 
       // Keep the existing Logic Builder scan flow unchanged.
-      //
-      // Device Trigger scanner supplies an ACK callback. The scanner must keep
-      // the backend event in the queue until this Logic Builder request has
-      // completely finished; otherwise Level mode (1 -> 1) can create the next
-      // event while the previous /api/logic-run is still running.
-      const acknowledge = event.detail?.acknowledge;
-      const isDeviceTrigger =
-        scanKind === "device-trigger";
-
-      if (isDeviceTrigger && typeof acknowledge === "function") {
-        Promise.resolve(handleScan(source, value))
-          .catch((error) => {
-            console.error(
-              "[DynamicCPPage] Device Trigger processing failed:",
-              error
-            );
-          })
-          .finally(() => {
-            acknowledge();
-          });
-      } else {
-        // RS232 / legacy cp-scan behavior remains unchanged.
-        handleScan(source, value);
-      }
+      handleScan(source, value);
     };
 
     window.addEventListener(

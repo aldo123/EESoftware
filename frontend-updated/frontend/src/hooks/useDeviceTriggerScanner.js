@@ -29,20 +29,11 @@ export function useDeviceTriggerScanner(cpNumber, active = true) {
         for (const [deviceKey, value] of Object.entries(data)) {
           if (!value) continue;
 
-          // Keep the backend event outstanding until the runtime logic has
-          // completely finished. This prevents Level mode (1 -> 1) from
-          // generating another event while the previous /api/logic-run is
-          // still being processed.
-          let acknowledged = false;
-          let acknowledge;
-
-          const acknowledgedPromise = new Promise((resolve) => {
-            acknowledge = () => {
-              if (acknowledged) return;
-              acknowledged = true;
-              resolve();
-            };
-          });
+          await fetch(`${API}/api/device-trigger/pop`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ device: deviceKey }),
+          }).catch(() => {});
 
           window.dispatchEvent(
             new CustomEvent("cp-scan", {
@@ -50,42 +41,11 @@ export function useDeviceTriggerScanner(cpNumber, active = true) {
                 cpNumber: String(cpNumber),
                 source: deviceKey,
                 value: String(value),
-                kind: "device-trigger",
-                acknowledge,
               },
             })
           );
 
-          console.log(
-            `[DeviceTrigger] Dispatched cp-scan for ${deviceKey} → ${value}; waiting for logic ACK`
-          );
-
-          // Fail-safe so a destroyed/unmounted runtime cannot block the
-          // scanner forever.
-          await Promise.race([
-            acknowledgedPromise,
-            new Promise((resolve) => setTimeout(resolve, 15000)),
-          ]);
-
-          if (!acknowledged) {
-            console.warn(
-              `[DeviceTrigger] Logic ACK timeout for ${deviceKey}; releasing event`
-            );
-          }
-
-          // POP only after the logic flow has completed (or the fail-safe
-          // timeout). While this item remains in the backend buffer, the
-          // Level poller cannot create another outstanding event.
-          await fetch(`${API}/api/device-trigger/pop`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ device: deviceKey }),
-          }).catch((err) => {
-            console.warn(
-              `[DeviceTrigger] Failed to pop ${deviceKey}:`,
-              err
-            );
-          });
+          console.log(`[DeviceTrigger] Dispatched cp-scan for ${deviceKey} → ${value}`);
         }
       } catch (err) {
         console.error("[DeviceTrigger] Poll error:", err);
