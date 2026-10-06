@@ -783,6 +783,70 @@ def disconnect_route(): return disconnect_device((request.get_json() or {}).get(
 def read_route():
     try: return jsonify(read_config(request.get_json() or {}))
     except Exception as exc: return jsonify({"success": False, "message": str(exc)}), 400
+
+
+def read_batch_config(body):
+    """Read multiple FINS bindings in one HTTP request.
+
+    The client is fetched once and each item is returned independently. The
+    FinsClient lock still protects the physical FINS transport, while the
+    browser receives one complete snapshot instead of one response per address.
+    """
+    name = str(body.get("device_name") or "").strip()
+    if not name:
+        raise ValueError("FINS requires 'device_name'")
+    requests = body.get("requests")
+    if not isinstance(requests, list) or not requests:
+        raise ValueError("FINS batch requires a non-empty 'requests' array")
+    if len(requests) > 200:
+        raise ValueError("FINS batch supports at most 200 items")
+
+    client = get_client(name)
+    results = []
+    for item in requests:
+        if not isinstance(item, dict):
+            results.append({"id": "", "success": False, "message": "Invalid batch item"})
+            continue
+        item_id = str(item.get("id") or "")
+        try:
+            address = _body_address(item)
+            value = client.read_value(
+                address,
+                area=_body_area(item),
+                bit=item.get("bit"),
+                data_type=item.get("data_type"),
+                count=item.get("count", 1),
+                low_word_first=_low_word_first(item),
+            )
+            scalar = value[0] if isinstance(value, list) and len(value) == 1 else value
+            results.append({
+                "id": item_id,
+                "success": True,
+                "address": address,
+                "data_type": item.get("data_type"),
+                "value": scalar,
+                "values": value if isinstance(value, list) else [value],
+            })
+        except Exception as exc:
+            results.append({
+                "id": item_id,
+                "success": False,
+                "message": str(exc),
+            })
+
+    return {
+        "success": True,
+        "device_name": name,
+        "protocol": client.protocol,
+        "connected": bool(client.is_connected()),
+        "results": results,
+    }
+
+
+@fins_bp.post("/api/fins/read-batch")
+def read_batch_route():
+    try: return jsonify(read_batch_config(request.get_json() or {}))
+    except Exception as exc: return jsonify({"success": False, "message": str(exc)}), 400
 @fins_bp.post("/api/fins/write")
 def write_route():
     try: return jsonify(write_config(request.get_json() or {}))
