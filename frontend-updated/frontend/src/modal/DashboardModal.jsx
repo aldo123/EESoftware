@@ -451,12 +451,17 @@ function DashboardSettingsModal({
               onChange={(v) => setDraft((p) => ({ ...p, sn_column: v }))}
               options={[
                 { value: "auto", label: `Auto${snResolved ? ` → ${snResolved}` : ""}` },
-                ...columns.map((c) => ({ value: c.key, label: c.label || c.key })),
+                { value: "date_time", label: "Date Time" },
+                ...columns
+                  .filter((c) => String(c.key).toLowerCase() !== "date_time")
+                  .map((c) => ({ value: c.key, label: c.label || c.key })),
               ]}
               className="w-full md:w-[420px]"
             />
             <div className="text-[9px] text-[var(--text-muted)] mt-2">
-              Total QTY and Pass1/Pass2 classification use this unique SN column.
+              {draft.sn_column === "date_time"
+                ? "Date Time dipakai sebagai identitas unik setiap waktu test. Baris dengan timestamp yang sama dapat dihitung sebagai satu SN."
+                : "Total QTY and Pass1/Pass2 classification use this unique SN column."}
             </div>
           </div>
 

@@ -163,7 +163,7 @@ function RowModal({ title, columns, prefill = {}, onSave, onClose }) {
             .map(col => (
               <div key={col.key} className="flex items-center gap-3">
                 <span className="text-[var(--text-secondary)] text-[10px] font-bold w-[160px] shrink-0 leading-tight">{col.label}</span>
-                {col.key === "result" ? (
+                {["result", "results"].includes(col.key?.toLowerCase()) ? (
                   <select
                     value={vals[col.key]}
                     onChange={e => set(col.key, e.target.value)}
@@ -244,6 +244,122 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
   );
 }
 
+
+// ── SN List source settings: Logic Builder or realtime folder ──
+function SourceSettingsModal({ cp, onClose, onSaved }) {
+  const [cfg, setCfg] = useState({ mode: "logic_builder", path: "", interval_ms: 2000, delimiter: "auto", recursive: true });
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [headers, setHeaders] = useState([]);
+  const [files, setFiles] = useState([]);
+  const [folderSearch, setFolderSearch] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API}/api/snlist/source-settings?cp=${encodeURIComponent(cp)}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error("Cannot load source settings")))
+      .then(d => { if (alive) setCfg(p => ({ ...p, ...d })); })
+      .catch(e => { if (alive) setMessage(e.message); });
+    return () => { alive = false; };
+  }, [cp]);
+
+  const browse = async () => {
+    setBusy(true); setMessage("");
+    try {
+      const r = await fetch(`${API}/api/snlist/source-browse?mode=folder`);
+      const d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || "Folder picker failed");
+      if (d.path) {
+        const next = { ...cfg, path: d.path, mode: "folder" };
+        setCfg(next);
+        await preview(next.path, next.delimiter);
+      }
+    } catch (e) { setMessage(e.message || "Unable to select folder"); }
+    finally { setBusy(false); }
+  };
+
+  const preview = async (path = cfg.path, delimiter = cfg.delimiter) => {
+    if (!path.trim()) { setMessage("Pilih lokasi folder terlebih dahulu."); return; }
+    setBusy(true); setMessage("");
+    try {
+      const r = await fetch(`${API}/api/snlist/source-preview?cp=${encodeURIComponent(cp)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, delimiter, recursive: cfg.recursive })
+      });
+      const d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || "Failed to read source folder");
+      setHeaders(d.headers || []); setFiles(d.files || []);
+      setMessage(`Ditemukan ${d.files?.length || 0} file. ${d.headers?.length || 0} header terdeteksi.`);
+    } catch (e) { setHeaders([]); setFiles([]); setMessage(e.message || "Preview failed"); }
+    finally { setBusy(false); }
+  };
+
+  const save = async () => {
+    setBusy(true); setMessage("");
+    try {
+      const r = await fetch(`${API}/api/snlist/source-settings?cp=${encodeURIComponent(cp)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...cfg, mode: cfg.mode, enabled: cfg.mode === "folder" })
+      });
+      const d = await r.json();
+      if (!r.ok || !d.success) throw new Error(d.error || "Failed to save settings");
+      if (cfg.mode === "folder") {
+        const sr = await fetch(`${API}/api/snlist/source-sync?cp=${encodeURIComponent(cp)}`, { method: "POST" });
+        const sd = await sr.json();
+        if (!sr.ok || !sd.success) throw new Error(sd.error || "Source sync failed");
+        setMessage(`Source aktif. ${sd.inserted || 0} row baru diimport.`);
+      }
+      await onSaved();
+      onClose();
+    } catch (e) { setMessage(e.message || "Save failed"); }
+    finally { setBusy(false); }
+  };
+
+  const visibleFiles = files.filter(f => f.toLowerCase().includes(folderSearch.toLowerCase()));
+  return (
+    <ModalBackdrop className="fixed inset-0 z-[60] flex items-center justify-center bg-black/65 backdrop-blur-sm">
+      <ModalPanel className="w-[760px] max-w-[94vw] max-h-[90vh] flex flex-col rounded-2xl overflow-hidden border border-[var(--border)] shadow-2xl" style={{ background: "var(--bg-surface-2)" }}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-soft)]">
+          <div><div className="text-[#22C55E] font-bold text-sm">SN List Data Source</div><div className="text-[var(--text-faint)] text-[10px] mt-1">Pilih sumber data untuk CP{cp}.</div></div>
+          <button onClick={onClose} className="w-7 h-7 rounded-lg text-[var(--text-muted)] hover:bg-[var(--bg-elevated)]"><IconX /></button>
+        </div>
+        <div className="p-5 overflow-y-auto flex flex-col gap-4">
+          <div>
+            <label className="block text-[10px] uppercase tracking-wider font-bold text-[var(--text-secondary)] mb-1.5">Data Source Mode</label>
+            <select value={cfg.mode || "logic_builder"} onChange={e => { setCfg(p => ({ ...p, mode: e.target.value })); setMessage(""); }} className="w-full h-9 bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg px-3 text-xs text-[var(--text-primary)]">
+              <option value="logic_builder">Logic Builder (current behavior)</option>
+              <option value="folder">Realtime Folder</option>
+            </select>
+          </div>
+          {cfg.mode === "folder" && <>
+            <div>
+              <label className="block text-[10px] uppercase tracking-wider font-bold text-[var(--text-secondary)] mb-1.5">Folder Location</label>
+              <div className="flex gap-2"><Input value={cfg.path || ""} onChange={e => setCfg(p => ({ ...p, path: e.target.value }))} placeholder="Browse atau masukkan absolute folder path" className="flex-1"/><button disabled={busy} onClick={browse} className="h-8 px-4 rounded-lg bg-[#3B82F6] text-white text-xs font-bold disabled:opacity-50">Browse Folder</button><button disabled={busy} onClick={() => preview()} className="h-8 px-4 rounded-lg border border-[var(--border)] text-xs text-[var(--text-primary)] disabled:opacity-50">Read Headers</button></div>
+              <p className="text-[9px] text-[var(--text-faint)] mt-1">Browse membuka folder picker Windows pada komputer tempat backend berjalan. Folder dapat dicari/dipilih di dialog Windows.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1">Delimiter</label><select value={cfg.delimiter || "auto"} onChange={e => setCfg(p => ({ ...p, delimiter: e.target.value }))} className="w-full h-8 bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg px-2 text-xs text-[var(--text-primary)]"><option value="auto">Auto detect</option><option value=",">Comma (,)</option><option value=";">Semicolon (;)</option><option value="|">Pipe (|)</option><option value="\t">Tab</option></select></div>
+              <div><label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1">Scan Interval (ms)</label><Input type="number" min="500" step="500" value={cfg.interval_ms || 2000} onChange={e => setCfg(p => ({ ...p, interval_ms: Math.max(500, Number(e.target.value) || 2000) }))} className="w-full"/></div>
+            </div>
+            <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"><input type="checkbox" checked={cfg.recursive !== false} onChange={e => setCfg(p => ({ ...p, recursive: e.target.checked }))}/> Include subfolders</label>
+            <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+              <div className="px-3 py-2 bg-[var(--bg-elevated)] flex items-center justify-between"><span className="text-xs font-bold text-[var(--text-primary)]">Detected Headers</span><span className="text-[10px] text-[var(--text-muted)]">{headers.length} columns</span></div>
+              {headers.length ? <div className="max-h-40 overflow-auto p-2 flex flex-wrap gap-1">{headers.map((h,i)=><span key={`${h.key}-${i}`} title={h.original} className="px-2 py-1 rounded-md bg-[var(--bg-surface)] border border-[var(--border-soft)] text-[10px] text-[var(--text-secondary)]">{h.label}</span>)}</div> : <div className="p-4 text-xs text-[var(--text-faint)]">Klik Browse Folder lalu Read Headers. Header akan dibuat otomatis dari file.</div>}
+            </div>
+            <div className="rounded-xl border border-[var(--border)] overflow-hidden">
+              <div className="px-3 py-2 bg-[var(--bg-elevated)]"><span className="text-xs font-bold text-[var(--text-primary)]">Files Found</span></div>
+              <div className="p-2"><Input value={folderSearch} onChange={e => setFolderSearch(e.target.value)} placeholder="Search file name..." className="w-full mb-2"/><div className="max-h-24 overflow-auto text-[10px] text-[var(--text-muted)] space-y-1">{visibleFiles.slice(0,100).map(f=><div key={f} className="truncate" title={f}>{f}</div>)}{visibleFiles.length > 100 && <div>...and {visibleFiles.length-100} more files</div>}</div></div>
+            </div>
+            <p className="text-[10px] text-[var(--text-faint)]">Saat source aktif, file baru atau row baru akan ditambahkan otomatis. Row yang sudah diimport tidak akan dimasukkan lagi. File tidak berubah dilewati.</p>
+          </>}
+          {message && <div className="text-[10px] rounded-lg border border-[var(--border)] p-2 text-[var(--text-secondary)]">{busy ? "Processing... " : ""}{message}</div>}
+        </div>
+        <div className="px-5 py-3 flex justify-end gap-2 border-t border-[var(--border-soft)]"><button onClick={onClose} className="h-8 px-4 rounded-lg border border-[var(--border)] text-xs text-[var(--text-secondary)]">Cancel</button><button disabled={busy} onClick={save} className="h-8 px-5 rounded-lg bg-[#22C55E] text-[#052E16] font-bold text-xs disabled:opacity-50">{busy ? "Saving..." : "Save Source"}</button></div>
+      </ModalPanel>
+    </ModalBackdrop>
+  );
+}
+
 // ── MAIN COMPONENT ──────────────────────────────────────────
 export default function SNListPage({ user }) {
   // ── State ────────────────────────────────────────────────────
@@ -266,6 +382,8 @@ export default function SNListPage({ user }) {
   const PER_PAGE = 50;
 
   const [showColMgr, setShowColMgr] = useState(false);
+  const [showSourceSettings, setShowSourceSettings] = useState(false);
+  const [sourceMode, setSourceMode] = useState("logic_builder");
   const [editRow, setEditRow] = useState(null);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [contextMenu, setContextMenu] = useState(null);
@@ -293,6 +411,14 @@ export default function SNListPage({ user }) {
       console.error("Failed to reload interlock", e);
       setCurrentCP("1");
     }
+  }, []);
+
+  const fetchSourceMode = useCallback(async (cp) => {
+    if (!cp) return;
+    try {
+      const r = await fetch(`${API}/api/snlist/source-settings?cp=${encodeURIComponent(cp)}`);
+      if (r.ok) { const d = await r.json(); setSourceMode(d.mode || "logic_builder"); }
+    } catch (e) { console.error("Cannot load SN List source mode", e); }
   }, []);
 
   // ── Ambil CP dari interlock saat mount ──────────────────────
@@ -342,8 +468,20 @@ export default function SNListPage({ user }) {
     if (currentCP) {
       fetchColumns(currentCP);
       fetchData();
+      fetchSourceMode(currentCP);
     }
-  }, [currentCP, fetchColumns, fetchData]);
+  }, [currentCP, fetchColumns, fetchData, fetchSourceMode]);
+
+  // Refresh the visible SN List while a folder source is active, so imported
+  // records appear in the table without requiring the operator to press Refresh.
+  useEffect(() => {
+    if (sourceMode !== "folder" || !currentCP) return;
+    const timer = setInterval(() => {
+      fetchColumns(currentCP);
+      fetchData({ page: 1 });
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [sourceMode, currentCP, fetchColumns, fetchData]);
 
   // ── Sort ────────────────────────────────────────────────────
   const sorted = [...data].sort((a, b) => {
@@ -505,6 +643,13 @@ export default function SNListPage({ user }) {
           </button>
 
           <button
+            onClick={() => setShowSourceSettings(true)}
+            className="h-8 px-3 rounded-lg border border-[#22C55E]/40 text-[#22C55E] hover:bg-[#22C55E]/10 text-[10px] font-bold transition-colors flex items-center gap-1.5"
+          >
+            {sourceMode === "folder" ? "● Folder Source" : "⚙ Data Source"}
+          </button>
+
+          <button
             onClick={() => setShowColMgr(true)}
             className="h-8 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] hover:text-[var(--text-primary)] text-[10px] font-bold transition-colors flex items-center gap-1.5"
           >
@@ -631,6 +776,14 @@ export default function SNListPage({ user }) {
 
       {/* Modals */}
       <AnimatePresence>
+        {showSourceSettings && currentCP && (
+          <SourceSettingsModal
+            key="source-settings"
+            cp={currentCP}
+            onClose={() => setShowSourceSettings(false)}
+            onSaved={async () => { await fetchSourceMode(currentCP); await fetchColumns(currentCP); await fetchData({ page: 1 }); }}
+          />
+        )}
         {showColMgr && (
           <ColumnManagerModal
             key="col-mgr"

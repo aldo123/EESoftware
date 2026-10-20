@@ -8,6 +8,7 @@ import SNListPage from "./modal/SnlistModal";
 import ReferencePage from "./modal/ReferenceModal";
 import CpkAnalyzerPage from "./modal/CpkAnalyzerModal";
 import DashboardPage from "./modal/DashboardModal";
+import OEEPage from "./modal/OEEModal";
 import PageBuilder from "./modal/PageBuilder";
 import LogicBuilder from "./modal/LogicBuilder";
 import InternalVariable from "./modal/InternalVariable";
@@ -81,7 +82,7 @@ const IconMenu = () => (
 );
 
 // ── Menu items ────────────────────────────────────────────────
-const MENU_ITEMS = ["Main", "Dashboard", "Downtime", "SN List", "Reference", "CPK Analyzer"];
+const MENU_ITEMS = ["Main", "OEE", "Dashboard", "Downtime", "SN List", "Reference", "CPK Analyzer"];
 
 // ── Field (reused) ─────────────────────────────────────────────
 function Field({ icon, placeholder, value, onChange, onKeyDown, type = "text" }) {
@@ -961,6 +962,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
       case "Reference": return <ReferencePage user={user} />;
       case "CPK Analyzer": return <CpkAnalyzerPage />;
       case "Dashboard": return <DashboardPage cpNumber={cpNumber} />;
+      case "OEE": return <OEEPage cpNumber={cpNumber} machineStatus={machineStatus} downtimeActive={downtimeActive} downtimeStart={downtimeStart} />;
       default:
         return <MainContent />;
     }
@@ -1078,7 +1080,9 @@ export default function MainPage({ user: initialUser, onLogout }) {
                   <button
                     key={label}
                     disabled={disabled}
-                    onClick={() => !disabled && setActiveMenu(label)}
+                    onClick={() => {
+                      if (!disabled) setActiveMenu(label);
+                    }}
                     className={`relative w-full text-left px-4 py-2.5 text-[11px] font-semibold transition-colors ${active
                       ? "text-white"
                       : disabled
