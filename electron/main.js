@@ -3,6 +3,7 @@ const { spawn, execFile } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const http = require('http');
+const { registerExternalEmbed } = require('./external-embed');
 
 const isPackaged = app.isPackaged;
 const FRONTEND_DEV_URL = process.env.FRONTEND_DEV_URL || 'http://127.0.0.1:5173';
@@ -14,6 +15,7 @@ let backendProcess = null;
 let frontendDevProcess = null;
 let isShuttingDown = false;
 let isQuitting = false;
+let externalEmbed = null;
 
 function projectRoot() {
   // EE Interlock/
@@ -157,13 +159,22 @@ async function waitBackend(timeoutMs = 30000) {
   return waitForUrl(BACKEND_HEALTH_URL, timeoutMs);
 }
 
+// Per-request access-log lines ("GET /api/... HTTP/1.1" 200) are dropped: with the UI
+// polling the backend, they flood the console and slow the main process down.
+const ACCESS_LOG = /"(?:GET|POST|PUT|PATCH|DELETE|OPTIONS) \S+ HTTP\/\d(?:\.\d)?" \d{3}/;
+const quiet = (text) =>
+  text
+    .split(/\r?\n/)
+    .filter((line) => line && !ACCESS_LOG.test(line))
+    .join('\n');
+
 function logProcessOutput(label, child) {
   child.stdout?.on('data', (data) => {
-    const text = String(data).trimEnd();
+    const text = quiet(String(data).trimEnd());
     if (text) console.log(`[${label}] ${text}`);
   });
   child.stderr?.on('data', (data) => {
-    const text = String(data).trimEnd();
+    const text = quiet(String(data).trimEnd());
     if (text) console.error(`[${label}] ${text}`);
   });
 }
@@ -246,6 +257,10 @@ function spawnFrontendDevServer() {
     cwd: frontendDir,
     env: { ...process.env },
     windowsHide: true,
+    // Node >= 18.20.2 / 20.12.2 refuses to spawn .cmd/.bat on Windows without
+    // a shell (CVE-2024-27980) and throws "spawn EINVAL". Arguments here are
+    // fixed strings, so using a shell is safe.
+    shell: process.platform === 'win32',
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
   });
@@ -326,9 +341,45 @@ async function shutdownManagedProcesses() {
 
   // Backend and Vite are independent. Stop both even when one fails.
   await Promise.all([
+    externalEmbed?.closeExternal?.().catch?.(() => {}),
     terminateManagedProcess('backend', 'backend'),
     terminateManagedProcess('frontend dev server', 'frontend'),
   ]);
+}
+
+// ── Performance helpers ─────────────────────────────────────────────────────
+// 1) With a heavy program next to us (LabVIEW graphs, NI Vision, remote desktop) the CPU can be
+//    saturated; the UI processes get a slightly higher priority so clicks stay responsive.
+//    Disable with EE_NO_PRIORITY_BOOST=1.
+function boostUiPriority() {
+  if (process.platform !== 'win32' || process.env.EE_NO_PRIORITY_BOOST === '1') return;
+  try {
+    const os = require('os');
+    const pids = new Set([process.pid, ...app.getAppMetrics().map((m) => m.pid)]);
+    for (const pid of pids) {
+      try { os.setPriority(pid, os.constants.priority.PRIORITY_ABOVE_NORMAL); } catch { /* ignore */ }
+    }
+    console.log(`[Perf] UI priority raised for ${pids.size} process(es)`);
+  } catch (error) {
+    console.warn('[Perf] could not raise UI priority:', error.message);
+  }
+}
+
+// 2) Software rendering (no GPU, typical in a remote-desktop session) makes every repaint slow.
+function logGpuStatus() {
+  try { console.log('[Perf] GPU feature status:', JSON.stringify(app.getGPUFeatureStatus())); } catch { /* ignore */ }
+}
+
+// 3) EE_PERF=1 -> report when this process is blocked (e.g. waiting for another program).
+function startLagMonitor() {
+  if (process.env.EE_PERF !== '1') return;
+  let last = Date.now();
+  setInterval(() => {
+    const now = Date.now();
+    const lag = now - last - 500;
+    if (lag > 100) console.warn(`[Perf] main process was blocked for ${lag} ms`);
+    last = now;
+  }, 500);
 }
 
 async function createWindow() {
@@ -370,6 +421,10 @@ async function createWindow() {
     // The window already matches the display work area. Do not call maximize().
     mainWindow.show();
     mainWindow.focus();
+    logGpuStatus();
+    startLagMonitor();
+    boostUiPriority();
+    setTimeout(boostUiPriority, 4000); // renderer / GPU processes may appear a little later
   });
 
   if (isPackaged) {
@@ -432,7 +487,14 @@ async function start() {
   }
 }
 
-app.whenReady().then(start);
+app.whenReady().then(() => {
+  // IPC for embedding an external .exe into the Main Page panel (Windows only)
+  externalEmbed = registerExternalEmbed({
+    getWindow: () => mainWindow,
+    killTree: runKillProcessTree,
+  });
+  return start();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

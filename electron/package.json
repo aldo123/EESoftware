@@ -26,6 +26,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "external-embed.js",
       "package.json",
       "assets/**/*"
     ],
@@ -72,5 +73,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "EE Interlock"
     }
+  },
+  "dependencies": {
+    "koffi": "^3.3.4"
   }
 }
