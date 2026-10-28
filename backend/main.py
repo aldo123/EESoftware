@@ -1,6 +1,11 @@
 ﻿import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import logging
+
+# The UI polls the API many times per second. Printing one log line per request
+# slows the backend (and the Electron console that reads its output) a lot.
+logging.getLogger("werkzeug").setLevel(logging.ERROR)
 
 # ── Shared DB singleton ────────────────────────────────────────
 from db_manager import db

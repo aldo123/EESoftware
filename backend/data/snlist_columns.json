@@ -1,98 +1,614 @@
 {
-    "01": [
+    "101": [
         {
             "key": "date_time",
-            "label": "Date Time",
-            "width": 140
+            "label": "Time",
+            "width": 150
         },
         {
-            "key": "chassis_sn",
-            "label": "Chassis SN",
-            "width": 140
+            "key": "line",
+            "label": "Line",
+            "width": 150
         },
         {
-            "key": "pcba",
-            "label": "pcab_sn",
-            "width": 140
-        }
-    ],
-    "02": [
+            "key": "model",
+            "label": "Model",
+            "width": 150
+        },
         {
-            "key": "date_time",
-            "label": "Date Time",
-            "width": 140
+            "key": "station",
+            "label": "Station",
+            "width": 150
+        },
+        {
+            "key": "version",
+            "label": "Version",
+            "width": 150
         },
         {
             "key": "sn",
-            "label": "Chassis SN",
-            "width": 140
+            "label": "SN",
+            "width": 150
         },
         {
-            "key": "carrier",
-            "label": "Carrier SN",
-            "width": 140
+            "key": "mac",
+            "label": "MAC",
+            "width": 150
         },
         {
-            "key": "step1lsl",
-            "label": "Step 1 Lower Limit",
-            "width": 140
+            "key": "bar_code_lowlimit",
+            "label": "Bar code  Lowlimit",
+            "width": 150
         },
         {
-            "key": "step1usl",
-            "label": "Step 1 Upper Limit",
-            "width": 140
+            "key": "bar_code_uplimit",
+            "label": "Bar code  Uplimit",
+            "width": 150
         },
         {
-            "key": "step1",
-            "label": "Step 1",
-            "width": 140
+            "key": "bar_code",
+            "label": "Bar code",
+            "width": 150
         },
         {
-            "key": "step2lsl",
-            "label": "Step 2 Lower Limit",
-            "width": 140
+            "key": "power_on_voltage_v_lowlimit",
+            "label": "Power on voltage(V)  Lowlimit",
+            "width": 150
         },
         {
-            "key": "step2usl",
-            "label": "Step 2 Upper Limit",
-            "width": 140
+            "key": "power_on_voltage_v_uplimit",
+            "label": "Power on voltage(V)  Uplimit",
+            "width": 150
         },
         {
-            "key": "step2",
-            "label": "Step 2",
-            "width": 140
+            "key": "power_on_voltage_v",
+            "label": "Power on voltage(V)",
+            "width": 150
         },
         {
-            "key": "step3lsl",
-            "label": "Step 3 Lower Limit",
-            "width": 140
+            "key": "power_on_standby_power_consumption_w_lowlimit",
+            "label": "Power on standby power consumption(W)  Lowlimit",
+            "width": 150
         },
         {
-            "key": "step3usl",
-            "label": "Step 3 Upper Limit",
-            "width": 140
+            "key": "power_on_standby_power_consumption_w_uplimit",
+            "label": "Power on standby power consumption(W)  Uplimit",
+            "width": 150
         },
         {
-            "key": "step3",
-            "label": "Step 3",
-            "width": 140
+            "key": "power_on_standby_power_consumption_w",
+            "label": "Power on standby power consumption(W)",
+            "width": 150
+        },
+        {
+            "key": "connectivity_version_lowlimit",
+            "label": "Connectivity version  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "connectivity_version_uplimit",
+            "label": "Connectivity version  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "connectivity_version",
+            "label": "Connectivity version",
+            "width": 150
+        },
+        {
+            "key": "write_model_mod_name_lowlimit",
+            "label": "Write model (MOD) name  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "write_model_mod_name_uplimit",
+            "label": "Write model (MOD) name  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "write_model_mod_name",
+            "label": "Write model (MOD) name",
+            "width": 150
+        },
+        {
+            "key": "wifi_strength_lowlimit",
+            "label": "WiFi strength  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "wifi_strength_uplimit",
+            "label": "WiFi strength  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "wifi_strength",
+            "label": "WiFi strength",
+            "width": 150
+        },
+        {
+            "key": "write_connectivity_number_lowlimit",
+            "label": "Write connectivity number  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "write_connectivity_number_uplimit",
+            "label": "Write connectivity number  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "write_connectivity_number",
+            "label": "Write connectivity number",
+            "width": 150
+        },
+        {
+            "key": "bluetooth_connected_lowlimit",
+            "label": "Bluetooth connected  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "bluetooth_connected_uplimit",
+            "label": "Bluetooth connected  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "bluetooth_connected",
+            "label": "Bluetooth connected",
+            "width": 150
+        },
+        {
+            "key": "close_handle_n_lowlimit",
+            "label": "Close handle(N)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "close_handle_n_uplimit",
+            "label": "Close handle(N)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "close_handle_n",
+            "label": "Close handle(N)",
+            "width": 150
+        },
+        {
+            "key": "handle_close_motor_current_0rpm_lowlimit",
+            "label": "Handle close motor current(0rpm)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "handle_close_motor_current_0rpm_uplimit",
+            "label": "Handle close motor current(0rpm)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "handle_close_motor_current_0rpm",
+            "label": "Handle close motor current(0rpm)",
+            "width": 150
+        },
+        {
+            "key": "recipe_lowlimit",
+            "label": "Recipe  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "recipe_uplimit",
+            "label": "Recipe  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "recipe",
+            "label": "Recipe",
+            "width": 150
+        },
+        {
+            "key": "hmi_ver_lowlimit",
+            "label": "HMI Ver  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "hmi_ver_uplimit",
+            "label": "HMI Ver  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "hmi_ver",
+            "label": "HMI Ver",
+            "width": 150
+        },
+        {
+            "key": "detect_main_and_esp_lowlimit",
+            "label": "Detect Main and ESP  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "detect_main_and_esp_uplimit",
+            "label": "Detect Main and ESP  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "detect_main_and_esp",
+            "label": "Detect Main and ESP",
+            "width": 150
+        },
+        {
+            "key": "detect_f_key_lowlimit",
+            "label": "Detect F-key  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "detect_f_key_uplimit",
+            "label": "Detect F-key  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "detect_f_key",
+            "label": "Detect F-key",
+            "width": 150
+        },
+        {
+            "key": "hall_sensor_3000rpm_lowlimit",
+            "label": "Hall sensor(3000rpm)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "hall_sensor_3000rpm_uplimit",
+            "label": "Hall sensor(3000rpm)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "hall_sensor_3000rpm",
+            "label": "Hall sensor(3000rpm)",
+            "width": 150
+        },
+        {
+            "key": "version_no_lowlimit",
+            "label": "Version NO  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "version_no_uplimit",
+            "label": "Version NO  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "version_no",
+            "label": "Version NO",
+            "width": 150
+        },
+        {
+            "key": "rlb_reading_quality_lowlimit",
+            "label": "RLB reading quality  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "rlb_reading_quality_uplimit",
+            "label": "RLB reading quality  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "rlb_reading_quality",
+            "label": "RLB reading quality",
+            "width": 150
+        },
+        {
+            "key": "velocity_of_flow_ml_min_lowlimit",
+            "label": "Velocity of flow(mL/min)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "velocity_of_flow_ml_min_uplimit",
+            "label": "Velocity of flow(mL/min)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "velocity_of_flow_ml_min",
+            "label": "Velocity of flow(mL/min)",
+            "width": 150
+        },
+        {
+            "key": "capsule_shot_volumn_g_lowlimit",
+            "label": "Capsule shot volumn(g)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "capsule_shot_volumn_g_uplimit",
+            "label": "Capsule shot volumn(g)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "capsule_shot_volumn_g",
+            "label": "Capsule shot volumn(g)",
+            "width": 150
+        },
+        {
+            "key": "water_inflow_g_lowlimit",
+            "label": "Water inflow(g)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "water_inflow_g_uplimit",
+            "label": "Water inflow(g)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "water_inflow_g",
+            "label": "Water inflow(g)",
+            "width": 150
+        },
+        {
+            "key": "capsule_temp_c_lowlimit",
+            "label": "Capsule temp(C)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "capsule_temp_c_uplimit",
+            "label": "Capsule temp(C)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "capsule_temp_c",
+            "label": "Capsule temp(C)",
+            "width": 150
+        },
+        {
+            "key": "leakage_test_g_lowlimit",
+            "label": "Leakage test(g)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "leakage_test_g_uplimit",
+            "label": "Leakage test(g)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "leakage_test_g",
+            "label": "Leakage test(g)",
+            "width": 150
+        },
+        {
+            "key": "ntc_temp_lowlimit",
+            "label": "NTC temp  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "ntc_temp_uplimit",
+            "label": "NTC temp  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "ntc_temp",
+            "label": "NTC temp",
+            "width": 150
+        },
+        {
+            "key": "motor_current_3000rpm_lowlimit",
+            "label": "Motor current(3000rpm)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "motor_current_3000rpm_uplimit",
+            "label": "Motor current(3000rpm)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "motor_current_3000rpm",
+            "label": "Motor current(3000rpm)",
+            "width": 150
+        },
+        {
+            "key": "leak_lowlimit",
+            "label": "Leak  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "leak_uplimit",
+            "label": "Leak  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "leak",
+            "label": "Leak",
+            "width": 150
+        },
+        {
+            "key": "close_handle_status_lowlimit",
+            "label": "Close handle status  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "close_handle_status_uplimit",
+            "label": "Close handle status  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "close_handle_status",
+            "label": "Close handle status",
+            "width": 150
+        },
+        {
+            "key": "maximum_power_consumption_w_lowlimit",
+            "label": "Maximum power consumption(W)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "maximum_power_consumption_w_uplimit",
+            "label": "Maximum power consumption(W)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "maximum_power_consumption_w",
+            "label": "Maximum power consumption(W)",
+            "width": 150
+        },
+        {
+            "key": "open_handle_n_lowlimit",
+            "label": "Open handle(N)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "open_handle_n_uplimit",
+            "label": "Open handle(N)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "open_handle_n",
+            "label": "Open handle(N)",
+            "width": 150
+        },
+        {
+            "key": "capsule_drop_lowlimit",
+            "label": "Capsule drop  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "capsule_drop_uplimit",
+            "label": "Capsule drop  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "capsule_drop",
+            "label": "Capsule drop",
+            "width": 150
+        },
+        {
+            "key": "open_handle_status_lowlimit",
+            "label": "Open handle status  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "open_handle_status_uplimit",
+            "label": "Open handle status  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "open_handle_status",
+            "label": "Open handle status",
+            "width": 150
+        },
+        {
+            "key": "handle_open_motor_current_0rpm_lowlimit",
+            "label": "Handle open motor current(0rpm)  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "handle_open_motor_current_0rpm_uplimit",
+            "label": "Handle open motor current(0rpm)  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "handle_open_motor_current_0rpm",
+            "label": "Handle open motor current(0rpm)",
+            "width": 150
+        },
+        {
+            "key": "led_function_checking_lowlimit",
+            "label": "LED function checking  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "led_function_checking_uplimit",
+            "label": "LED function checking  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "led_function_checking",
+            "label": "LED function checking",
+            "width": 150
+        },
+        {
+            "key": "write_serial_number_lowlimit",
+            "label": "Write serial number  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "write_serial_number_uplimit",
+            "label": "Write serial number  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "write_serial_number",
+            "label": "Write serial number",
+            "width": 150
+        },
+        {
+            "key": "switch_mode_lowlimit",
+            "label": "Switch Mode  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "switch_mode_uplimit",
+            "label": "Switch Mode  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "switch_mode",
+            "label": "Switch Mode",
+            "width": 150
+        },
+        {
+            "key": "factory_reset_lowlimit",
+            "label": "Factory reset  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "factory_reset_uplimit",
+            "label": "Factory reset  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "factory_reset",
+            "label": "Factory reset",
+            "width": 150
+        },
+        {
+            "key": "panel_color_lowlimit",
+            "label": "Panel Color  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "panel_color_uplimit",
+            "label": "Panel Color  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "panel_color",
+            "label": "Panel Color",
+            "width": 150
+        },
+        {
+            "key": "empty_water_weight_lowlimit",
+            "label": "Empty water weight  Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "empty_water_weight_uplimit",
+            "label": "Empty water weight  Uplimit",
+            "width": 150
+        },
+        {
+            "key": "empty_water_weight",
+            "label": "Empty water weight",
+            "width": 150
+        },
+        {
+            "key": "forbid_connectivity_lowlimit",
+            "label": "Forbid Connectivity Lowlimit",
+            "width": 150
+        },
+        {
+            "key": "forbid_connectivity_uplimit",
+            "label": "Forbid Connectivity Uplimit",
+            "width": 150
+        },
+        {
+            "key": "forbid_connectivity",
+            "label": "Forbid Connectivity",
+            "width": 150
         },
         {
             "key": "result",
             "label": "Result",
-            "width": 140
-        }
-    ],
-    "03": [
-        {
-            "key": "date_time",
-            "label": "date_time",
             "width": 150
-        },
-        {
-            "key": "chassis",
-            "label": "Chassis SN",
-            "width": 140
         }
     ]
 }

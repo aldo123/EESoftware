@@ -25,8 +25,29 @@ DEFAULT_INTERLOCK = {
         "TraceabilityPassword":  "1234",
         "TraceabilitySslMode":   "REQUIRED",
         "TraceabilityUserId":    "root"
+    },
+    "Main Page": {
+        "Display Mode":         "Dynamic Page",
+        "External Exe Path":    "",
+        "External Exe Args":    "",
+        "External Embed Method": "Overlay",
+        "External Fit Mode":    "Fit",
+        "External Content Size": "",
+        "External Window Title": ""
     }
 }
+
+
+def _with_defaults(data):
+    """Tambahkan section/field baru ke interlock.json lama tanpa menimpa nilai yang ada."""
+    if not isinstance(data, dict):
+        return json.loads(json.dumps(DEFAULT_INTERLOCK))
+    for section, fields in DEFAULT_INTERLOCK.items():
+        if not isinstance(data.get(section), dict):
+            data[section] = {}
+        for key, value in fields.items():
+            data[section].setdefault(key, value)
+    return data
 
 
 def init_interlock():
@@ -46,7 +67,7 @@ def get_interlock():
         if os.path.exists(INTERLOCK_PATH):
             with open(INTERLOCK_PATH, "r", encoding="utf-8") as f:
                 try:
-                    return jsonify(json.load(f))
+                    return jsonify(_with_defaults(json.load(f)))
                 except json.JSONDecodeError as e:
                     print(f"[ERROR] interlock.json corrupt ({e}). Resetting to default...")
                     with open(INTERLOCK_PATH, "w", encoding="utf-8") as fw:

@@ -14,11 +14,17 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "internalvariable.db")
 
+_WAL_SET = False
+
 def _connect():
     os.makedirs(DATA_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=2.0)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    global _WAL_SET
+    if not _WAL_SET:
+        # journal_mode=WAL is stored in the database file: set it once, not on every request
+        conn.execute("PRAGMA journal_mode=WAL")
+        _WAL_SET = True
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA busy_timeout=2000")
     conn.execute("PRAGMA temp_store=MEMORY")
@@ -130,6 +136,28 @@ def _normalize_system_key(system_key):
     return _RUNTIME_SYSTEM_KEY_ALIASES.get(key.lower(), key)
 
 
+# Recomputing the shift KPIs scans the SN List table. They are only recomputed when the SN List
+# database file really changed (a new/edited/deleted record), or at the latest every
+# _DASHBOARD_RUNTIME_SAFETY_AGE seconds (shift change, edited dashboard settings).
+_DASHBOARD_RUNTIME_SAFETY_AGE = 5.0
+
+
+def _snlist_stamp():
+    """Cheap change marker: size + mtime of the SN List database (and its WAL file)."""
+    try:
+        from routes.snlist import SNLIST_DB
+    except Exception:
+        return None
+    parts = []
+    for path in (SNLIST_DB, SNLIST_DB + "-wal"):
+        try:
+            st = os.stat(path)
+            parts.append((st.st_mtime_ns, st.st_size))
+        except OSError:
+            parts.append(None)
+    return tuple(parts)
+
+
 def _get_dashboard_runtime_values(cp_number):
     cp = str(cp_number or "").strip()
     if not cp:
@@ -140,6 +168,11 @@ def _get_dashboard_runtime_values(cp_number):
         cached = _DASHBOARD_RUNTIME_CACHE.get(cp)
         if cached and (now_mono - cached["timestamp"]) < _DASHBOARD_RUNTIME_CACHE_TTL:
             return dict(cached["values"])
+        if cached and cached.get("stamp") is not None:
+            if (now_mono - cached.get("computed", 0.0)) < _DASHBOARD_RUNTIME_SAFETY_AGE \
+                    and cached["stamp"] == _snlist_stamp():
+                cached["timestamp"] = now_mono  # nothing changed: reuse, check again in 1 s
+                return dict(cached["values"])
 
         try:
             # Lazy import avoids a module-import cycle between blueprints.
@@ -170,6 +203,8 @@ def _get_dashboard_runtime_values(cp_number):
 
         _DASHBOARD_RUNTIME_CACHE[cp] = {
             "timestamp": now_mono,
+            "computed": now_mono,
+            "stamp": _snlist_stamp(),
             "values": dict(values),
         }
         return dict(values)
@@ -215,16 +250,28 @@ def _json_path(filename):
             return path
     return _json_candidates(filename)[0]
 
+_JSON_CACHE = {}  # path -> ((mtime_ns, size), data)
+
 def _load_json_file(filename):
     # Try all known project locations. A temporary malformed JSON must not
     # turn the API into an HTML 500 response.
+    # The files are re-read only when they change on disk (this function runs for
+    # every System variable on every GET /api/internal-variables poll).
     for path in _json_candidates(filename):
-        if not os.path.isfile(path):
+        try:
+            st = os.stat(path)
+        except OSError:
             continue
+        sig = (st.st_mtime_ns, st.st_size)
+        cached = _JSON_CACHE.get(path)
+        if cached and cached[0] == sig:
+            return cached[1]
         try:
             with open(path, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
-            return data if isinstance(data, dict) else {}
+            data = data if isinstance(data, dict) else {}
+            _JSON_CACHE[path] = (sig, data)
+            return data
         except (OSError, ValueError, TypeError):
             continue
     return {}

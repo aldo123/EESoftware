@@ -37,6 +37,7 @@ from routes.snlist import (
     get_snlist_conn,
     get_table_name,
     ensure_table_exists,
+    _ensure_index,
     COLUMN_CONFIG_PATH,
 )
 
@@ -332,10 +333,38 @@ def _parse_date(value, fallback):
 
 
 def _parse_datetime(value):
-    raw = str(value or "")
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    # Format standar SQLite dan ISO 8601.
+    candidates = [
+        raw[:19],
+        raw[:23],
+        raw.replace("Z", "+00:00"),
+    ]
+
+    formats = [
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S.%f",
+    ]
+
+    for fmt in formats:
+        for candidate in candidates:
+            try:
+                return datetime.strptime(candidate, fmt)
+            except ValueError:
+                continue
+
     try:
-        return datetime.strptime(raw[:19], "%Y-%m-%d %H:%M:%S")
-    except ValueError:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        # Samakan ke waktu lokal tanpa mengubah jam lokal pada timestamp.
+        if parsed.tzinfo is not None:
+            parsed = parsed.replace(tzinfo=None)
+        return parsed
+    except (ValueError, TypeError):
         return None
 
 
@@ -590,6 +619,13 @@ def _calculate_window_metrics(cp, date_from, date_to, history_end=None):
         )
 
     table = get_table_name(cp)
+
+    # The history query below looks up every serial number of the window.
+    with get_snlist_conn() as conn:
+        try:
+            _ensure_index(conn, table, sn_column)
+        except Exception:
+            pass  # indexing is an optimisation only
 
     with get_snlist_conn() as conn:
         period_rows_raw = conn.execute(

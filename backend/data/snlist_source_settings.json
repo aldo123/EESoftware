@@ -1,0 +1,13 @@
+{
+  "101": {
+    "mode": "folder",
+    "path": "C:\\Users\\aldo.aulia\\Downloads\\tes",
+    "enabled": true,
+    "interval_ms": 2000,
+    "delimiter": "auto",
+    "recursive": true,
+    "filename_length_enabled": true,
+    "filename_length_operator": ">",
+    "filename_length": 10
+  }
+}
