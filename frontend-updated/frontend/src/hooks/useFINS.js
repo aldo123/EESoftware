@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { keepIfSame } from "../lib/stateGuards";
 import { API } from "../service/api";
 
 const DEFAULT_STATUS_INTERVAL = 20;
@@ -66,13 +67,13 @@ export function useFINS({ devices = [], enabled = true, statusInterval = DEFAULT
     try {
       const data = await getTCPStatus(); const next = {};
       (devices || []).filter(isFins).forEach((d) => { next[nameOf(d)] = data?.[nameOf(d)]?.connected === true; });
-      if (mountedRef.current) setDeviceStatus(next);
+      if (mountedRef.current) setDeviceStatus((p) => keepIfSame(p, next));
       const cs = {}; const es = {};
       bindingsRef.current.forEach((b) => { const ok = next[nameOf(b.device)] === true; cs[b.key] = ok; if (!ok) es[b.key] = data?.[nameOf(b.device)]?.error || "FINS disconnected."; });
-      if (mountedRef.current) { setConnectionStatus(cs); setErrors(es); }
+      if (mountedRef.current) { setConnectionStatus((p) => keepIfSame(p, cs)); setErrors((p) => keepIfSame(p, es)); }
     } catch (error) {
       const next = {}; (devices || []).filter(isFins).forEach((d) => { next[nameOf(d)] = false; });
-      if (mountedRef.current) { setDeviceStatus(next); setConnectionStatus(Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, false]))); setErrors(Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, error?.message || "FINS status error."]))); }
+      if (mountedRef.current) { setDeviceStatus((p) => keepIfSame(p, next)); setConnectionStatus((p) => keepIfSame(p, Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, false])))); setErrors((p) => keepIfSame(p, Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, error?.message || "FINS status error."])))); }
     } finally { busyRef.current = false; }
   }, [enabled, devices, getTCPStatus]);
 

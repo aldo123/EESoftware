@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { keepIfSame } from "../lib/stateGuards";
 import { API } from "../service/api";
 
 const DEFAULT_STATUS_INTERVAL = 250;
@@ -45,13 +46,13 @@ export function useTCPEthernet({ devices = [], enabled = true, statusInterval = 
     try {
       const data = await getTCPStatus(); const next = {};
       (devices || []).filter(isEthernet).forEach((d) => { next[nameOf(d)] = data?.[nameOf(d)]?.connected === true; });
-      if (mountedRef.current) setDeviceStatus(next);
+      if (mountedRef.current) setDeviceStatus((p) => keepIfSame(p, next));
       const cs = {}; const es = {};
       bindingsRef.current.forEach((b) => { const ok = next[nameOf(b.device)] === true; cs[b.key] = ok; if (!ok) es[b.key] = data?.[nameOf(b.device)]?.error || "EtherNet/IP disconnected."; });
-      if (mountedRef.current) { setConnectionStatus(cs); setErrors(es); }
+      if (mountedRef.current) { setConnectionStatus((p) => keepIfSame(p, cs)); setErrors((p) => keepIfSame(p, es)); }
     } catch (error) {
       const next = {}; (devices || []).filter(isEthernet).forEach((d) => { next[nameOf(d)] = false; });
-      if (mountedRef.current) { setDeviceStatus(next); setConnectionStatus(Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, false]))); setErrors(Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, error?.message || "EtherNet/IP status error."]))); }
+      if (mountedRef.current) { setDeviceStatus((p) => keepIfSame(p, next)); setConnectionStatus((p) => keepIfSame(p, Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, false])))); setErrors((p) => keepIfSame(p, Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, error?.message || "EtherNet/IP status error."])))); }
     } finally { busyRef.current = false; }
   }, [enabled, devices, getTCPStatus]);
 
@@ -61,7 +62,7 @@ export function useTCPEthernet({ devices = [], enabled = true, statusInterval = 
     if (!enabled) return;
     for (const b of bindingsRef.current.values()) {
       try { const value = await readEtherNetIP(b); if (!mountedRef.current) return; setValues((p) => (Object.is(p[b.widgetId], value) && Object.is(p[b.key], value) ? p : { ...p, [b.key]: value, [b.widgetId]: value })); setConnectionStatus((p) => (p[b.key] === true ? p : { ...p, [b.key]: true })); setErrors((p) => { if (!(b.key in p)) return p; const n = { ...p }; delete n[b.key]; return n; }); }
-      catch (e) { if (!mountedRef.current) return; setConnectionStatus((p) => ({ ...p, [b.key]: false })); setErrors((p) => ({ ...p, [b.key]: e?.message || "EtherNet/IP communication error." })); }
+      catch (e) { if (!mountedRef.current) return; const failMsg = e?.message || "EtherNet/IP communication error."; setConnectionStatus((p) => (p[b.key] === false ? p : { ...p, [b.key]: false })); setErrors((p) => (p[b.key] === failMsg ? p : { ...p, [b.key]: failMsg })); }
     }
   }, [enabled, readEtherNetIP]);
 

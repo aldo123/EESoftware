@@ -6,6 +6,7 @@
 // know or care whether a trigger came from a barcode scanner or a PLC register.
 import { useEffect, useRef } from "react";
 import { API } from "../service/api";
+import { POLL } from "../config/polling";
 
 export function useDeviceTriggerScanner(cpNumber, active = true) {
   const intervalRef = useRef(null);
@@ -54,7 +55,7 @@ export function useDeviceTriggerScanner(cpNumber, active = true) {
       }
     };
 
-    intervalRef.current = setInterval(poll, 50);
+    intervalRef.current = setInterval(poll, POLL.SCANNER_MS);
 
     return () => {
       if (intervalRef.current) {

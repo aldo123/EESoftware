@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInternalVariables } from "../hooks/useInternalVariables";
 import { API } from "../service/api";
+import { POLL } from "../config/polling";
 import {
   PLC_PROTOCOLS,
   addressTypeOptions,
@@ -1224,6 +1225,7 @@ export function RuntimeTestTable({ widget, getValue }) {
     let timer = null;
     let retryTimer = null;
     let pollInFlight = false;
+    let lastResultSig = ""; // skip re-render when the runtime result did not change
 
     const sleep = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
@@ -1397,11 +1399,15 @@ export function RuntimeTestTable({ widget, getValue }) {
             if (cancelled) return;
 
             setError("");
-            setResultMap(
+            const nextResults =
               data?.results && typeof data.results === "object"
                 ? data.results
-                : {}
-            );
+                : {};
+            const resultSig = JSON.stringify(nextResults);
+            if (resultSig !== lastResultSig) {
+              lastResultSig = resultSig;
+              setResultMap(nextResults);
+            }
 
             const running = Boolean(data?.running);
             const message = String(data?.message || "").toLowerCase();
@@ -1443,7 +1449,7 @@ export function RuntimeTestTable({ widget, getValue }) {
         };
 
         await poll();
-        if (!cancelled) timer = window.setInterval(poll, 50);
+        if (!cancelled) timer = window.setInterval(poll, POLL.SPEC_RUNTIME_MS);
       } catch (err) {
         if (cancelled) return;
 

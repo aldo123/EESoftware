@@ -3,9 +3,10 @@
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
 import { API } from "../service/api";
+import { POLL } from "../config/polling";
 
 const API_BASE = `${API}/api/internal-variables`;
-const POLL_INTERVAL = 20;
+const POLL_INTERVAL = POLL.INTERNAL_VARIABLES_MS;
 const WRITE_DEBOUNCE_MS = 5;
 
 let state = { variables: [], byName: {}, byId: {}, loading: false, initialized: false, error: "" };
@@ -13,6 +14,8 @@ let listeners = new Set();
 let pollTimer = null;
 let refCount = 0;
 let requestPromise = null;
+let lastRawText = ""; // last raw server answer
+let lastSignature = ""; // last server snapshot; polls that bring nothing new must not re-render the app
 let flushTimer = null;
 let flushRunning = false;
 const pending = new Map(); // id -> { value, version }
@@ -58,14 +61,35 @@ const request = async (url, options = {}) => {
   return data;
 };
 
+// Poll request. When the server answers with exactly the same text as last time and
+// nothing is waiting to be saved, there is nothing to parse, normalize or render.
+const requestVariables = async () => {
+  const response = await fetch(API_BASE, {
+    headers: { "Content-Type": "application/json" },
+  });
+  const text = await response.text();
+  if (response.ok && text === lastRawText && pending.size === 0 &&
+      state.initialized && !state.loading && !state.error) {
+    return null;
+  }
+  let data = {};
+  try { data = JSON.parse(text); } catch {}
+  if (!response.ok || data?.success === false) {
+    throw new Error(data?.message || data?.error || `Internal variable request failed (${response.status})`);
+  }
+  lastRawText = text;
+  return data;
+};
+
 const fetchVariables = async ({ silent = false } = {}) => {
   if (requestPromise) return requestPromise;
   if (!silent) {
     state = { ...state, loading: true, error: "" };
     emit();
   }
-  requestPromise = request(API_BASE)
+  requestPromise = requestVariables()
     .then((data) => {
+      if (data === null) return state.variables; // unchanged since the last poll
       const server = Array.isArray(data?.variables) ? data.variables.map(normalizeVariable) : [];
       const merged = server.map((v) => {
         const p = pending.get(String(v.id));
@@ -77,9 +101,15 @@ const fetchVariables = async ({ silent = false } = {}) => {
         }
         return { ...v, value: pv };
       });
-      rebuild(merged);
-      state = { ...state, loading: false, error: "" };
-      emit();
+      // Polling runs many times per second. Only publish a new state (and wake up
+      // every subscribed component) when the data really changed.
+      const signature = JSON.stringify(merged);
+      if (signature !== lastSignature || !state.initialized || state.loading || state.error) {
+        lastSignature = signature;
+        rebuild(merged);
+        state = { ...state, loading: false, error: "" };
+        emit();
+      }
       return merged;
     })
     .catch((e) => {

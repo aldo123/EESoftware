@@ -1,758 +1,747 @@
-import { useMemo, useState, useEffect, useCallback } from "react";
+import { useMemo, useState, useEffect, useCallback, useRef } from "react";
 
 import { API } from "../service/api";
-
-
 
 const clampPercent = (n) => Math.max(0, Math.min(100, Number.isFinite(n) ? n : 0));
 
 const percent = (n) => `${clampPercent(n).toFixed(1)}%`;
 
-
-
 function MetricCard({ title, value, subtitle, color }) {
 
-  return (
+  return (
 
-    <div className="rounded-xl border border-[var(--border)] p-4 min-w-0" style={{ background: "var(--bg-surface-2)" }}>
+    <div className="rounded-xl border border-[var(--border)] p-4 min-w-0" style={{ background: "var(--bg-surface-2)" }}>
 
-      <div className="text-[10px] font-bold tracking-widest uppercase text-[var(--text-muted)]">{title}</div>
+      <div className="text-[10px] font-bold tracking-widest uppercase text-[var(--text-muted)]">{title}</div>
 
-      <div className="mt-2 text-3xl font-black tabular-nums" style={{ color }}>{value}</div>
+      <div className="mt-2 text-3xl font-black tabular-nums" style={{ color }}>{value}</div>
 
-      <div className="mt-1 text-[10px] text-[var(--text-muted)]">{subtitle}</div>
+      <div className="mt-1 text-[10px] text-[var(--text-muted)]">{subtitle}</div>
 
-      <div className="mt-3 h-1.5 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
+      <div className="mt-3 h-1.5 rounded-full bg-[var(--bg-elevated)] overflow-hidden">
 
-        <div className="h-full rounded-full transition-all" style={{ width: value, background: color }} />
+        <div className="h-full rounded-full transition-all" style={{ width: value, background: color }} />
 
-      </div>
+      </div>
 
-    </div>
+    </div>
 
-  );
+  );
 
 }
-
-
 
 function NumberField({ label, value, onChange, unit = "", min = 0, step = "1" }) {
 
-  return (
+  return (
 
-    <label className="block min-w-0">
+    <label className="block min-w-0">
 
-      <span className="block text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)] mb-1">{label}</span>
+      <span className="block text-[10px] font-bold uppercase tracking-wide text-[var(--text-muted)] mb-1">{label}</span>
 
-      <div className="flex items-center rounded-lg border border-[var(--border)] bg-[var(--bg-input)] overflow-hidden focus-within:border-[#22C55E]">
+      <div className="flex items-center rounded-lg border border-[var(--border)] bg-[var(--bg-input)] overflow-hidden focus-within:border-[#22C55E]">
 
-        <input type="number" min={min} step={step} value={value} onChange={(e) => onChange(e.target.value)} className="w-full min-w-0 bg-transparent px-3 py-2 text-sm text-[var(--text-primary)] outline-none" />
+        <input type="number" min={min} step={step} value={value} onChange={(e) => onChange(e.target.value)} className="w-full min-w-0 bg-transparent px-3 py-2 text-sm text-[var(--text-primary)] outline-none" />
 
-        {unit && <span className="px-3 text-xs text-[var(--text-muted)]">{unit}</span>}
+        {unit && <span className="px-3 text-xs text-[var(--text-muted)]">{unit}</span>}
 
-      </div>
+      </div>
 
-    </label>
+    </label>
 
-  );
+  );
 
 }
 
-
-
 export default function OEEPage({ cpNumber, machineStatus, downtimeActive, downtimeStart }) {
 
-  // Persist Ideal Cycle Time locally so it survives page refreshes and app restarts.
-  const [idealCycleSeconds, setIdealCycleSeconds] = useState(() => {
-    try {
-      const saved = window.localStorage.getItem("ee-interlock:oee:ideal-cycle-seconds");
-      return saved !== null && saved.trim() !== "" && Number.isFinite(Number(saved)) && Number(saved) >= 0
-        ? saved
-        : "10";
-    } catch {
-      return "10";
-    }
-  });
+  // Persist Ideal Cycle Time locally so it survives page refreshes and app restarts.
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem("ee-interlock:oee:ideal-cycle-seconds", idealCycleSeconds);
-    } catch (error) {
-      console.warn("Unable to persist Ideal Cycle Time in local storage:", error);
-    }
-  }, [idealCycleSeconds]);
+  const [idealCycleSeconds, setIdealCycleSeconds] = useState(() => {
 
-  const [productionData, setProductionData] = useState(null);
+    try {
 
-  const [downtimeData, setDowntimeData] = useState([]);
+      const saved = window.localStorage.getItem("ee-interlock:oee:ideal-cycle-seconds");
 
-  const [snRows, setSnRows] = useState([]);
+      return saved !== null && saved.trim() !== "" && Number.isFinite(Number(saved)) && Number(saved) >= 0
 
-  const [loadingData, setLoadingData] = useState(false);
+        ? saved
 
-  const [dataError, setDataError] = useState("");
+        : "10";
 
-  const todayISO = () => {
+    } catch {
 
-    const d = new Date();
+      return "10";
 
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
 
-  };
+  });
 
-  const [filterCP, setFilterCP] = useState(cpNumber ? `CP${String(cpNumber).replace(/^CP/i, "")}` : "CP101");
+  useEffect(() => {
 
-  const [dateFrom, setDateFrom] = useState(todayISO);
+    try {
 
-  const [dateTo, setDateTo] = useState(todayISO);
+      window.localStorage.setItem("ee-interlock:oee:ideal-cycle-seconds", idealCycleSeconds);
 
-  const [selectedShift, setSelectedShift] = useState("Shift 1 (08:00–19:30)");
+    } catch (error) {
 
-  const [bucket, setBucket] = useState("Auto");
+      console.warn("Unable to persist Ideal Cycle Time in local storage:", error);
 
+    }
 
+  }, [idealCycleSeconds]);
 
-  const applyDatePreset = (preset) => {
+  const [productionData, setProductionData] = useState(null);
 
-    const end = new Date();
+  const [downtimeData, setDowntimeData] = useState([]);
 
-    const start = new Date(end);
+  const [snRows, setSnRows] = useState([]);
 
-    if (preset === "yesterday") {
+  const [loadingData, setLoadingData] = useState(false);
 
-      start.setDate(start.getDate() - 1);
+  const [dataError, setDataError] = useState("");
 
-      end.setDate(end.getDate() - 1);
+  const todayISO = () => {
 
-    } else {
+    const d = new Date();
 
-      const days = preset === "today" ? 1 : Number(preset);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-      start.setDate(start.getDate() - (days - 1));
+  };
 
-    }
+  const [filterCP, setFilterCP] = useState(cpNumber ? `CP${String(cpNumber).replace(/^CP/i, "")}` : "CP101");
 
-    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const [dateFrom, setDateFrom] = useState(todayISO);
 
-    setDateFrom(fmt(start));
+  const [dateTo, setDateTo] = useState(todayISO);
 
-    setDateTo(fmt(end));
+  const [selectedShift, setSelectedShift] = useState("Shift 1 (08:00–19:30)");
+  const [activeDatePreset, setActiveDatePreset] = useState("today");
 
-  };
+  const [bucket, setBucket] = useState("Auto");
 
+  const applyDatePreset = (preset) => {
+    setActiveDatePreset(String(preset));
+    setSelectedShift("All Shifts");
 
+    const end = new Date();
+
+    const start = new Date(end);
+
+    if (preset === "yesterday") {
+
+      start.setDate(start.getDate() - 1);
+
+      end.setDate(end.getDate() - 1);
+
+    } else {
+
+      const days = preset === "today" ? 1 : Number(preset);
+
+      start.setDate(start.getDate() - (days - 1));
+
+    }
+
+    const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+    setDateFrom(fmt(start));
+
+    setDateTo(fmt(end));
+
+  };
+
+  const lastSigRef = useRef("");
 
   const fetchOEEData = useCallback(async () => {
 
-    setLoadingData(true);
+    setLoadingData(true);
 
-    setDataError("");
+    setDataError("");
 
-    try {
+    try {
 
-      const cp = String(filterCP || cpNumber || "1").replace(/^CP/i, "");
+      const cp = String(filterCP || cpNumber || "1").replace(/^CP/i, "");
 
-      const shift = selectedShift === "All Shifts" ? "all" : selectedShift.startsWith("Shift 1") ? "shift1" : "shift2";
+      const shift = selectedShift === "All Shifts" ? "all" : selectedShift.startsWith("Shift 1") ? "shift1" : "shift2";
 
-      const dashboardParams = new URLSearchParams({ cp, date_from: dateFrom, date_to: dateTo, shift });
+      const dashboardParams = new URLSearchParams({ cp, date_from: dateFrom, date_to: dateTo, shift });
 
-      const snParams = new URLSearchParams({ cp, date_from: `${dateFrom} 00:00:00`, date_to: `${dateTo} 23:59:59`, page: "1", per: "5000" });
+      const snParams = new URLSearchParams({ cp, date_from: `${dateFrom} 00:00:00`, date_to: `${dateTo} 23:59:59`, page: "1", per: "5000" });
 
-      const downtimeParams = new URLSearchParams({ start_date: dateFrom, end_date: dateTo, page: "1", per: "5000" });
+      const downtimeParams = new URLSearchParams({ start_date: dateFrom, end_date: dateTo, page: "1", per: "5000" });
 
-      const [dashRes, snRes, downRes] = await Promise.all([
+      const [dashRes, snRes, downRes] = await Promise.all([
 
-        fetch(`${API}/api/dashboard/summary?${dashboardParams}`),
+        fetch(`${API}/api/dashboard/summary?${dashboardParams}`),
 
-        fetch(`${API}/api/snlist/data?${snParams}`),
+        fetch(`${API}/api/snlist/data?${snParams}`),
 
-        fetch(`${API}/api/maintenance/events?${downtimeParams}`),
+        fetch(`${API}/api/maintenance/events?${downtimeParams}`),
 
-      ]);
+      ]);
 
-      const [dash, sn, down] = await Promise.all([dashRes.json(), snRes.json(), downRes.json()]);
+      const [dash, sn, down] = await Promise.all([dashRes.json(), snRes.json(), downRes.json()]);
 
-      if (!dashRes.ok || !dash.success) throw new Error(dash.message || "Gagal mengambil data Dashboard");
+      if (!dashRes.ok || !dash.success) throw new Error(dash.message || "Gagal mengambil data Dashboard");
 
-      setProductionData(dash);
-
-      setSnRows(Array.isArray(sn.data) ? sn.data : []);
-
-      setDowntimeData(Array.isArray(down.data) ? down.data : []);
-
-    } catch (e) {
-
-      setDataError(e.message || "Gagal mengambil data OEE");
-
-    } finally {
-
-      setLoadingData(false);
-
-    }
-
-  }, [cpNumber, filterCP, dateFrom, dateTo, selectedShift]);
-
-
-
-  useEffect(() => { fetchOEEData(); }, [fetchOEEData]);
-
-  useEffect(() => {
-
-    const timer = setInterval(fetchOEEData, 15000);
-
-    return () => clearInterval(timer);
-
-  }, [fetchOEEData]);
-
-
-
-  const parseTimestamp = (value) => {
-
-    if (!value) return NaN;
-
-    // Backend timestamps are local machine time; preserve local wall-clock interpretation.
-
-    const text = String(value).trim().replace(" ", "T");
-
-    const parsed = new Date(text).getTime();
-
-    return Number.isFinite(parsed) ? parsed : NaN;
-
-  };
-
-
-
-  const filteredSnRows = useMemo(() => {
-
-    const inSelectedShift = (timestamp) => {
-
-      if (selectedShift === "All Shifts") return true;
-
-      const d = new Date(timestamp);
-
-      const minutes = d.getHours() * 60 + d.getMinutes();
-
-      if (selectedShift.startsWith("Shift 1")) return minutes >= 8 * 60 && minutes <= 19 * 60 + 30;
-
-      // Shift 2 runs overnight: 20:00 through 07:30.
-
-      return minutes >= 20 * 60 || minutes <= 7 * 60 + 30;
-
-    };
-
-    return snRows.filter((row) => {
-
-      const ts = parseTimestamp(row.date_time || row.datetime || row.timestamp || row.created_at || row.test_time);
-
-      return Number.isFinite(ts) && inSelectedShift(ts);
-
-    });
-
-  }, [snRows, selectedShift]);
-
-
-
-  const isOkResult = (row) => {
-
-    const value = String(row.result ?? row.results ?? row.final_result ?? row.test_result ?? "").trim().toUpperCase().replace(/[ _-]+/g, "");
-
-    return ["OK", "PASS", "PASS1", "PASS2", "GOOD"].includes(value);
-
-  };
-
-
-
-  // Calculate duration for ONE SN from its own row. Never substitute the gap
-
-  // between different SN records because that is production interval, not test CT.
-
-  const getActualTestDurationSeconds = (row) => {
-
-    const normalized = Object.fromEntries(Object.entries(row || {}).map(([key, value]) => [
-
-      String(key).toLowerCase().replace(/[^a-z0-9]/g, ""), value
-
-    ]));
-
-    const firstEntry = (keys) => {
-
-      for (const key of keys) {
-
-        const value = normalized[key];
-
-        if (value !== undefined && value !== null && String(value).trim() !== "") return { key, value };
-
+      // Refreshed every 15 s: only touch state (and re-run all metrics) when the data changed
+      const sig = JSON.stringify([dash, sn.data, down.data]);
+      if (sig !== lastSigRef.current) {
+        lastSigRef.current = sig;
+        setProductionData(dash);
+        setSnRows(Array.isArray(sn.data) ? sn.data : []);
+        setDowntimeData(Array.isArray(down.data) ? down.data : []);
       }
 
-      return null;
+    } catch (e) {
 
-    };
+      setDataError(e.message || "Gagal mengambil data OEE");
 
-    const parseDuration = (value, key = "") => {
+    } finally {
 
-      if (value === undefined || value === null || String(value).trim() === "") return null;
+      setLoadingData(false);
 
-      const text = String(value).trim().toLowerCase();
+    }
 
-      // Supports duration strings HH:MM:SS or MM:SS, including fractional seconds.
+  }, [cpNumber, filterCP, dateFrom, dateTo, selectedShift]);
 
-      if (/^\d{1,3}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(text)) {
+  useEffect(() => { fetchOEEData(); }, [fetchOEEData]);
 
-        const parts = text.split(":").map(Number);
+  useEffect(() => {
 
-        const seconds = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
+    const timer = setInterval(fetchOEEData, 15000);
 
-        return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+    return () => clearInterval(timer);
 
-      }
+  }, [fetchOEEData]);
 
-      const match = text.match(/^\s*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|sec|secs|seconds?|m|min|mins|minutes?)?\s*$/i);
+  const parseTimestamp = (value) => {
 
-      if (!match) return null;
+    if (!value) return NaN;
 
-      const amount = Number(match[1]);
+    // Backend timestamps are local machine time; preserve local wall-clock interpretation.
 
-      if (!Number.isFinite(amount) || amount <= 0) return null;
+    const text = String(value).trim().replace(" ", "T");
 
-      const unit = (match[2] || "").toLowerCase();
+    const parsed = new Date(text).getTime();
 
-      if (unit === "ms" || /millisecond/.test(unit) || /ms$/.test(key)) return amount / 1000;
+    return Number.isFinite(parsed) ? parsed : NaN;
 
-      if (["m", "min", "mins", "minute", "minutes"].includes(unit)) return amount * 60;
+  };
 
-      return amount;
+  const filteredSnRows = useMemo(() => {
 
-    };
+    const inSelectedShift = (timestamp) => {
 
+      if (selectedShift === "All Shifts") return true;
 
+      const d = new Date(timestamp);
 
-    const durationEntry = firstEntry([
+      const minutes = d.getHours() * 60 + d.getMinutes();
 
-      "actualtestdurationseconds", "testdurationseconds", "testingdurationseconds", "testtimeseconds",
+      if (selectedShift.startsWith("Shift 1")) return minutes >= 8 * 60 && minutes <= 19 * 60 + 30;
 
-      "actualctseconds", "ctseconds", "durationseconds", "durationsec", "testdurationsec", "testingtimeinseconds",
+      // Shift 2 runs overnight: 20:00 through 07:30.
 
-      "actualtestdurationms", "testdurationms", "testingdurationms", "durationms", "testtimems", "actualctms", "ctms",
+      return minutes >= 20 * 60 || minutes <= 7 * 60 + 30;
 
-      "actualtestduration", "testduration", "testingduration", "testtime", "actualct", "cycletime", "ct",
+    };
 
-      "duration", "testingtime", "testelapsed", "elapsedtime", "elapsed", "testdurationvalue"
+    return snRows.filter((row) => {
 
-    ]);
+      const ts = parseTimestamp(row.date_time || row.datetime || row.timestamp || row.created_at || row.test_time);
 
-    if (durationEntry) {
+      return Number.isFinite(ts) && inSelectedShift(ts);
 
-      const seconds = parseDuration(durationEntry.value, durationEntry.key);
+    });
 
-      if (seconds !== null) return seconds;
+  }, [snRows, selectedShift]);
 
-    }
+  const isOkResult = (row) => {
 
+    const value = String(row.result ?? row.results ?? row.final_result ?? row.test_result ?? "").trim().toUpperCase().replace(/[ \_-]+/g, "");
 
+    return ["OK", "PASS", "PASS1", "PASS2", "GOOD"].includes(value);
 
-    // SN List configurations can use different column labels for the start/end
+  };
 
-    // timestamps. Normalize the column names above, then match common variants.
+  // Calculate duration for ONE SN from its own row. Never substitute the gap
 
-    const startEntry = firstEntry([
+  // between different SN records because that is production interval, not test CT.
 
-      "teststarttime", "testingstarttime", "starttesttime", "starttime", "teststart", "startedat", "start",
+  const getActualTestDurationSeconds = (row) => {
 
-      "starttimestamp", "teststartdatetime", "startdatetime", "startdatatime", "testingstart",
+    const normalized = Object.fromEntries(Object.entries(row || {}).map(([key, value]) => [
 
-      "teststartedat", "testbegin", "begintime", "startdateandtime", "datetime_start", "date_time_start",
+      String(key).toLowerCase().replace(/[^a-z0-9]/g, ""), value
 
-      "teststarted", "testingstartdatetime", "starttest", "beginningtime"
+    ]));
 
-    ]);
+    const firstEntry = (keys) => {
 
-    let endEntry = firstEntry([
+      for (const key of keys) {
 
-      "testendtime", "testingendtime", "endtesttime", "endtime", "testend", "completedat", "end",
+        const value = normalized[key];
 
-      "endtimestamp", "testenddatetime", "enddatetime", "completiontime", "testcompletedat",
+        if (value !== undefined && value !== null && String(value).trim() !== "") return { key, value };
 
-      "testfinish", "finishtime", "enddateandtime", "datetime_end", "date_time_end", "testcompleted",
+      }
 
-      "testingenddatetime", "endtest", "finishdatetime", "completedtime"
+      return null;
 
-    ]);
+    };
 
-    // If a row has a start timestamp but stores only the standard SN date_time,
+    const parseDuration = (value, key = "") => {
 
-    // use date_time as completion time for that same SN row.
+      if (value === undefined || value === null || String(value).trim() === "") return null;
 
-    if (!endEntry && startEntry) {
+      const text = String(value).trim().toLowerCase();
 
-      const completion = firstEntry(["datetime", "date_time", "timestamp", "createdat", "testtime", "recordedat", "completedtime"]);
+      // Supports duration strings HH:MM:SS or MM:SS, including fractional seconds.
 
-      if (completion && completion.value !== startEntry.value) endEntry = completion;
+      if (/^\d{1,3}:\d{2}(?::\d{2}(?:\.\d+)?)?$/.test(text)) {
 
-    }
+        const parts = text.split(":").map(Number);
 
-    if (startEntry && endEntry) {
+        const seconds = parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
 
-      const startMs = parseTimestamp(startEntry.value);
+        return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
 
-      const endMs = parseTimestamp(endEntry.value);
+      }
 
-      if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
+      const match = text.match(/^\s*(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|sec|secs|seconds?|m|min|mins|minutes?)?\s*$/i);
 
-        const seconds = (endMs - startMs) / 1000;
+      if (!match) return null;
 
-        // Reject clearly invalid values to avoid a date/column mismatch becoming CT.
+      const amount = Number(match[1]);
 
-        if (seconds > 0 && seconds <= 24 * 60 * 60) return seconds;
+      if (!Number.isFinite(amount) || amount <= 0) return null;
 
-      }
+      const unit = (match[2] || "").toLowerCase();
 
-    }
+      if (unit === "ms" || /millisecond/.test(unit) || /ms$/.test(key)) return amount / 1000;
 
-    return null;
+      if (["m", "min", "mins", "minute", "minutes"].includes(unit)) return amount * 60;
 
-  };
+      return amount;
 
-  const timeMetrics = useMemo(() => {
+    };
 
-    const timestamps = filteredSnRows
+    const durationEntry = firstEntry([
 
-      .map((row) => parseTimestamp(row.date_time || row.datetime || row.timestamp || row.created_at || row.test_time))
+      "actualtestdurationseconds", "testdurationseconds", "testingdurationseconds", "testtimeseconds",
 
-      .filter(Number.isFinite)
+      "actualctseconds", "ctseconds", "durationseconds", "durationsec", "testdurationsec", "testingtimeinseconds",
 
-      .sort((a, b) => a - b);
+      "actualtestdurationms", "testdurationms", "testingdurationms", "durationms", "testtimems", "actualctms", "ctms",
 
-    if (!timestamps.length) return { planned: 0, down: 0, operating: 0, firstTest: null, lastTest: null, testIntervals: [] };
+      "actualtestduration", "testduration", "testingduration", "testtime", "actualct", "cycletime", "ct",
 
+      "duration", "testingtime", "testelapsed", "elapsedtime", "elapsed", "testdurationvalue"
 
+    ]);
 
-    const fromBoundary = new Date(`${dateFrom}T00:00:00`).getTime();
+    if (durationEntry) {
 
-    const toBoundary = Math.min(Date.now(), new Date(`${dateTo}T23:59:59`).getTime());
+      const seconds = parseDuration(durationEntry.value, durationEntry.key);
 
-    const firstTest = timestamps.find((t) => t >= fromBoundary && t <= toBoundary);
+      if (seconds !== null) return seconds;
 
-    const testsInRange = timestamps.filter((t) => t >= fromBoundary && t <= toBoundary);
+    }
 
-    if (firstTest == null || !testsInRange.length) return { planned: 0, down: 0, operating: 0, firstTest: null, lastTest: null, testIntervals: [] };
+    // SN List configurations can use different column labels for the start/end
 
+    // timestamps. Normalize the column names above, then match common variants.
 
+    const startEntry = firstEntry([
 
-    const lastTest = testsInRange[testsInRange.length - 1];
+      "teststarttime", "testingstarttime", "starttesttime", "starttime", "teststart", "startedat", "start",
 
-    const activeStart = downtimeActive ? parseTimestamp(downtimeStart) : NaN;
+      "starttimestamp", "teststartdatetime", "startdatetime", "startdatatime", "testingstart",
 
-    const nowInRange = Math.min(Date.now(), toBoundary);
+      "teststartedat", "testbegin", "begintime", "startdateandtime", "datetime_start", "date_time_start",
 
+      "teststarted", "testingstartdatetime", "starttest", "beginningtime"
 
+    ]);
 
-    // A downtime event keeps the production-line timeline alive through its end,
+    let endEntry = firstEntry([
 
-    // even if no SN record was written during that downtime. If there is no
+      "testendtime", "testingendtime", "endtesttime", "endtime", "testend", "completedat", "end",
 
-    // downtime after the last test, the production window stops at the last test.
+      "endtimestamp", "testenddatetime", "enddatetime", "completiontime", "testcompletedat",
 
-    const downtimeIntervals = downtimeData.map((row) => ({
+      "testfinish", "finishtime", "enddateandtime", "datetime_end", "date_time_end", "testcompleted",
 
-      start: parseTimestamp(row.start_time || row.started_at || row.downtime_start),
+      "testingenddatetime", "endtest", "finishdatetime", "completedtime"
 
-      end: row.end_time ? parseTimestamp(row.end_time) : NaN,
+    ]);
 
-    })).filter((item) => Number.isFinite(item.start) && item.start <= toBoundary && item.start >= firstTest);
+    // If a row has a start timestamp but stores only the standard SN date_time,
 
+    // use date_time as completion time for that same SN row.
 
+    if (!endEntry && startEntry) {
 
-    let windowEnd = lastTest;
+      const completion = firstEntry(["datetime", "date_time", "timestamp", "createdat", "testtime", "recordedat", "completedtime"]);
 
-    for (const interval of downtimeIntervals) {
+      if (completion && completion.value !== startEntry.value) endEntry = completion;
 
-      if (Number.isFinite(interval.end)) windowEnd = Math.max(windowEnd, Math.min(interval.end, toBoundary));
+    }
 
-    }
+    if (startEntry && endEntry) {
 
-    if (downtimeActive && Number.isFinite(activeStart) && activeStart <= toBoundary && activeStart >= firstTest) {
+      const startMs = parseTimestamp(startEntry.value);
 
-      windowEnd = Math.max(windowEnd, nowInRange);
+      const endMs = parseTimestamp(endEntry.value);
 
-    }
+      if (Number.isFinite(startMs) && Number.isFinite(endMs) && endMs > startMs) {
 
-    const planned = Math.max(0, (windowEnd - firstTest) / 60000);
+        const seconds = (endMs - startMs) / 1000;
 
+        // Reject clearly invalid values to avoid a date/column mismatch becoming CT.
 
+        if (seconds > 0 && seconds <= 24 * 60 * 60) return seconds;
 
-    let down = 0;
+      }
 
-    for (const interval of downtimeIntervals) {
+    }
 
-      const end = Number.isFinite(interval.end) ? Math.min(interval.end, windowEnd) : (downtimeActive ? nowInRange : NaN);
+    return null;
 
-      if (!Number.isFinite(end)) continue;
+  };
 
-      down += Math.max(0, Math.min(end, windowEnd) - Math.max(interval.start, firstTest)) / 60000;
+  const timeMetrics = useMemo(() => {
 
-    }
+    const timestamps = filteredSnRows
 
-    if (downtimeActive && Number.isFinite(activeStart) && activeStart >= firstTest && activeStart <= windowEnd &&
+      .map((row) => parseTimestamp(row.date_time || row.datetime || row.timestamp || row.created_at || row.test_time))
 
-        !downtimeIntervals.some((item) => Math.abs(item.start - activeStart) < 1000)) {
+      .filter(Number.isFinite)
 
-      down += Math.max(0, Math.min(nowInRange, windowEnd) - Math.max(activeStart, firstTest)) / 60000;
+      .sort((a, b) => a - b);
 
-    }
+    if (!timestamps.length) return { planned: 0, down: 0, operating: 0, firstTest: null, lastTest: null, testIntervals: [] };
 
-    down = Math.min(planned, down);
+    const fromBoundary = new Date(`${dateFrom}T00:00:00`).getTime();
 
+    const toBoundary = Math.min(Date.now(), new Date(`${dateTo}T23:59:59`).getTime());
 
+    const firstTest = timestamps.find((t) => t >= fromBoundary && t <= toBoundary);
 
-    // Actual CT is the interval from one test record to the next; ignore zero/negative gaps.
+    const testsInRange = timestamps.filter((t) => t >= fromBoundary && t <= toBoundary);
 
-    const testIntervals = testsInRange.slice(1).map((t, i) => (t - testsInRange[i]) / 1000).filter((v) => v > 0 && Number.isFinite(v));
+    if (firstTest == null || !testsInRange.length) return { planned: 0, down: 0, operating: 0, firstTest: null, lastTest: null, testIntervals: [] };
 
-    return { planned, down, operating: Math.max(0, planned - down), firstTest, lastTest, testIntervals };
+    const lastTest = testsInRange[testsInRange.length - 1];
 
-  }, [filteredSnRows, downtimeData, dateFrom, dateTo, downtimeActive, downtimeStart]);
+    const activeStart = downtimeActive ? parseTimestamp(downtimeStart) : NaN;
 
+    const nowInRange = Math.min(Date.now(), toBoundary);
 
+    // A downtime event keeps the production-line timeline alive through its end,
 
-  const metrics = useMemo(() => {
+    // even if no SN record was written during that downtime. If there is no
 
-    const planned = timeMetrics.planned;
+    // downtime after the last test, the production window stops at the last test.
 
-    const down = timeMetrics.down;
+    const downtimeIntervals = downtimeData.map((row) => ({
 
-    const operating = timeMetrics.operating;
+      start: parseTimestamp(row.start_time || row.started_at || row.downtime_start),
 
-    // Output is counted from SN List OK results so it follows the selected date range and shift.
+      end: row.end_time ? parseTimestamp(row.end_time) : NaN,
 
-    const total = filteredSnRows.filter(isOkResult).length;
+    })).filter((item) => Number.isFinite(item.start) && item.start <= toBoundary && item.start >= firstTest);
 
-    // Quality: prioritize FPY1 when both FPY1 and FPY2 are available.
-    // Fall back to FPY2, then FPY only if FPY1 is not provided.
-    const firstAvailable = (...values) => values.find((value) => value !== undefined && value !== null && String(value).trim() !== "");
-    const rawFpyValue = firstAvailable(
-      productionData?.fpy1, productionData?.FPY1, productionData?.fpy_1,
-      productionData?.fpy2, productionData?.FPY2, productionData?.fpy_2,
-      productionData?.fpy, productionData?.FPY
-    );
-    const rawFpy = Number(rawFpyValue);
-    const quality = rawFpyValue == null || !Number.isFinite(rawFpy)
-      ? 0
-      : clampPercent(rawFpy <= 1 ? rawFpy * 100 : rawFpy);
+    let windowEnd = lastTest;
 
-    // User-defined Actual CT: minimum positive interval between consecutive
+    for (const interval of downtimeIntervals) {
 
-    // SN test timestamps, considering only records whose result is OK/PASS.
+      if (Number.isFinite(interval.end)) windowEnd = Math.max(windowEnd, Math.min(interval.end, toBoundary));
 
-    // This is the minimum test-to-test gap, not an average per-SN duration.
+    }
 
-    const chronologicalTests = filteredSnRows
+    if (downtimeActive && Number.isFinite(activeStart) && activeStart <= toBoundary && activeStart >= firstTest) {
 
-      .map((row) => ({
+      windowEnd = Math.max(windowEnd, nowInRange);
 
-        timestamp: parseTimestamp(row.date_time || row.datetime || row.timestamp || row.created_at || row.test_time),
+    }
 
-        isOK: isOkResult(row),
+    const planned = Math.max(0, (windowEnd - firstTest) / 60000);
 
-      }))
+    let down = 0;
 
-      .filter((test) => Number.isFinite(test.timestamp))
+    for (const interval of downtimeIntervals) {
 
-      .sort((a, b) => a.timestamp - b.timestamp);
+      const end = Number.isFinite(interval.end) ? Math.min(interval.end, windowEnd) : (downtimeActive ? nowInRange : NaN);
 
-    // Each interval is from one test record to the immediately following test;
+      if (!Number.isFinite(end)) continue;
 
-    // only count intervals whose following product has an OK result.
+      down += Math.max(0, Math.min(end, windowEnd) - Math.max(interval.start, firstTest)) / 60000;
 
-    const actualCtSamples = chronologicalTests.slice(1)
+    }
 
-      .map((test, index) => ({ seconds: (test.timestamp - chronologicalTests[index].timestamp) / 1000, isOK: test.isOK }))
+    if (downtimeActive && Number.isFinite(activeStart) && activeStart >= firstTest && activeStart <= windowEnd &&
 
-      .filter((sample) => sample.isOK && Number.isFinite(sample.seconds) && sample.seconds > 0)
+        !downtimeIntervals.some((item) => Math.abs(item.start - activeStart) < 1000)) {
 
-      .map((sample) => sample.seconds);
+      down += Math.max(0, Math.min(nowInRange, windowEnd) - Math.max(activeStart, firstTest)) / 60000;
 
-    const avgCT = actualCtSamples.length ? Math.min(...actualCtSamples) : null;
+    }
 
-    const targetCT = Math.max(0, Number(idealCycleSeconds) || 0);
+    down = Math.min(planned, down);
 
-    const performance = avgCT && targetCT > 0 ? (targetCT / avgCT) * 100 : 0;
+    // Actual CT is the interval from one test record to the next; ignore zero/negative gaps.
 
-    const availability = planned > 0 ? (operating / planned) * 100 : 0;
+    const testIntervals = testsInRange.slice(1).map((t, i) => (t - testsInRange[i]) / 1000).filter((v) => v > 0 && Number.isFinite(v));
 
-    const oee = (clampPercent(availability) * clampPercent(performance) * quality) / 10000;
+    return { planned, down, operating: Math.max(0, planned - down), firstTest, lastTest, testIntervals };
 
-    return { planned, down, operating, total, availability: clampPercent(availability), performance: clampPercent(performance), quality, oee: clampPercent(oee), avgCT, ctSamples: actualCtSamples.length };
+  }, [filteredSnRows, downtimeData, dateFrom, dateTo, downtimeActive, downtimeStart]);
 
-  }, [timeMetrics, idealCycleSeconds, productionData, filteredSnRows]);
+  const metrics = useMemo(() => {
 
+    const planned = timeMetrics.planned;
 
+    const down = timeMetrics.down;
 
-  const currentDownMinutes = downtimeActive && downtimeStart ? Math.max(0, (Date.now() - new Date(downtimeStart).getTime()) / 60000) : 0;
+    const operating = timeMetrics.operating;
 
-  const statusText = String(machineStatus || "IDLE").toUpperCase();
+    // Output is counted from SN List OK results so it follows the selected date range and shift.
 
+    const total = filteredSnRows.filter(isOkResult).length;
 
+    // Quality: prioritize FPY1 when both FPY1 and FPY2 are available.
 
-  return (
+    // Fall back to FPY2, then FPY only if FPY1 is not provided.
 
-    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6" style={{ background: "var(--bg-base, var(--bg-surface))" }}>
+    const firstAvailable = (...values) => values.find((value) => value !== undefined && value !== null && String(value).trim() !== "");
 
-      <div className="w-full max-w-none min-h-full rounded-xl border border-[var(--border)] overflow-hidden shadow-sm flex flex-col" style={{ background: "var(--bg-surface)" }}>
+    const rawFpyValue = firstAvailable(
 
-        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-soft)] shrink-0">
+      productionData?.fpy1, productionData?.FPY1, productionData?.fpy_1,
 
-          <div>
+      productionData?.fpy2, productionData?.FPY2, productionData?.fpy_2,
 
-            <div className="text-[#22C55E] text-xs font-bold tracking-[0.18em] uppercase">Overall Equipment Effectiveness</div>
+      productionData?.fpy, productionData?.FPY
 
-            <div className="text-[var(--text-primary)] text-lg font-bold mt-1">OEE Monitor <span className="text-[var(--text-muted)] text-xs font-normal">{filterCP ? `· ${filterCP}` : ""}</span></div>
+    );
 
-          </div>
+    const rawFpy = Number(rawFpyValue);
 
-        </div>
+    const quality = rawFpyValue == null || !Number.isFinite(rawFpy)
 
-        <div className="p-5 overflow-y-auto space-y-5">
+      ? 0
 
-          {/* OEE filters: aligned with Production Dashboard filters */}
+      : clampPercent(rawFpy <= 1 ? rawFpy * 100 : rawFpy);
 
-          <section className="rounded-xl border border-[var(--border)] p-3" style={{ background: "var(--bg-surface-2)" }}>
+    // User-defined Actual CT: minimum positive interval between consecutive
 
-            <div className="flex flex-wrap items-end gap-2.5">
+    // SN test timestamps, considering only records whose result is OK/PASS.
 
-              <label className="block w-[76px]">
+    // This is the minimum test-to-test gap, not an average per-SN duration.
 
-                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">CP</span>
+    const chronologicalTests = filteredSnRows
 
-                <input value={filterCP} onChange={(e) => setFilterCP(e.target.value)} className="w-full h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] px-2 text-xs text-[var(--text-primary)] outline-none focus:border-[#22C55E]" />
+      .map((row) => ({
 
-              </label>
+        timestamp: parseTimestamp(row.date_time || row.datetime || row.timestamp || row.created_at || row.test_time),
 
-              <label className="block w-[110px]">
+        isOK: isOkResult(row),
 
-                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">From</span>
+      }))
 
-                <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] px-2 text-xs text-[var(--text-primary)] outline-none focus:border-[#22C55E]" />
+      .filter((test) => Number.isFinite(test.timestamp))
 
-              </label>
+      .sort((a, b) => a.timestamp - b.timestamp);
 
-              <label className="block w-[110px]">
+    // Each interval is from one test record to the immediately following test;
 
-                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">To</span>
+    // only count intervals whose following product has an OK result.
 
-                <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} className="w-full h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] px-2 text-xs text-[var(--text-primary)] outline-none focus:border-[#22C55E]" />
+    const actualCtSamples = chronologicalTests.slice(1)
 
-              </label>
+      .map((test, index) => ({ seconds: (test.timestamp - chronologicalTests[index].timestamp) / 1000, isOK: test.isOK }))
 
-              <label className="block min-w-[145px]">
+      .filter((sample) => sample.isOK && Number.isFinite(sample.seconds) && sample.seconds > 0)
 
-                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">Shift</span>
+      .map((sample) => sample.seconds);
 
-                <select value={selectedShift} onChange={(e) => setSelectedShift(e.target.value)} className="w-full h-8 rounded-lg border border-[#22C55E] bg-[var(--bg-input)] px-2 text-xs font-semibold text-[var(--text-primary)] outline-none">
+    const avgCT = actualCtSamples.length ? Math.min(...actualCtSamples) : null;
 
-                  <option>All Shifts</option><option>Shift 1 (08:00–19:30)</option><option>Shift 2 (20:00–07:30)</option>
+    const targetCT = Math.max(0, Number(idealCycleSeconds) || 0);
 
-                </select>
+    const performance = avgCT && targetCT > 0 ? (targetCT / avgCT) * 100 : 0;
 
-              </label>
+    const availability = planned > 0 ? (operating / planned) * 100 : 0;
 
-              <div className="flex items-end gap-1.5 pb-0.5">
+    const oee = (clampPercent(availability) * clampPercent(performance) * quality) / 10000;
 
-                <button type="button" onClick={() => applyDatePreset("today")} className="h-8 px-3 rounded-lg border border-[var(--border)] text-xs text-[var(--text-primary)] hover:border-[#22C55E]">Today</button>
+    return { planned, down, operating, total, availability: clampPercent(availability), performance: clampPercent(performance), quality, oee: clampPercent(oee), avgCT, ctSamples: actualCtSamples.length };
 
-                <button type="button" onClick={() => applyDatePreset("yesterday")} className="h-8 px-3 rounded-lg border border-[var(--border)] text-xs text-[var(--text-primary)] hover:border-[#22C55E]">Yesterday</button>
+  }, [timeMetrics, idealCycleSeconds, productionData, filteredSnRows]);
 
-                <button type="button" onClick={() => applyDatePreset(7)} className="h-8 px-3 rounded-lg border border-[var(--border)] text-xs text-[var(--text-primary)] hover:border-[#22C55E]">7 Days</button>
+  const currentDownMinutes = downtimeActive && downtimeStart ? Math.max(0, (Date.now() - new Date(downtimeStart).getTime()) / 60000) : 0;
 
-                <button type="button" onClick={() => applyDatePreset(30)} className="h-8 px-3 rounded-lg border border-[var(--border)] text-xs text-[var(--text-primary)] hover:border-[#22C55E]">30 Days</button>
+  const statusText = String(machineStatus || "IDLE").toUpperCase();
 
-              </div>
+  return (
 
-              <label className="block ml-auto w-[80px]">
+    <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-6" style={{ background: "var(--bg-base, var(--bg-surface))" }}>
 
-                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">Bucket</span>
+      <div className="w-full max-w-none min-h-full rounded-xl border border-[var(--border)] overflow-hidden shadow-sm flex flex-col" style={{ background: "var(--bg-surface)" }}>
 
-                <select value={bucket} onChange={(e) => setBucket(e.target.value)} className="w-full h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] px-2 text-xs text-[var(--text-primary)] outline-none focus:border-[#22C55E]">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[var(--border-soft)] shrink-0">
 
-                  <option>Auto</option><option>Hour</option><option>Day</option>
+          <div>
 
-                </select>
+            <div className="text-[#22C55E] text-xs font-bold tracking-[0.18em] uppercase">Overall Equipment Effectiveness</div>
 
-              </label>
+            <div className="text-[var(--text-primary)] text-lg font-bold mt-1">OEE Monitor <span className="text-[var(--text-muted)] text-xs font-normal">{filterCP ? `· ${filterCP}` : ""}</span></div>
 
-            </div>
+          </div>
 
-          </section>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="p-5 overflow-y-auto space-y-5">
 
-            <MetricCard title="OEE" value={percent(metrics.oee)} subtitle="Availability × Performance × Quality" color="#22C55E" />
+          {/* OEE filters: aligned with Production Dashboard filters */}
 
-            <MetricCard title="Availability" value={percent(metrics.availability)} subtitle="Running time / (Running time + downtime)" color="#3B82F6" />
+          <section className="rounded-xl border border-[var(--border)] p-3" style={{ background: "var(--bg-surface-2)" }}>
 
-            <MetricCard title="Performance" value={percent(metrics.performance)} subtitle="Target CT dibandingkan average actual CT" color="#8B5CF6" />
+            <div className="flex flex-wrap items-end gap-2.5">
 
-            <MetricCard title="Quality" value={percent(metrics.quality)} subtitle="FPY dari Dashboard" color="#F59E0B" />
+              <label className="block w-[76px]">
 
-          </div>
+                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">CP</span>
 
+                <input value={filterCP} onChange={(e) => setFilterCP(e.target.value)} className="w-full h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] px-2 text-xs text-[var(--text-primary)] outline-none focus:border-[#22C55E]" />
 
+              </label>
 
-          <section className="rounded-xl border border-[var(--border)] p-4" style={{ background: "var(--bg-surface-2)" }}>
+              <label className="block w-[110px]">
 
-            <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
+                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">From</span>
 
-              <div>
+                <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setActiveDatePreset(null); }} className="w-full h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] px-2 text-xs text-[var(--text-primary)] outline-none focus:border-[#22C55E]" />
 
-                <h3 className="text-sm font-bold text-[var(--text-primary)]">OEE Data & Parameters</h3>
+              </label>
 
-                <p className="text-[10px] text-[var(--text-muted)] mt-1">Output dan FPY diambil dari Dashboard, riwayat downtime dari Downtime, dan Actual CT dari interval minimum antar-test berurutan pada SN List yang hasilnya OK.</p>
+              <label className="block w-[110px]">
 
-              </div>
+                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">To</span>
 
-              <span className="text-[10px] rounded-full px-2 py-1 border border-[var(--border)] text-[var(--text-secondary)]">Machine: {statusText}</span>
+                <input type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => { setDateTo(e.target.value); setActiveDatePreset(null); }} className="w-full h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] px-2 text-xs text-[var(--text-primary)] outline-none focus:border-[#22C55E]" />
 
-            </div>
+              </label>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <label className="block min-w-[145px]">
 
-              <div className="rounded-lg border border-[var(--border)] px-3 py-2"><span className="block text-[10px] uppercase font-bold text-[var(--text-muted)]">Planned Production Time</span><span className="text-lg font-bold text-[var(--text-primary)]">{metrics.planned.toFixed(1)} min</span><span className="text-[10px] text-[var(--text-muted)]">Data test pertama sampai test terakhir / downtime aktif</span></div>
+                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">Shift</span>
 
-              <div className="rounded-lg border border-[var(--border)] px-3 py-2"><span className="block text-[10px] uppercase font-bold text-[var(--text-muted)]">Total Downtime</span><span className="text-lg font-bold text-[var(--text-primary)]">{metrics.down.toFixed(1)} min</span><span className="text-[10px] text-[var(--text-muted)]">Otomatis dari Downtime</span></div>
+                <select value={selectedShift} onChange={(e) => setSelectedShift(e.target.value)} className="w-full h-8 rounded-lg border border-[#22C55E] bg-[var(--bg-input)] px-2 text-xs font-semibold text-[var(--text-primary)] outline-none">
 
-              <NumberField label="Ideal Cycle Time" value={idealCycleSeconds} onChange={setIdealCycleSeconds} unit="sec/pcs" step="0.01" />
+                  <option>All Shifts</option><option>Shift 1 (08:00–19:30)</option><option>Shift 2 (20:00–07:30)</option>
 
-              <div className="rounded-lg border border-[var(--border)] px-3 py-2"><span className="block text-[10px] uppercase font-bold text-[var(--text-muted)]">Total Output</span><span className="text-lg font-bold text-[var(--text-primary)]">{metrics.total.toLocaleString()} pcs</span><span className="text-[10px] text-[var(--text-muted)]">Otomatis dari SN List (hasil OK)</span></div>
+                </select>
 
-              <div className="rounded-lg border border-[var(--border)] px-3 py-2"><span className="block text-[10px] uppercase font-bold text-[var(--text-muted)]">Actual CT (Min. Interval)</span><span className="text-lg font-bold text-[var(--text-primary)]">{metrics.avgCT == null ? "—" : `${metrics.avgCT.toFixed(2)} sec/pcs`}</span><span className="text-[10px] text-[var(--text-muted)]">SN List OK · minimum jarak test-ke-test · {metrics.ctSamples} interval valid</span></div>
+              </label>
 
-              <div className="rounded-lg border border-[var(--border)] px-3 py-2 flex flex-col justify-center">
+              <div className="flex items-end gap-1.5 pb-0.5">
 
-                <span className="text-[10px] uppercase font-bold text-[var(--text-muted)]">Running Time</span>
+                <button type="button" onClick={() => applyDatePreset("today")} className={`h-8 px-3 rounded-lg border text-xs transition-colors ${activeDatePreset === String("today") ? "border-[#16A34A] bg-[#16A34A] text-white font-semibold shadow-sm" : "border-[var(--border)] text-[var(--text-primary)] hover:border-[#22C55E]"}`}>Today</button>
 
-                <span className="text-lg font-bold text-[var(--text-primary)] tabular-nums">{metrics.operating.toFixed(1)} min</span>
+                <button type="button" onClick={() => applyDatePreset("yesterday")} className={`h-8 px-3 rounded-lg border text-xs transition-colors ${activeDatePreset === String("yesterday") ? "border-[#16A34A] bg-[#16A34A] text-white font-semibold shadow-sm" : "border-[var(--border)] text-[var(--text-primary)] hover:border-[#22C55E]"}`}>Yesterday</button>
 
-                <span className="text-[10px] text-[var(--text-muted)]">Planned time − downtime</span>
+                <button type="button" onClick={() => applyDatePreset(7)} className={`h-8 px-3 rounded-lg border text-xs transition-colors ${activeDatePreset === String(7) ? "border-[#16A34A] bg-[#16A34A] text-white font-semibold shadow-sm" : "border-[var(--border)] text-[var(--text-primary)] hover:border-[#22C55E]"}`}>7 Days</button>
 
-              </div>
+                <button type="button" onClick={() => applyDatePreset(30)} className={`h-8 px-3 rounded-lg border text-xs transition-colors ${activeDatePreset === String(30) ? "border-[#16A34A] bg-[#16A34A] text-white font-semibold shadow-sm" : "border-[var(--border)] text-[var(--text-primary)] hover:border-[#22C55E]"}`}>30 Days</button>
 
-            </div>
+              </div>
 
-            {downtimeActive && <p className="mt-3 text-xs text-amber-500">Downtime sedang aktif sekitar {currentDownMinutes.toFixed(1)} menit dan dihitung otomatis.</p>}
+              <label className="block ml-auto w-[80px]">
 
-            <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-[var(--text-muted)]"><span>{loadingData ? "Mengambil data..." : "Data otomatis diperbarui setiap 15 detik"}</span><button type="button" onClick={fetchOEEData} className="rounded-md border border-[var(--border)] px-2 py-1 hover:border-[#22C55E]">Refresh Data</button></div>
+                <span className="block text-[9px] font-bold uppercase text-[var(--text-muted)] mb-1">Bucket</span>
 
-            {dataError && <p className="mt-2 text-xs text-red-500">{dataError}</p>}
+                <select value={bucket} onChange={(e) => setBucket(e.target.value)} className="w-full h-8 rounded-lg border border-[var(--border)] bg-[var(--bg-input)] px-2 text-xs text-[var(--text-primary)] outline-none focus:border-[#22C55E]">
 
-          </section>
+                  <option>Auto</option><option>Hour</option><option>Day</option>
 
-          <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">Rumus: Availability = (Planned Time − Downtime) / Planned Time × 100%; Performance = Target CT / Actual CT minimum × 100% (interval minimum antar-test SN OK dari SN List); Quality = FPY Dashboard; OEE = Availability × Performance × Quality. Performance dan OEE ditampilkan maksimal 100%.</p>
+                </select>
 
-        </div>
+              </label>
 
-      </div>
+            </div>
 
-    </div>
+          </section>
 
-  );
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+
+            <MetricCard title="OEE" value={percent(metrics.oee)} subtitle="Availability × Performance × Quality" color="#22C55E" />
+
+            <MetricCard title="Availability" value={percent(metrics.availability)} subtitle="Running time / (Running time + downtime)" color="#3B82F6" />
+
+            <MetricCard title="Performance" value={percent(metrics.performance)} subtitle="Target CT dibandingkan average actual CT" color="#8B5CF6" />
+
+            <MetricCard title="Quality" value={percent(metrics.quality)} subtitle="FPY dari Dashboard" color="#F59E0B" />
+
+          </div>
+
+          <section className="rounded-xl border border-[var(--border)] p-4" style={{ background: "var(--bg-surface-2)" }}>
+
+            <div className="flex flex-wrap items-start justify-between gap-2 mb-4">
+
+              <div>
+
+                <h3 className="text-sm font-bold text-[var(--text-primary)]">OEE Data & Parameters</h3>
+
+                <p className="text-[10px] text-[var(--text-muted)] mt-1">Output dan FPY diambil dari Dashboard, riwayat downtime dari Downtime, dan Actual CT dari interval minimum antar-test berurutan pada SN List yang hasilnya OK.</p>
+
+              </div>
+
+              <span className="text-[10px] rounded-full px-2 py-1 border border-[var(--border)] text-[var(--text-secondary)]">Machine: {statusText}</span>
+
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+
+              <div className="rounded-lg border border-[var(--border)] px-3 py-2"><span className="block text-[10px] uppercase font-bold text-[var(--text-muted)]">Planned Production Time</span><span className="text-lg font-bold text-[var(--text-primary)]">{metrics.planned.toFixed(1)} min</span><span className="text-[10px] text-[var(--text-muted)]">Data test pertama sampai test terakhir / downtime aktif</span></div>
+
+              <div className="rounded-lg border border-[var(--border)] px-3 py-2"><span className="block text-[10px] uppercase font-bold text-[var(--text-muted)]">Total Downtime</span><span className="text-lg font-bold text-[var(--text-primary)]">{metrics.down.toFixed(1)} min</span><span className="text-[10px] text-[var(--text-muted)]">Otomatis dari Downtime</span></div>
+
+              <NumberField label="Ideal Cycle Time" value={idealCycleSeconds} onChange={setIdealCycleSeconds} unit="sec/pcs" step="0.01" />
+
+              <div className="rounded-lg border border-[var(--border)] px-3 py-2"><span className="block text-[10px] uppercase font-bold text-[var(--text-muted)]">Total Output</span><span className="text-lg font-bold text-[var(--text-primary)]">{metrics.total.toLocaleString()} pcs</span><span className="text-[10px] text-[var(--text-muted)]">Otomatis dari SN List (hasil OK)</span></div>
+
+              <div className="rounded-lg border border-[var(--border)] px-3 py-2"><span className="block text-[10px] uppercase font-bold text-[var(--text-muted)]">Actual CT (Min. Interval)</span><span className="text-lg font-bold text-[var(--text-primary)]">{metrics.avgCT == null ? "—" : `${metrics.avgCT.toFixed(2)} sec/pcs`}</span><span className="text-[10px] text-[var(--text-muted)]">SN List OK · minimum jarak test-ke-test · {metrics.ctSamples} interval valid</span></div>
+
+              <div className="rounded-lg border border-[var(--border)] px-3 py-2 flex flex-col justify-center">
+
+                <span className="text-[10px] uppercase font-bold text-[var(--text-muted)]">Running Time</span>
+
+                <span className="text-lg font-bold text-[var(--text-primary)] tabular-nums">{metrics.operating.toFixed(1)} min</span>
+
+                <span className="text-[10px] text-[var(--text-muted)]">Planned time − downtime</span>
+
+              </div>
+
+            </div>
+
+            {downtimeActive && <p className="mt-3 text-xs text-amber-500">Downtime sedang aktif sekitar {currentDownMinutes.toFixed(1)} menit dan dihitung otomatis.</p>}
+
+            <div className="mt-3 flex flex-wrap items-center gap-3 text-[10px] text-[var(--text-muted)]"><span>{loadingData ? "Mengambil data..." : "Data otomatis diperbarui setiap 15 detik"}</span><button type="button" onClick={fetchOEEData} className="rounded-md border border-[var(--border)] px-2 py-1 hover:border-[#22C55E]">Refresh Data</button></div>
+
+            {dataError && <p className="mt-2 text-xs text-red-500">{dataError}</p>}
+
+          </section>
+
+          <p className="text-[10px] leading-relaxed text-[var(--text-muted)]">Rumus: Availability = (Planned Time − Downtime) / Planned Time × 100%; Performance = Target CT / Actual CT minimum × 100% (interval minimum antar-test SN OK dari SN List); Quality = FPY Dashboard; OEE = Availability × Performance × Quality. Performance dan OEE ditampilkan maksimal 100%.</p>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  );
 
 }

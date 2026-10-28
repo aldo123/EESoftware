@@ -46,6 +46,17 @@ export default function InterlockModal({ onClose, onSaved }) {
       .catch(() => setSections({}));
   }, []);
 
+  // Field External Software hanya aktif jika Display Mode = External Software
+  const rowDisabled = (section, key) =>
+    section === "Main Page" &&
+    key !== "Display Mode" &&
+    (entries["Main Page"]?.["Display Mode"] ?? "Dynamic Page") !== "External Software";
+
+  const handleBrowseExe = async () => {
+    const picked = await window.electronAPI?.pickExe?.();
+    if (picked) handleChange("Main Page", "External Exe Path", picked);
+  };
+
   const handleChange = (section, key, val) => {
     setEntries((prev) => ({
       ...prev,
@@ -125,10 +136,64 @@ export default function InterlockModal({ onClose, onSaved }) {
                       key={key}
                       className={`flex items-center gap-4 px-4 py-3 ${
                         i < arr.length - 1 ? "border-b border-[var(--border-soft)]" : ""
-                      }`}
+                      } ${rowDisabled(section, key) ? "opacity-40 pointer-events-none" : ""}`}
                     >
                       <span className="text-[var(--text-secondary)] text-sm w-44 shrink-0">{key}</span>
-                      {key === "Interlock ByPass" ? (
+                      {section === "Main Page" && key === "Display Mode" ? (
+                        <select
+                          value={entries[section]?.[key] ?? val}
+                          onChange={(e) => handleChange(section, key, e.target.value)}
+                          className="flex-1 bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
+                        >
+                          <option>Dynamic Page</option>
+                          <option>External Software</option>
+                        </select>
+                      ) : section === "Main Page" && key === "External Content Size" ? (
+                        <input
+                          type="text"
+                          value={entries[section]?.[key] ?? val}
+                          onChange={(e) => handleChange(section, key, e.target.value)}
+                          placeholder="Auto, or e.g. 1920x1300"
+                          className="flex-1 min-w-0 bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
+                        />
+                      ) : section === "Main Page" && key === "External Fit Mode" ? (
+                        <select
+                          value={entries[section]?.[key] ?? val}
+                          onChange={(e) => handleChange(section, key, e.target.value)}
+                          className="flex-1 bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
+                        >
+                          <option value="Fit">Fit to panel (stretch)</option>
+                          <option value="Scroll">Scrollbars (keep original size)</option>
+                        </select>
+                      ) : section === "Main Page" && key === "External Embed Method" ? (
+                        <select
+                          value={entries[section]?.[key] ?? val}
+                          onChange={(e) => handleChange(section, key, e.target.value)}
+                          className="flex-1 bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
+                        >
+                          <option value="Overlay">Overlay (recommended)</option>
+                          <option value="Attach">Attach (child window)</option>
+                        </select>
+                      ) : section === "Main Page" && key === "External Exe Path" ? (
+                        <div className="flex-1 flex gap-2">
+                          <input
+                            type="text"
+                            value={entries[section]?.[key] ?? val}
+                            onChange={(e) => handleChange(section, key, e.target.value)}
+                            placeholder="C:\\Path\\Program.exe"
+                            className="flex-1 min-w-0 bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-[#22C55E] transition-colors"
+                          />
+                          {window.electronAPI?.pickExe && (
+                            <button
+                              type="button"
+                              onClick={handleBrowseExe}
+                              className="px-3 text-xs font-semibold border border-[var(--border)] hover:border-[#22C55E]/50 text-[var(--text-secondary)] hover:text-[#22C55E] rounded-lg transition-colors"
+                            >
+                              Browse
+                            </button>
+                          )}
+                        </div>
+                      ) : key === "Interlock ByPass" ? (
                         <select
                           value={entries[section]?.[key] ?? val}
                           onChange={(e) => handleChange(section, key, e.target.value)}

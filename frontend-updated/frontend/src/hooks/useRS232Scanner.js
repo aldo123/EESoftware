@@ -1,6 +1,7 @@
 // src/hooks/useRS232Scanner.js
 import { useEffect, useRef } from "react";
 import { API } from "../service/api";
+import { POLL } from "../config/polling";
 
 export function useRS232Scanner(cpNumber, active = true) {
   const intervalRef = useRef(null);
@@ -58,8 +59,8 @@ export function useRS232Scanner(cpNumber, active = true) {
       }
     };
 
-    // Interval 200ms untuk menghindari race condition
-    intervalRef.current = setInterval(poll, 50);
+    // Interval diatur di src/config/polling.js (POLL.SCANNER_MS)
+    intervalRef.current = setInterval(poll, POLL.SCANNER_MS);
 
     return () => {
       if (intervalRef.current) {

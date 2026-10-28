@@ -19,7 +19,9 @@ import { useTCPEthernet } from "./useTCPEthernet";
 import { useModbusRTU } from "./useModbusRTU";
 import { devicesOfProtocol, protocolOf, useCommDevices } from "../lib/comm";
 
-const SLOW_POLL_INTERVAL = 10; // ms between sweeps for FINS / RTU / EtherNet/IP bindings
+import { POLL } from "../config/polling";
+
+const SLOW_POLL_INTERVAL = POLL.PLC_SLOW_SWEEP_MS; // ms between sweeps for FINS / RTU / EtherNet/IP bindings
 
 const OWNER = {
   modbus_tcp: "modbus",

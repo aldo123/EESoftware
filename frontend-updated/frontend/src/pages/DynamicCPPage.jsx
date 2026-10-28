@@ -1,8 +1,9 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo, memo } from "react";
 import { API } from "../service/api";
 import { usePlcRuntime } from "../hooks/usePlcRuntime";
 import { TAG_ADDRESS_TYPE, findDevice, normalizeFinsArea } from "../lib/comm";
 import { useInternalVariables } from "../hooks/useInternalVariables";
+import { POLL } from "../config/polling";
 import {
   RuntimeButton,
   RuntimeLight,
@@ -90,7 +91,7 @@ const getPopupContentBounds = (widgets, canvas) => {
   };
 };
 
-export default function DynamicCPPage({ cpNumber, user }) {
+function DynamicCPPage({ cpNumber, user }) {
   const [widgets, setWidgets] = useState([]);
   const [pages, setPages] = useState({});
   const [activePageId, setActivePageId] = useState(null);
@@ -354,7 +355,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
   } = usePlcRuntime({
     devices: tcpDevices,
     enabled: Boolean(cpNumber),
-    pollInterval: 20,
+    pollInterval: POLL.PLC_MODBUS_MS,
   });
 
   // cp-scan is handled by a long-lived event listener. Keep the
@@ -4166,3 +4167,7 @@ export default function DynamicCPPage({ cpNumber, user }) {
     </div>
   );
 }
+
+// memo: MainPage re-renders for many reasons (status, menus, clock...). The Dynamic Page is
+// big, so it must only re-render when its own props (cpNumber, user) change.
+export default memo(DynamicCPPage);

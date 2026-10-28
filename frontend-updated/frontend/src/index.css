@@ -111,3 +111,10 @@ input:-webkit-autofill:focus {
 @keyframes loader-spin {
   to { transform: rotate(360deg); }
 }
+
+/* Lite UI: active while an External Software program is shown.
+   Blurring what is behind a modal is GPU heavy; a plain dark overlay is enough. */
+.lite-ui [class*="backdrop-blur"] {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}

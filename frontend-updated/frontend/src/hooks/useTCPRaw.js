@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { keepIfSame } from "../lib/stateGuards";
 import { API } from "../service/api";
 
 const DEFAULT_STATUS_INTERVAL = 250;
@@ -109,7 +110,7 @@ export function useTCPRaw({ devices = [], enabled = true, statusInterval = DEFAU
         const name = nameOf(device);
         next[name] = data?.[name]?.connected === true;
       });
-      if (mountedRef.current) setDeviceStatus(next);
+      if (mountedRef.current) setDeviceStatus((p) => keepIfSame(p, next));
 
       const bindingStatus = {};
       const bindingErrors = {};
@@ -119,16 +120,16 @@ export function useTCPRaw({ devices = [], enabled = true, statusInterval = DEFAU
         if (!ok) bindingErrors[binding.key] = data?.[nameOf(binding.device)]?.error || "Raw TCP disconnected.";
       });
       if (mountedRef.current) {
-        setConnectionStatus(bindingStatus);
-        setErrors(bindingErrors);
+        setConnectionStatus((p) => keepIfSame(p, bindingStatus));
+        setErrors((p) => keepIfSame(p, bindingErrors));
       }
     } catch (error) {
       const next = {};
       (devices || []).filter(isRawTCP).forEach((device) => { next[nameOf(device)] = false; });
       if (mountedRef.current) {
-        setDeviceStatus(next);
-        setConnectionStatus(Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, false])));
-        setErrors(Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, error?.message || "Raw TCP status error."])));
+        setDeviceStatus((p) => keepIfSame(p, next));
+        setConnectionStatus((p) => keepIfSame(p, Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, false]))));
+        setErrors((p) => keepIfSame(p, Object.fromEntries([...bindingsRef.current.values()].map((b) => [b.key, error?.message || "Raw TCP status error."]))));
       }
     } finally {
       statusBusyRef.current = false;
@@ -148,13 +149,14 @@ export function useTCPRaw({ devices = [], enabled = true, statusInterval = DEFAU
       try {
         const value = await readRawTCP(binding);
         if (!mountedRef.current) return;
-        setValues((prev) => ({ ...prev, [binding.key]: value, [binding.widgetId]: value }));
-        setConnectionStatus((prev) => ({ ...prev, [binding.key]: true }));
-        setErrors((prev) => { const next = { ...prev }; delete next[binding.key]; return next; });
+        setValues((prev) => (Object.is(prev[binding.widgetId], value) && Object.is(prev[binding.key], value) ? prev : { ...prev, [binding.key]: value, [binding.widgetId]: value }));
+        setConnectionStatus((prev) => (prev[binding.key] === true ? prev : { ...prev, [binding.key]: true }));
+        setErrors((prev) => { if (!(binding.key in prev)) return prev; const next = { ...prev }; delete next[binding.key]; return next; });
       } catch (error) {
         if (!mountedRef.current) return;
-        setConnectionStatus((prev) => ({ ...prev, [binding.key]: false }));
-        setErrors((prev) => ({ ...prev, [binding.key]: error?.message || "Raw TCP communication error." }));
+        const failMsg = error?.message || "Raw TCP communication error.";
+        setConnectionStatus((prev) => (prev[binding.key] === false ? prev : { ...prev, [binding.key]: false }));
+        setErrors((prev) => (prev[binding.key] === failMsg ? prev : { ...prev, [binding.key]: failMsg }));
       }
     }
   }, [enabled, readRawTCP]);

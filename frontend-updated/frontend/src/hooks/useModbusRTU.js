@@ -49,11 +49,15 @@ export function useModbusRTU({ devices = [], enabled = true } = {}) {
       } catch (e) {
         if (!mountedRef.current) return;
         status[nameOf(b.device)] = false;
-        setConnectionStatus((p) => ({ ...p, [b.key]: false }));
-        setErrors((p) => ({ ...p, [b.key]: e?.message || "Modbus RTU communication error." }));
+        const failMsg = e?.message || "Modbus RTU communication error.";
+        setConnectionStatus((p) => (p[b.key] === false ? p : { ...p, [b.key]: false }));
+        setErrors((p) => (p[b.key] === failMsg ? p : { ...p, [b.key]: failMsg }));
       }
     }
-    if (mountedRef.current && Object.keys(status).length) setDeviceStatus((p) => ({ ...p, ...status }));
+    if (mountedRef.current && Object.keys(status).length) {
+      // Same device status as before -> keep the old object (no re-render on every sweep)
+      setDeviceStatus((p) => (Object.keys(status).every((k) => p[k] === status[k]) ? p : { ...p, ...status }));
+    }
   }, [enabled, readRTU]);
 
   const getValue = useCallback(({ device, addressType, address, widgetId } = {}) => { const b = widgetId != null ? bindingsRef.current.get(String(widgetId)) : null; return values[b?.key || keyOf(device, addressType, address, widgetId)]; }, [values]);

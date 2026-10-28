@@ -247,7 +247,7 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
 
 // ── SN List source settings: Logic Builder or realtime folder ──
 function SourceSettingsModal({ cp, onClose, onSaved }) {
-  const [cfg, setCfg] = useState({ mode: "logic_builder", path: "", interval_ms: 2000, delimiter: "auto", recursive: true });
+  const [cfg, setCfg] = useState({ mode: "logic_builder", path: "", interval_ms: 2000, delimiter: "auto", recursive: true, filename_length_enabled: false, filename_length_operator: ">", filename_length: 10 });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [headers, setHeaders] = useState([]);
@@ -284,7 +284,7 @@ function SourceSettingsModal({ cp, onClose, onSaved }) {
     try {
       const r = await fetch(`${API}/api/snlist/source-preview?cp=${encodeURIComponent(cp)}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, delimiter, recursive: cfg.recursive })
+        body: JSON.stringify({ path, delimiter, recursive: cfg.recursive, filename_length_enabled: cfg.filename_length_enabled, filename_length_operator: cfg.filename_length_operator, filename_length: cfg.filename_length })
       });
       const d = await r.json();
       if (!r.ok || !d.success) throw new Error(d.error || "Failed to read source folder");
@@ -340,6 +340,29 @@ function SourceSettingsModal({ cp, onClose, onSaved }) {
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1">Delimiter</label><select value={cfg.delimiter || "auto"} onChange={e => setCfg(p => ({ ...p, delimiter: e.target.value }))} className="w-full h-8 bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg px-2 text-xs text-[var(--text-primary)]"><option value="auto">Auto detect</option><option value=",">Comma (,)</option><option value=";">Semicolon (;)</option><option value="|">Pipe (|)</option><option value="\t">Tab</option></select></div>
               <div><label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1">Scan Interval (ms)</label><Input type="number" min="500" step="500" value={cfg.interval_ms || 2000} onChange={e => setCfg(p => ({ ...p, interval_ms: Math.max(500, Number(e.target.value) || 2000) }))} className="w-full"/></div>
+            </div>
+            <div className="rounded-xl border border-[var(--border)] p-3 flex flex-col gap-2">
+              <label className="flex items-center gap-2 text-xs font-bold text-[var(--text-primary)]">
+                <input type="checkbox" checked={!!cfg.filename_length_enabled} onChange={e => setCfg(p => ({ ...p, filename_length_enabled: e.target.checked }))}/>
+                Filter by Filename Length
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1">Operator</label>
+                  <select value={cfg.filename_length_operator || ">"} onChange={e => setCfg(p => ({ ...p, filename_length_operator: e.target.value }))} disabled={!cfg.filename_length_enabled} className="w-full h-8 bg-[var(--bg-surface)] border border-[var(--border)] rounded-lg px-2 text-xs text-[var(--text-primary)] disabled:opacity-50">
+                    <option value=">">&gt; (greater than)</option>
+                    <option value="<">&lt; (less than)</option>
+                    <option value="=">= (equal to)</option>
+                    <option value=">=">&gt;= (greater than or equal)</option>
+                    <option value="<=">&lt;= (less than or equal)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[var(--text-secondary)] mb-1">Length</label>
+                  <Input type="number" min="0" step="1" value={cfg.filename_length ?? 10} disabled={!cfg.filename_length_enabled} onChange={e => setCfg(p => ({ ...p, filename_length: Math.max(0, Number(e.target.value) || 0) }))} className="w-full disabled:opacity-50"/>
+                </div>
+              </div>
+              <p className="text-[9px] text-[var(--text-faint)]">Panjang dihitung dari nama file tanpa ekstensi (.csv/.txt/.log). Contoh: aktifkan filter, pilih &gt;, lalu isi 10 untuk mengambil nama file yang lebih dari 10 karakter.</p>
             </div>
             <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)]"><input type="checkbox" checked={cfg.recursive !== false} onChange={e => setCfg(p => ({ ...p, recursive: e.target.checked }))}/> Include subfolders</label>
             <div className="rounded-xl border border-[var(--border)] overflow-hidden">
@@ -443,7 +466,8 @@ export default function SNListPage({ user }) {
   // ── Fetch data ─────────────────────────────────────────────
   const fetchData = useCallback(async (opts = {}) => {
     if (!currentCP) return;
-    setLoading(true); setError("");
+    // opts.silent = background refresh: no spinner, no flicker, no UI change when nothing changed
+    if (!opts.silent) { setLoading(true); setError(""); }
     try {
       const params = new URLSearchParams({
         cp: currentCP,
@@ -456,11 +480,11 @@ export default function SNListPage({ user }) {
       const r = await fetch(`${API}/api/snlist/data?${params}`);
       if (!r.ok) throw new Error("Failed to load data");
       const d = await r.json();
-      setData(d.data || []);
+      const next = d.data || [];
+      setData((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
     } catch (e) {
-      setError(e.message);
-      setData([]);
-    } finally { setLoading(false); }
+      if (!opts.silent) { setError(e.message); setData([]); }
+    } finally { if (!opts.silent) setLoading(false); }
   }, [currentCP, page]);
 
   // ── Inisialisasi saat CP berubah ──────────────────────────
@@ -476,12 +500,15 @@ export default function SNListPage({ user }) {
   // records appear in the table without requiring the operator to press Refresh.
   useEffect(() => {
     if (sourceMode !== "folder" || !currentCP) return;
+    let tick = 0;
     const timer = setInterval(() => {
-      fetchColumns(currentCP);
-      fetchData({ page: 1 });
+      if (document.hidden || barcode) return; // do not replace the result of a barcode search
+      // Columns only change when a CSV with a new header is imported: every 10 s is enough
+      if (tick++ % 5 === 0) fetchColumns(currentCP);
+      fetchData({ silent: true }); // refresh the page the operator is looking at (was: always page 1)
     }, 2000);
     return () => clearInterval(timer);
-  }, [sourceMode, currentCP, fetchColumns, fetchData]);
+  }, [sourceMode, currentCP, fetchColumns, fetchData, barcode]);
 
   // ── Sort ────────────────────────────────────────────────────
   const sorted = [...data].sort((a, b) => {
@@ -544,19 +571,58 @@ export default function SNListPage({ user }) {
     } catch (e) { setError(e.message); }
   };
 
-  // ── Export CSV ──────────────────────────────────────────────
-  const exportCSV = () => {
-    if (data.length === 0) return;
-    const headers = columns.map(c => c.label).join(",");
-    const rows = data.map(row =>
-      columns.map(c => `"${String(row[c.key] || "").replace(/"/g, '""')}"`).join(",")
-    );
-    const csv = [headers, ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `CP${currentCP}_snlist.csv`; a.click();
-    URL.revokeObjectURL(url);
+  // ── Export CSV: export ALL rows matching the active date/barcode filters,
+  // not only the current 50-row page shown in the table.
+  const exportCSV = async () => {
+    if (!currentCP || !columns.length) return;
+    setError("");
+    try {
+      const exportPerPage = 1000;
+      const allRows = [];
+      let total = 0;
+      let exportPage = 1;
+      do {
+        const params = new URLSearchParams({
+          cp: String(currentCP),
+          page: String(exportPage),
+          per: String(exportPerPage),
+          ...(dateFrom ? { date_from: dateFrom } : {}),
+          ...(dateTo ? { date_to: dateTo } : {}),
+          ...(barcode.trim() ? { q: barcode.trim() } : {}),
+        });
+        const response = await fetch(`${API}/api/snlist/data?${params}`);
+        if (!response.ok) throw new Error("Gagal mengambil data lengkap untuk export CSV");
+        const result = await response.json();
+        const batch = Array.isArray(result.data) ? result.data : [];
+        total = Number(result.total || 0);
+        allRows.push(...batch);
+        if (!batch.length || allRows.length >= total) break;
+        exportPage += 1;
+      } while (allRows.length < total);
+
+      if (!allRows.length) {
+        setError("Tidak ada data yang cocok dengan filter tanggal/pencarian untuk diekspor.");
+        return;
+      }
+      const escapeCsv = value => `"${String(value ?? "").replace(/"/g, '""')}"`;
+      const headers = columns.map(c => escapeCsv(c.label));
+      const rows = allRows.map(row => columns.map(c => escapeCsv(row[c.key])).join(","));
+      const csv = "\uFEFF" + [headers.join(","), ...rows].join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const rangeName = dateFrom || dateTo ? `_${dateFrom || "all"}_to_${dateTo || "all"}` : "";
+      a.href = url;
+      a.download = `CP${currentCP}_snlist${rangeName}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      console.info(`[SNList CSV] Exported ${allRows.length} of ${total} matching records`);
+    } catch (e) {
+      console.error("SN List CSV export failed", e);
+      setError(e.message || "Export CSV gagal");
+    }
   };
 
   // ── Right click ─────────────────────────────────────────────
@@ -709,7 +775,7 @@ export default function SNListPage({ user }) {
                 <td className="px-3 py-2 text-center text-[var(--text-muted)] font-mono">{(page-1)*PER_PAGE + idx + 1}</td>
                 {columns.map(col => (
                   <td key={col.key} className="px-3 py-2 text-center text-[var(--text-primary)] whitespace-nowrap">
-                    {row[col.key] ?? "—"}
+                    {row[col.key] ?? ""}
                   </td>
                 ))}
                 <td className="px-3 py-2 text-center">

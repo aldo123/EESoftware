@@ -1,14 +1,14 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ModalBackdrop, ModalPanel, dropdownVariants, EASE_OUT } from "./components/motion";
 import InterlockModal from "./modal/InterlockModal";
 import SettingModal from "./modal/SettingModal";
 import MaintenancePage from "./modal/MaintenanceModal";
-import SNListPage from "./modal/SnlistModal";
-import ReferencePage from "./modal/ReferenceModal";
-import CpkAnalyzerPage from "./modal/CpkAnalyzerModal";
-import DashboardPage from "./modal/DashboardModal";
-import OEEPage from "./modal/OEEModal";
+import SNListPageRaw from "./modal/SnlistModal";
+import ReferencePageRaw from "./modal/ReferenceModal";
+import CpkAnalyzerPageRaw from "./modal/CpkAnalyzerModal";
+import DashboardPageRaw from "./modal/DashboardModal";
+import OEEPageRaw from "./modal/OEEModal";
 import PageBuilder from "./modal/PageBuilder";
 import LogicBuilder from "./modal/LogicBuilder";
 import InternalVariable from "./modal/InternalVariable";
@@ -17,6 +17,8 @@ import UDPSerialTerminal from "./modal/UDPSerialTerminal";
 import ComSerialTerminal from "./modal/ComSerialTerminal";
 import { API } from "./service/api";
 import DynamicCPPage from "./pages/DynamicCPPage";
+import { POLL } from "./config/polling";
+import ExternalSoftwarePanel from "./components/ExternalSoftwarePanel";
 import { useRS232Scanner } from "./hooks/useRS232Scanner";
 import { useDeviceTriggerScanner } from "./hooks/useDeviceTriggerScanner";
 import { useTCPPLC } from "./hooks/useTCPPLC";
@@ -352,6 +354,34 @@ function ReloginModal({ onClose, onLoginSuccess }) {
 
 
 // ── Main export ───────────────────────────────────────────────
+// ── Header clock ───────────────────────────────────────────────
+// Own component with its own 1 s timer: a ticking clock must NOT re-render the
+// whole MainPage (and the Dynamic Page below it) every second.
+const HeaderClock = memo(function HeaderClock() {
+  const [time, setTime] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const fmtTime = d => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const fmtDate = d => d.toLocaleDateString("en-US", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+  const fmtWW = d => {
+    const start = new Date(d.getFullYear(), 0, 1);
+    return `WW${Math.ceil(((d - start) / 86400000 + start.getDay() + 1) / 7)}`;
+  };
+
+  return <>{fmtDate(time)} &nbsp; {fmtTime(time)} &nbsp; {fmtWW(time)}</>;
+});
+
+// The menu pages are big (tables, charts). MainPage re-renders for many small reasons (status,
+// menus, downtime state); memo keeps a page from re-rendering unless its own props change.
+const SNListPage = memo(SNListPageRaw);
+const ReferencePage = memo(ReferencePageRaw);
+const CpkAnalyzerPage = memo(CpkAnalyzerPageRaw);
+const DashboardPage = memo(DashboardPageRaw);
+const OEEPage = memo(OEEPageRaw);
+
 export default function MainPage({ user: initialUser, onLogout }) {
   const [user, setUser] = useState(initialUser || { username: "Guest", role: "" });
   const [activeMenu, setActiveMenu] = useState("Main");
@@ -359,7 +389,6 @@ export default function MainPage({ user: initialUser, onLogout }) {
   // remounts and re-fetches the new layout instead of needing a manual
   // page reload to see the change.
   const [dynamicPageRefreshKey, setDynamicPageRefreshKey] = useState(0);
-  const [time, setTime] = useState(new Date());
   const [dbStatus, setDbStatus] = useState(null);
   const [commDevices, setCommDevices] = useState([]);
   const [machineStatus, setMachineStatus] = useState("IDLE");
@@ -382,39 +411,56 @@ export default function MainPage({ user: initialUser, onLogout }) {
   });
   const [processCode, setProcessCode] = useState("");
 
+  // Main Page display: "Dynamic Page" (default) or "External Software" (exe embedded in the panel)
+  const [displayMode, setDisplayMode] = useState("Dynamic Page");
+  const [externalExe, setExternalExe] = useState({ path: "", args: "", title: "", method: "Overlay", fit: "Fit", contentSize: "" });
+  const isExternal = displayMode === "External Software" && !!externalExe.path;
+
+  // While a heavy external program runs next to this UI, drop the costly blur effect behind
+  // modals (see index.css). Everything else looks the same.
+  useEffect(() => {
+    document.documentElement.classList.toggle("lite-ui", isExternal);
+    return () => document.documentElement.classList.remove("lite-ui");
+  }, [isExternal]);
+
   // Communication hooks are mounted directly in MainPage.
   // Modbus remains the original useTCPPLC hook; Raw TCP, EtherNet/IP,
   // and Serial-over-UDP use their own protocol-specific hooks.
   const cpNumber = processCode.replace(/[^0-9]/g, "");
-  const isCpActive = activeMenu === "Main" && !!cpNumber;
+  // When an external program owns the Main Page, the Dynamic Page runtime
+  // (scanner, PLC polling, device triggers, protocol connections) is paused so
+  // it does not compete with the external program for COM ports / devices.
+  const isCpActive = activeMenu === "Main" && !!cpNumber && !isExternal;
+  // True when the Main Page area shows either the Dynamic Page or the external program
+  const hasMainLayer = isExternal || !!(processCode && cpNumber);
 
   const modbusRuntime = useTCPPLC({
     devices: modbusDevices,
     enabled: isCpActive,
-    pollInterval: 20,
+    pollInterval: POLL.MAINPAGE_STATUS_MS,
   });
 
   const rawTcpRuntime = useTCPRaw({
     devices: rawTcpDevices,
-    enabled: true,
+    enabled: !isExternal,
     statusInterval: 0,
   });
 
   const ethernetRuntime = useTCPEthernet({
     devices: ethernetDevices,
-    enabled: true,
+    enabled: !isExternal,
     statusInterval: 0,
   });
 
   const udpRuntime = useUDP({
     devices: udpDevices,
-    enabled: true,
+    enabled: !isExternal,
     statusInterval: 0,
   });
 
   const finsRuntime = useFINS({
     devices: finsDevices,
-    enabled: true,
+    enabled: !isExternal,
     statusInterval: 0,
   });
 
@@ -437,6 +483,13 @@ export default function MainPage({ user: initialUser, onLogout }) {
   const [showSpecification, setShowSpecification] = useState(false);
   const [showUDPTerminal, setShowUDPTerminal] = useState(false);
   const [showComTerminal, setShowComTerminal] = useState(false);
+
+  // A native external window is always drawn above web content, so it must be
+  // hidden while any modal or dropdown menu is open.
+  const anyOverlayOpen =
+    showSettingMenu || showUserMenu || showDowntime || showChangePass ||
+    showInterlock || showSetting || showRelogin || showBuilder || showLogic ||
+    showInternalVariable || showSpecification || showUDPTerminal || showComTerminal;
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // ── Runtime System Variables: logged-in user ─────────────────
@@ -463,12 +516,6 @@ export default function MainPage({ user: initialUser, onLogout }) {
 
   const settingBtnRef = useRef(null);
   const userBtnRef = useRef(null);
-
-  // ── Clock ──────────────────────────────────────────────────
-  useEffect(() => {
-    const t = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
 
   // ── DB health ─────────────────────────────────────────────
   useEffect(() => {
@@ -524,8 +571,10 @@ export default function MainPage({ user: initialUser, onLogout }) {
 
           const startValue = data.downtime_start_iso || data.downtime_start;
           const start = startValue ? new Date(startValue) : null;
-          setDowntimeStart(
-            start && !Number.isNaN(start.getTime()) ? start : null
+          const nextStart = start && !Number.isNaN(start.getTime()) ? start : null;
+          // This runs every 2 s: keep the same Date object while the start time is unchanged
+          setDowntimeStart((prev) =>
+            prev && nextStart && prev.getTime() === nextStart.getTime() ? prev : nextStart
           );
         } else {
           // Match MaintenancePage behavior when no CURRENT downtime exists.
@@ -550,12 +599,13 @@ export default function MainPage({ user: initialUser, onLogout }) {
     };
   }, []);
 
-  // ── CP info & Process Code from interlock.json ───────────────
-  useEffect(() => {
-    fetch(`${API}/api/interlock`)
+  // ── CP info, Process Code & Main Page mode from interlock.json ──
+  const loadInterlock = useCallback(() => {
+    return fetch(`${API}/api/interlock`)
       .then(r => r.json())
       .then(d => {
         const cp = d?.["Control Point"] || {};
+        const mp = d?.["Main Page"] || {};
         setCpInfo({
           name: cp["Control Point Name"] || "CP20 V-Mini",
           code: cp["Control Point Code"] || "BW01-VM2",
@@ -563,9 +613,20 @@ export default function MainPage({ user: initialUser, onLogout }) {
         });
         const process = cp["Process"] || "";
         setProcessCode(process);
+        setDisplayMode(mp["Display Mode"] || "Dynamic Page");
+        setExternalExe({
+          path: mp["External Exe Path"] || "",
+          args: mp["External Exe Args"] || "",
+          title: mp["External Window Title"] || "",
+          method: mp["External Embed Method"] || "Overlay",
+          fit: mp["External Fit Mode"] || "Fit",
+          contentSize: mp["External Content Size"] || "",
+        });
       })
       .catch(() => { });
   }, []);
+
+  useEffect(() => { loadInterlock(); }, [loadInterlock]);
 
   // ── RS232 status loader ───────────────────────────────────────
   // IMPORTANT: this loader updates RS232 only. It MUST NOT overwrite
@@ -762,12 +823,6 @@ export default function MainPage({ user: initialUser, onLogout }) {
   // TCP/PLC protocol hooks are mounted above and remain active here.
 
   // ── Helpers ───────────────────────────────────────────────
-  const fmtTime = d => d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const fmtDate = d => d.toLocaleDateString("en-US", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
-  const fmtWW = d => {
-    const start = new Date(d.getFullYear(), 0, 1);
-    return `WW${Math.ceil(((d - start) / 86400000 + start.getDay() + 1) / 7)}`;
-  };
 
   const isEngineer = String(user.role || "").toUpperCase() === "ENGINEER";
 
@@ -933,7 +988,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
       case "Main":
         // DynamicCPPage is handled by the persistent runtime layer below.
         // When no CP/process is configured, show the normal MainContent.
-        if (processCode && cpNumber) return null;
+        if (hasMainLayer) return null;
         return <MainContent />;
 
       case "Downtime":
@@ -1017,7 +1072,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
         <div className="flex-1 flex flex-col items-center select-none">
           <p className="text-[#22C55E] font-bold text-xl leading-tight">{cpInfo.name}</p>
           <p className="text-[var(--text-primary)] text-[10px] font-mono mt-0.5">
-            {fmtDate(time)} &nbsp; {fmtTime(time)} &nbsp; {fmtWW(time)}
+            <HeaderClock />
           </p>
         </div>
 
@@ -1181,13 +1236,23 @@ export default function MainPage({ user: initialUser, onLogout }) {
           <div
             className={
               `flex-1 flex flex-col overflow-hidden relative ` +
-              (activeMenu === "Main" && processCode && cpNumber
+              (activeMenu === "Main" && hasMainLayer
                 ? ""
                 : "hidden")
             }
-            aria-hidden={!(activeMenu === "Main" && processCode && cpNumber)}
+            aria-hidden={!(activeMenu === "Main" && hasMainLayer)}
           >
-            {processCode && cpNumber ? (
+            {isExternal ? (
+              <ExternalSoftwarePanel
+                exePath={externalExe.path}
+                args={externalExe.args}
+                windowTitle={externalExe.title}
+                method={externalExe.method}
+                fit={externalExe.fit}
+                contentSize={externalExe.contentSize}
+                visible={activeMenu === "Main" && !anyOverlayOpen}
+              />
+            ) : processCode && cpNumber ? (
               <DynamicCPPage
                 key={`${cpNumber}-${dynamicPageRefreshKey}`}
                 user={user}
@@ -1200,7 +1265,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
           <div
             className={
               `flex-1 flex flex-col overflow-hidden relative ` +
-              (activeMenu === "Main" && processCode && cpNumber ? "hidden" : "")
+              (activeMenu === "Main" && hasMainLayer ? "hidden" : "")
             }
           >
             <AnimatePresence mode="wait">
@@ -1223,7 +1288,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
       <AnimatePresence>
         {showDowntime && <DowntimeModal key="downtime" onClose={() => setShowDowntime(false)} onSelect={handleDowntimeSelect} />}
         {showChangePass && <ChangePasswordModal key="changepass" user={user} onClose={() => setShowChangePass(false)} />}
-        {showInterlock && <InterlockModal key="interlock" open={showInterlock} onClose={() => setShowInterlock(false)} />}
+        {showInterlock && <InterlockModal key="interlock" open={showInterlock} onClose={() => setShowInterlock(false)} onSaved={loadInterlock} />}
         {showSetting && <SettingModal key="setting" onClose={() => setShowSetting(false)} onSaved={refreshCommDevices} />}
         {showRelogin && <ReloginModal key="relogin" onClose={() => setShowRelogin(false)} onLoginSuccess={handleReloginSuccess} />}
 

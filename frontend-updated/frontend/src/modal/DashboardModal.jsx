@@ -585,6 +585,8 @@ export default function DashboardPage({ cpNumber } = {}) {
     fetchSettings();
   }, [fetchSettings]);
 
+  const lastSigRef = useRef("");
+
   const fetchSummary = useCallback(async () => {
     if (!cp || !dashboardReady) return;
     setLoading(true);
@@ -598,12 +600,18 @@ export default function DashboardPage({ cpNumber } = {}) {
       if (!res.ok || !json.success) {
         throw new Error(json.message || "Failed to load dashboard data");
       }
-      setData(json);
-      setSettings(json.settings || DEFAULT_SETTINGS);
-      setSnResolved(json.sn_column_resolved || null);
+      // Refreshed every 15 s: identical data must not re-render / re-animate the charts
+      const sig = JSON.stringify(json);
+      if (sig !== lastSigRef.current) {
+        lastSigRef.current = sig;
+        setData(json);
+        setSettings(json.settings || DEFAULT_SETTINGS);
+        setSnResolved(json.sn_column_resolved || null);
+      }
       setLastUpdated(new Date());
     } catch (e) {
       setError(e.message || "Network error");
+      lastSigRef.current = "";
       setData(null);
     } finally {
       setLoading(false);
