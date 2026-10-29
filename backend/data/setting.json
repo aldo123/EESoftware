@@ -68,13 +68,13 @@
                 "Type": "UDP"
             },
             {
-                "Device Name": "Product",
-                "Type": "COM",
-                "COM Port": "COM6",
                 "Baudrate": "115200",
-                "Parity": "None",
+                "COM Port": "COM6",
                 "Data Bits": "8",
-                "Stop Bits": "1"
+                "Device Name": "Product",
+                "Parity": "None",
+                "Stop Bits": "1",
+                "Type": "COM"
             }
         ]
     }

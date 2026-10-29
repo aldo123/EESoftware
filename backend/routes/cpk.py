@@ -7,19 +7,295 @@ exporters for the result/report and the raw dataset.
 """
 import io
 import re
+import os
+import json
+import sqlite3
+import math
+from pathlib import Path
+from datetime import datetime, timedelta
+import numpy as np
 
 from flask import Blueprint, request, jsonify, send_file
 from openpyxl import load_workbook, Workbook
 
-from cpk_engine import (
-    CPKCalculator,
-    CPKAssessment,
-    CalibrationEngine,
-    UnsafeDataError,
-    clean_values,
-    histogram,
-    boxplot_stats,
-)
+
+
+# ── Embedded CPK calculation engine (single-file deployment) ──
+import math
+
+import numpy as np
+
+
+class UnsafeDataError(Exception):
+    pass
+
+
+def clean_values(raw):
+    """Coerce a list of mixed values (numbers, numeric strings, None) into
+    a numpy float array, dropping anything that doesn't parse — mirrors
+    pandas.to_numeric(..., errors="coerce").dropna() from the original tool."""
+    out = []
+    for v in raw or []:
+        if v is None or v == "":
+            continue
+        try:
+            out.append(float(v))
+        except (TypeError, ValueError):
+            continue
+    return np.array(out, dtype=float)
+
+
+class CPKCalculator:
+    @staticmethod
+    def calculate(values: np.ndarray, lsl: float, usl: float) -> dict:
+        if len(values) < 2:
+            raise UnsafeDataError("Minimal 2 data diperlukan.")
+        if lsl >= usl:
+            raise UnsafeDataError("LSL harus lebih kecil daripada USL.")
+
+        mean = float(values.mean())
+        std = float(values.std(ddof=1))
+        n = len(values)
+
+        minimum = float(values.min())
+        maximum = float(values.max())
+        median = float(np.median(values))
+
+        if std == 0 or np.isclose(std, 0):
+            cpu = cpl = cp = cpk = math.inf
+        else:
+            cpu = (usl - mean) / (3 * std)
+            cpl = (mean - lsl) / (3 * std)
+            cp = (usl - lsl) / (6 * std)
+            cpk = min(cpu, cpl)
+
+        below_lsl = int((values < lsl).sum())
+        above_usl = int((values > usl).sum())
+        out_of_spec = below_lsl + above_usl
+        ppm = (out_of_spec / n) * 1_000_000 if n > 0 else 0
+
+        if std > 0:
+            z_lsl = (lsl - mean) / std
+            z_usl = (usl - mean) / std
+            z_min = min(abs(z_lsl), abs(z_usl)) if not math.isinf(z_lsl) and not math.isinf(z_usl) else 0
+            z_score = z_min + 1.5
+        else:
+            z_score = 0
+
+        if cpk == math.inf:
+            capability, rating = "EXCELLENT", 5
+        elif cpk >= 1.67:
+            capability, rating = "CAPABLE", 4
+        elif cpk >= 1.33:
+            capability, rating = "MARGINAL - CAPABLE", 3
+        elif cpk >= 1.00:
+            capability, rating = "MARGINAL", 2
+        else:
+            capability, rating = "NOT CAPABLE", 1
+
+        return {
+            "sample_size": n,
+            "mean": mean,
+            "std": std,
+            "minimum": minimum,
+            "maximum": maximum,
+            "range": maximum - minimum,
+            "median": median,
+            "lsl": lsl,
+            "usl": usl,
+            "tolerance": usl - lsl,
+            "cp": cp,
+            "cpu": cpu,
+            "cpl": cpl,
+            "cpk": cpk,
+            "below_lsl": below_lsl,
+            "above_usl": above_usl,
+            "out_of_spec": out_of_spec,
+            "ppm": ppm,
+            "z_score": z_score,
+            "capability": capability,
+            "rating": rating,
+        }
+
+
+class CPKAssessment:
+    STANDARDS = {
+        "Automotive": {"excellent": 2.00, "capable": 1.67, "marginal": 1.33, "minimum": 1.00},
+        "Medical": {"excellent": 2.00, "capable": 1.67, "marginal": 1.33, "minimum": 1.00},
+        "Electronics": {"excellent": 1.67, "capable": 1.33, "marginal": 1.00, "minimum": 0.67},
+        "General Manufacturing": {"excellent": 1.67, "capable": 1.33, "marginal": 1.00, "minimum": 0.67},
+        "Consumer Products": {"excellent": 1.33, "capable": 1.00, "marginal": 0.67, "minimum": 0.50},
+    }
+
+    @staticmethod
+    def get_industry_names():
+        return list(CPKAssessment.STANDARDS.keys())
+
+    @staticmethod
+    def assess(cpk, cp, cpl, cpu, lsl, usl, mean, std, industry="General Manufacturing"):
+        standards = CPKAssessment.STANDARDS.get(industry, CPKAssessment.STANDARDS["General Manufacturing"])
+
+        if cpk == math.inf or cpk >= standards["excellent"]:
+            status, level = "EXCELLENT", 5
+        elif cpk >= standards["capable"]:
+            status, level = "CAPABLE", 4
+        elif cpk >= standards["marginal"]:
+            status, level = "MARGINAL", 3
+        elif cpk >= standards["minimum"]:
+            status, level = "POOR", 2
+        else:
+            status, level = "NOT CAPABLE", 1
+
+        recommendations = []
+        target = (lsl + usl) / 2
+        centering = abs(mean - target) / ((usl - lsl) / 2) * 100 if usl != lsl else 0
+
+        if centering > 10:
+            recommendations.append({
+                "issue": "Process is off-center",
+                "detail": f"Mean ({mean:.3f}) is {centering:.1f}% from target ({target:.3f})",
+                "action": "Apply calibration to shift mean to target",
+            })
+
+        if cp != math.inf and cp < 1.0:
+            recommendations.append({
+                "issue": "Process variation is too high",
+                "detail": f"Cp = {cp:.3f} (should be >= 1.0)",
+                "action": "Reduce process variation by improving control",
+            })
+
+        if cp != math.inf and cpk != math.inf and (cp - cpk) > 0.3:
+            recommendations.append({
+                "issue": "Process is not centered",
+                "detail": f"Cp - Cpk = {cp - cpk:.3f} (should be < 0.3)",
+                "action": "Adjust process mean to center between LSL and USL",
+            })
+
+        if cpk != math.inf:
+            if cpk >= standards["excellent"]:
+                recommendations.append({"issue": "Process is EXCELLENT", "detail": f"Cpk = {cpk:.3f} >= {standards['excellent']:.2f}", "action": "Maintain current process control"})
+            elif cpk >= standards["capable"]:
+                recommendations.append({"issue": "Process is CAPABLE", "detail": f"Cpk = {cpk:.3f} >= {standards['capable']:.2f}", "action": "Continue monitoring and maintain control"})
+            elif cpk >= standards["marginal"]:
+                recommendations.append({"issue": "Process is MARGINAL", "detail": f"Cpk = {cpk:.3f} between {standards['marginal']:.2f}-{standards['capable']:.2f}", "action": "Improve process centering and reduce variation"})
+            elif cpk >= standards["minimum"]:
+                recommendations.append({"issue": "Process is POOR", "detail": f"Cpk = {cpk:.3f} is below {standards['marginal']:.2f}", "action": "Immediate improvement needed: center and reduce variation"})
+            else:
+                recommendations.append({"issue": "Process is NOT CAPABLE", "detail": f"Cpk = {cpk:.3f} is below {standards['minimum']:.2f}", "action": "URGENT: process redesign or major improvement required"})
+
+        if cpl != math.inf and cpu != math.inf:
+            if cpl < 1.0:
+                recommendations.append({"issue": "Process too close to LSL", "detail": f"Cpl = {cpl:.3f} (should be >= 1.0)", "action": "Shift mean upward or reduce variation"})
+            if cpu < 1.0:
+                recommendations.append({"issue": "Process too close to USL", "detail": f"Cpu = {cpu:.3f} (should be >= 1.0)", "action": "Shift mean downward or reduce variation"})
+
+        target_cpk = standards["capable"]
+        if cpk != math.inf and cpk < target_cpk:
+            improvement_needed = target_cpk - cpk
+        else:
+            target_cpk = cpk if cpk != math.inf else target_cpk
+            improvement_needed = 0
+
+        return {
+            "status": status,
+            "level": level,
+            "standards": standards,
+            "recommendations": recommendations,
+            "target_cpk": target_cpk,
+            "improvement_needed": improvement_needed,
+        }
+
+
+class CalibrationEngine:
+    @staticmethod
+    def calibrate(values: np.ndarray, k: float, b: float) -> np.ndarray:
+        return k * values + b
+
+    @staticmethod
+    def auto_calibrate(values: np.ndarray, lsl: float, usl: float):
+        if len(values) < 2:
+            raise UnsafeDataError("Data tidak cukup untuk kalibrasi.")
+
+        mean = float(values.mean())
+        target_mean = (lsl + usl) / 2
+        shift = target_mean - mean
+
+        k = 1.0
+        b = shift
+
+        std = float(values.std(ddof=1))
+        if std > 0:
+            tolerance = usl - lsl
+            target_std = tolerance / 6
+            if target_std > 0:
+                k_scale = target_std / std
+                if 0.5 <= k_scale <= 2.0:
+                    k = k_scale
+                    b = target_mean - k * mean
+
+        calibrated = CalibrationEngine.calibrate(values, k, b)
+        original = CPKCalculator.calculate(values, lsl, usl)
+        result = CPKCalculator.calculate(calibrated, lsl, usl)
+
+        original_cpk = original["cpk"]
+        new_cpk = result["cpk"]
+        if original_cpk == math.inf:
+            improvement_pct = 0
+        elif new_cpk == math.inf:
+            improvement_pct = 100
+        else:
+            improvement_pct = ((new_cpk - original_cpk) / original_cpk * 100) if original_cpk > 0 else 0
+
+        return {
+            "k": k,
+            "b": b,
+            "original": original,
+            "calibrated": result,
+            "improvement_pct": improvement_pct,
+            "calibrated_values": calibrated.tolist(),
+        }
+
+
+def boxplot_stats(values: np.ndarray) -> dict:
+    """Standard Tukey box plot: Q1/median/Q3, whiskers at 1.5*IQR, and any
+    points beyond that as individual outliers."""
+    q1 = float(np.percentile(values, 25))
+    median = float(np.percentile(values, 50))
+    q3 = float(np.percentile(values, 75))
+    iqr = q3 - q1
+    lower_fence = q1 - 1.5 * iqr
+    upper_fence = q3 + 1.5 * iqr
+
+    within_fences = values[(values >= lower_fence) & (values <= upper_fence)]
+    whisker_low = float(within_fences.min()) if len(within_fences) else q1
+    whisker_high = float(within_fences.max()) if len(within_fences) else q3
+    outliers = values[(values < lower_fence) | (values > upper_fence)]
+
+    return {
+        "q1": q1,
+        "median": median,
+        "q3": q3,
+        "whisker_low": whisker_low,
+        "whisker_high": whisker_high,
+        "outliers": outliers.tolist(),
+    }
+
+
+def histogram(values: np.ndarray, lsl: float, usl: float, bins: int = 20) -> dict:
+    """Bin the data for a bar-chart histogram, keyed the same way regardless
+    of whether the spec limits fall inside or outside the data range."""
+    lo = min(float(values.min()), lsl)
+    hi = max(float(values.max()), usl)
+    if lo == hi:
+        lo -= 0.5
+        hi += 0.5
+
+    counts, edges = np.histogram(values, bins=bins, range=(lo, hi))
+    return {
+        "counts": counts.tolist(),
+        "edges": edges.tolist(),
+    }
+
 
 cpk_bp = Blueprint("cpk", __name__, url_prefix="/api/cpk")
 
@@ -209,6 +485,136 @@ def query_database():
     values = [row.get("value") for row in rows]
 
     return jsonify({"success": True, "values": values, "count": len(values)})
+
+
+
+# ── Active CP SN List source ──────────────────────────────────────────────
+def _find_interlock_json():
+    """Resolve interlock.json in source and packaged Electron/PyInstaller layouts."""
+    roots = [Path(__file__).resolve().parent]
+    for parent in list(roots[0].parents)[:5]:
+        roots.append(parent)
+    if getattr(__import__('sys'), 'frozen', False):
+        roots.append(Path(__import__('sys').executable).resolve().parent)
+    meipass = getattr(__import__('sys'), '_MEIPASS', None)
+    if meipass:
+        roots.append(Path(meipass))
+    candidates = []
+    for root in roots:
+        candidates.extend([root / 'interlock.json', root / 'Backend' / 'interlock.json',
+                           root / 'config' / 'interlock.json', root / 'backend' / 'interlock.json'])
+    seen = set()
+    for path in candidates:
+        key = str(path).lower()
+        if key not in seen and path.is_file():
+            return path
+        seen.add(key)
+    # Controlled shallow search in likely project roots; avoid scanning whole disks.
+    for root in roots[:4]:
+        try:
+            for path in root.glob('*/interlock.json'):
+                if path.is_file(): return path
+            for path in root.glob('*/Backend/interlock.json'):
+                if path.is_file(): return path
+        except (OSError, PermissionError):
+            pass
+    return None
+
+
+def _snlist_db_candidates(config_path):
+    roots = [config_path.parent, *list(config_path.parent.parents)[:4]]
+    result = []
+    for root in roots:
+        result.extend([root / 'data' / 'snlist.db', root / 'Backend' / 'data' / 'snlist.db',
+                       root / 'backend' / 'data' / 'snlist.db'])
+    # Existing conventional data directory next to backend source.
+    result.append(Path(__file__).resolve().parent.parent / 'data' / 'snlist.db')
+    seen = set()
+    for path in result:
+        key = str(path).lower()
+        if key not in seen and path.is_file():
+            yield path
+        seen.add(key)
+
+
+def _active_cp_table():
+    config_path = _find_interlock_json()
+    if not config_path:
+        raise FileNotFoundError('interlock.json tidak ditemukan. Pastikan file konfigurasi tersedia di folder aplikasi/backend.')
+    try:
+        config = json.loads(config_path.read_text(encoding='utf-8-sig'))
+    except Exception as exc:
+        raise ValueError(f'interlock.json tidak bisa dibaca: {exc}')
+    cp_obj = config.get('Control Point') or config.get('control_point') or {}
+    cp = str(cp_obj.get('Process') or cp_obj.get('process') or '').strip()
+    if not cp:
+        raise ValueError("Control Point.Process tidak ditemukan di interlock.json.")
+    # SN List get_table_name() uses f"snlist_cp{cp}"; Process may be CP101,
+    # while actual normalized table suffix is 101. Match existing table names safely.
+    suffix = re.sub(r'^CP(?=\d+$)', '', cp, flags=re.IGNORECASE)
+    return cp, f'snlist_cp{suffix}', config_path
+
+
+@cpk_bp.get('/snlist-data')
+def get_active_cp_snlist_data():
+    """Load only OK/PASS measurements from active CP SN List within inclusive dates."""
+    try:
+        cp, expected_table, config_path = _active_cp_table()
+        db_path = next(_snlist_db_candidates(config_path), None)
+        if not db_path:
+            return jsonify({'success': False, 'message': f"snlist.db tidak ditemukan. CP aktif: {cp}; konfigurasi: {str(config_path)}"}), 404
+        date_from = (request.args.get('date_from') or '').strip()
+        date_to = (request.args.get('date_to') or '').strip()
+        for label, value in [('date_from', date_from), ('date_to', date_to)]:
+            if value:
+                try: datetime.strptime(value[:10], '%Y-%m-%d')
+                except ValueError: return jsonify({'success': False, 'message': f'Format {label} harus YYYY-MM-DD.'}), 400
+        if date_from and date_to and date_from > date_to:
+            return jsonify({'success': False, 'message': 'Tanggal awal tidak boleh melewati tanggal akhir.'}), 400
+        uri = f'file:{db_path.resolve().as_posix()}?mode=ro'
+        conn = sqlite3.connect(uri, uri=True, timeout=5)
+        conn.row_factory = sqlite3.Row
+        try:
+            tables = [r['name'] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'snlist_cp%' ORDER BY name")]
+            if expected_table not in tables:
+                return jsonify({'success': False, 'message': f"Tabel CP aktif '{cp}' tidak ditemukan (dicari: {expected_table}). Tabel tersedia: {', '.join(tables) or '(tidak ada)'}", 'active_cp': cp, 'expected_table': expected_table, 'available_tables': tables}), 404
+            columns = [r['name'] for r in conn.execute(f'PRAGMA table_info("{expected_table}")')]
+            if not columns:
+                return jsonify({'success': False, 'message': f'Tabel {expected_table} tidak memiliki kolom.'}), 400
+            lower_map = {c.lower(): c for c in columns}
+            time_col = next((lower_map[k] for k in ('date_time','datetime','timestamp','test_time','date') if k in lower_map), None)
+            result_col = next((lower_map[k] for k in ('result','status','test_result','judgement','judge') if k in lower_map), None)
+            if not result_col:
+                return jsonify({'success': False, 'message': f"Kolom hasil OK/NG tidak ditemukan pada tabel {expected_table}.", 'columns': columns}), 400
+            qtable = '"' + expected_table.replace('"','""') + '"'
+            clauses = [f'UPPER(TRIM(COALESCE("{result_col}", ""))) IN (\'OK\', \'PASS\', \'PASSED\')']
+            params = []
+            if date_from and time_col:
+                clauses.append(f'"{time_col}" >= ?'); params.append(date_from + ' 00:00:00')
+            if date_to and time_col:
+                end_exclusive = (datetime.strptime(date_to, '%Y-%m-%d').date() + timedelta(days=1)).strftime('%Y-%m-%d')
+                clauses.append(f'"{time_col}" < ?'); params.append(end_exclusive + ' 00:00:00')
+            sql = f'SELECT * FROM {qtable} WHERE ' + ' AND '.join(clauses)
+            if time_col:
+                sql += f' ORDER BY "{time_col}" DESC'
+            else:
+                sql += ' ORDER BY rowid DESC'
+            sql += ' LIMIT 50000'
+            rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+        finally:
+            conn.close()
+        # Preserve original DB columns for parameter selection; remove internal id only.
+        output_columns = [c for c in columns if c.lower() != 'id']
+        output_rows = [{k: v for k, v in row.items() if k.lower() != 'id'} for row in rows]
+        return jsonify({'success': True, 'active_cp': cp, 'table': expected_table,
+                        'date_from': date_from or None, 'date_to': date_to or None,
+                        'date_column': time_col, 'result_column': result_col,
+                        'pass_only': True, 'columns': output_columns, 'rows': output_rows,
+                        'count': len(output_rows), 'database': str(db_path)})
+    except (FileNotFoundError, ValueError) as exc:
+        return jsonify({'success': False, 'message': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'success': False, 'message': f'Gagal membaca SN List: {exc}'}), 500
 
 
 def _autosize(ws):

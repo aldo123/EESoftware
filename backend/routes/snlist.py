@@ -7,7 +7,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify
 try:
     import tkinter as tk
@@ -757,6 +757,180 @@ def sync_source_folder_route():
 # ═══════════════════════════════════════════════════════════════
 # Routes
 # ═══════════════════════════════════════════════════════════════
+
+
+
+# ── GET /api/snlist/top-defects ──────────────────────────────────────────────
+@snlist_bp.get("/api/snlist/top-defects")
+def get_snlist_top_defects():
+    """Aggregate defects from each SN's first-ever test record in SN List only."""
+    cp = str(request.args.get("cp", "1")).strip()
+    date_from = str(request.args.get("date_from", "")).strip()
+    date_to = str(request.args.get("date_to", "")).strip()
+    bucket = str(request.args.get("bucket", "day")).strip().lower()
+    if bucket not in {"hour", "day", "7days", "month"}:
+        bucket = "day"
+
+    table = get_table_name(cp)
+    ensure_table_exists(cp)
+    columns = get_columns_from_table(cp)
+    config = load_column_config(cp)
+    labels = {str(x.get("key")): str(x.get("label") or x.get("key"))
+              for x in config if isinstance(x, dict)}
+    # Keep source/configured order for detecting a blank measurement followed by
+    # another populated measurement. Limits themselves are not measurement values.
+    ordered = [str(x.get("key")) for x in config if isinstance(x, dict)]
+    ordered += [c for c in columns if c not in ordered]
+    colset = set(columns)
+    pairs = []
+    for key in ordered:
+        if not key or key not in colset or key.endswith("_lowlimit") or key.endswith("_uplimit"):
+            continue
+        if key in {"id", "date_time", "result", "results", "sn", "mac", "line", "model", "station", "version"}:
+            continue
+        low = key + "_lowlimit"
+        up = key + "_uplimit"
+        if low in colset or up in colset:
+            pairs.append((key, low if low in colset else None, up if up in colset else None))
+
+    # Load the complete history first so a repeat test cannot be mistaken for
+    # the SN's first test just because the user selected a later date range.
+    # The earliest record per SN is the only record eligible for Top Defect.
+    with get_snlist_conn() as conn:
+        rows = [dict(r) for r in conn.execute(
+            f'SELECT * FROM "{table}" ORDER BY date_time ASC, id ASC'
+        ).fetchall()]
+
+    def _sn_value(row):
+        return str(row.get("sn") or row.get("serial_number") or row.get("barcode") or "").strip()
+
+    def _parse_stamp(row):
+        stamp = str(row.get("date_time") or "")
+        try:
+            return datetime.fromisoformat(stamp)
+        except Exception:
+            try:
+                return datetime.strptime(stamp[:19], "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                return None
+
+    # Keep only the first-ever test record per serial number. Rows without an
+    # SN are not grouped together; they remain individually inspectable.
+    first_by_sn = {}
+    first_rows_without_sn = []
+    for row in rows:
+        sn_key = _sn_value(row)
+        if not sn_key:
+            first_rows_without_sn.append(row)
+        elif sn_key not in first_by_sn:
+            first_by_sn[sn_key] = row
+    first_test_rows = list(first_by_sn.values()) + first_rows_without_sn
+
+    # Apply the requested date range AFTER selecting first-ever tests. This
+    # ensures a later retest is not counted as the first test in a date range.
+    def _within_selected_dates(row):
+        stamp = str(row.get("date_time") or "")
+        dt = _parse_stamp(row)
+        if dt is None:
+            return False
+        if date_from:
+            try:
+                start_dt = datetime.strptime(date_from[:10], "%Y-%m-%d")
+                if dt < start_dt:
+                    return False
+            except Exception:
+                if stamp < date_from:
+                    return False
+        if date_to:
+            try:
+                end_dt = datetime.strptime(date_to[:10], "%Y-%m-%d") + timedelta(days=1)
+                if dt >= end_dt:
+                    return False
+            except Exception:
+                if stamp > date_to:
+                    return False
+        return True
+
+    rows = [row for row in first_test_rows if _within_selected_dates(row)]
+
+    from collections import Counter
+    counts = Counter()
+    trend_counts = {}
+    defect_rows = []
+    for row in rows:
+        stamp = str(row.get("date_time") or "")
+        try:
+            dt = datetime.fromisoformat(stamp)
+        except Exception:
+            try: dt = datetime.strptime(stamp[:19], "%Y-%m-%d %H:%M:%S")
+            except Exception: continue
+        if bucket == "hour":
+            period = dt.strftime("%Y-%m-%d %H:00")
+        elif bucket == "7days":
+            period = f"{dt.isocalendar().year}-W{dt.isocalendar().week:02d}"
+        elif bucket == "month":
+            period = dt.strftime("%Y-%m")
+        else:
+            period = dt.strftime("%Y-%m-%d")
+        sn = str(row.get("sn") or row.get("serial_number") or row.get("barcode") or "").strip()
+        row_defects = []
+        # A test fails if a measured value falls outside an available numeric
+        # low/high limit. Non-numeric limit/value fields are not compared.
+        measured_present = []
+        for key, low_key, up_key in pairs:
+            raw = row.get(key)
+            present = raw is not None and str(raw).strip() != ""
+            measured_present.append((key, present))
+            if not present:
+                continue
+            try:
+                value = float(str(raw).strip().replace(",", "."))
+            except Exception:
+                continue
+            low_raw = row.get(low_key) if low_key else None
+            up_raw = row.get(up_key) if up_key else None
+            try: low = float(str(low_raw).strip().replace(",", ".")) if low_raw is not None and str(low_raw).strip() else None
+            except Exception: low = None
+            try: high = float(str(up_raw).strip().replace(",", ".")) if up_raw is not None and str(up_raw).strip() else None
+            except Exception: high = None
+            if (low is not None and value < low) or (high is not None and value > high):
+                row_defects.append({"key": key, "label": labels.get(key, key.replace("_", " ").title()), "reason": "Out of spec", "value": raw, "low": low_raw, "high": up_raw})
+        # Incomplete test: once a measurement field is blank, later populated
+        # measurement fields indicate testing stopped / data shifted.
+        first_blank = None
+        for idx, (key, present) in enumerate(measured_present):
+            if not present:
+                first_blank = idx
+                break
+        if first_blank is not None and any(present for _, present in measured_present[first_blank + 1:]):
+            key = measured_present[first_blank][0]
+            row_defects.append({"key": key, "label": labels.get(key, key.replace("_", " ").title()), "reason": "Incomplete test (blank field)", "value": "", "low": row.get(key + "_lowlimit"), "high": row.get(key + "_uplimit")})
+        # RESULT NG/FAIL is not itself a defect category.
+        # For each SN's first-ever test, report ONLY ONE defect: whichever
+        # defective measurement appears earliest in the configured SN List
+        # column order. This avoids counting multiple NG parameters from the
+        # same test and makes the displayed defect deterministic.
+        if row_defects:
+            column_order = {key: idx for idx, key in enumerate(ordered)}
+            first_defect = min(
+                row_defects,
+                key=lambda d: column_order.get(d["key"], len(column_order)),
+            )
+            d = first_defect
+            defect_name = d["label"] if d["reason"] != "Incomplete test (blank field)" else f'{d["label"]} (Incomplete)'
+            counts[defect_name] += 1
+            trend_counts.setdefault(period, Counter())[defect_name] += 1
+            defect_rows.append({"date_time": stamp, "sn": sn, "defect": defect_name, "reason": d["reason"], "value": d["value"], "lower_limit": d["low"], "upper_limit": d["high"]})
+
+    defect_summary = [{"defect": k, "count": v} for k, v in counts.most_common()]
+    periods = sorted(trend_counts)
+    trend = [{"period": p, **dict(trend_counts[p])} for p in periods]
+    return jsonify({
+        "cp": cp, "bucket": bucket, "date_from": date_from, "date_to": date_to,
+        "records_scanned": len(rows), "defects_total": len(defect_rows),
+        "summary": defect_summary, "trend": trend, "details": defect_rows[-500:],
+    })
+
 
 # ── GET /api/snlist/columns ───────────────────────────────────
 @snlist_bp.get("/api/snlist/columns")
