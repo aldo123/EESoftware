@@ -8,6 +8,7 @@ import SNListPageRaw from "./modal/SnlistModal";
 import ReferencePageRaw from "./modal/ReferenceModal";
 import CpkAnalyzerPageRaw from "./modal/CpkAnalyzerModal";
 import DashboardPageRaw from "./modal/DashboardModal";
+import TopDefectModal from "./modal/TopDefectModal";
 import OEEPageRaw from "./modal/OEEModal";
 import PageBuilder from "./modal/PageBuilder";
 import LogicBuilder from "./modal/LogicBuilder";
@@ -84,7 +85,7 @@ const IconMenu = () => (
 );
 
 // ── Menu items ────────────────────────────────────────────────
-const MENU_ITEMS = ["Main", "OEE", "Dashboard", "Downtime", "SN List", "Reference", "CPK Analyzer"];
+const MENU_ITEMS = ["Main", "OEE", "Dashboard", "Downtime", "Top Defect", "SN List", "Reference", "CPK Analyzer"];
 
 // ── Field (reused) ─────────────────────────────────────────────
 function Field({ icon, placeholder, value, onChange, onKeyDown, type = "text" }) {
@@ -1013,6 +1014,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
             }}
           />
         );
+      case "Top Defect": return <TopDefectModal cpNumber={cpNumber || "1"} />;
       case "SN List": return <SNListPage user={user} />;
       case "Reference": return <ReferencePage user={user} />;
       case "CPK Analyzer": return <CpkAnalyzerPage />;

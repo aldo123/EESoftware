@@ -35,7 +35,7 @@ function TextInput({ value, onChange, placeholder, type = "text", ...rest }) {
       value={value}
       onChange={(e) => onChange(e.target.value)}
       placeholder={placeholder}
-      className="bg-[var(--bg-surface)] border border-[var(--border)] focus:border-[#22C55E]/60 text-[var(--text-primary)] text-xs rounded-lg px-3 h-8 outline-none transition-colors placeholder-[var(--text-faint)]"
+      className="cpk-input bg-[var(--bg-surface)] border border-[var(--border)] focus:border-[#22C55E]/60 text-[var(--text-primary)] text-xs rounded-lg px-3 h-8 outline-none transition-colors placeholder-[var(--text-faint)]"
       {...rest}
     />
   );
@@ -46,7 +46,7 @@ function Select({ value, onChange, options, placeholder }) {
     <select
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value)}
-      className="bg-[var(--bg-surface)] border border-[var(--border)] focus:border-[#22C55E]/60 text-[var(--text-primary)] text-xs rounded-lg px-2 h-8 outline-none transition-colors"
+      className="cpk-input bg-[var(--bg-surface)] border border-[var(--border)] focus:border-[#22C55E]/60 text-[var(--text-primary)] text-xs rounded-lg px-2 h-8 outline-none transition-colors"
     >
       {placeholder && <option value="">{placeholder}</option>}
       {options.map((o) => (
@@ -67,7 +67,7 @@ function Button({ children, onClick, disabled, variant = "default", className = 
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`h-8 px-3 rounded-lg border text-[11px] font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap ${variants[variant]} ${className}`}
+      className={`cpk-button h-8 px-3 rounded-lg border text-[11px] font-bold transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap ${variants[variant]} ${className}`}
     >
       {children}
     </button>
@@ -75,10 +75,48 @@ function Button({ children, onClick, disabled, variant = "default", className = 
 }
 
 function StatBox({ label, value, big }) {
+  const iconMap = {
+    "Sample Size": { icon: "▦", tone: "#0EA5E9" },
+    "Mean": { icon: "μ", tone: "#8B5CF6" },
+    "Std Dev": { icon: "σ", tone: "#6366F1" },
+    "Minimum": { icon: "↓", tone: "#06B6D4" },
+    "Maximum": { icon: "↑", tone: "#F59E0B" },
+    "Range": { icon: "↔", tone: "#14B8A6" },
+    "Cp": { icon: "Cp", tone: "#3B82F6" },
+    "Cpu": { icon: "↑", tone: "#0EA5E9" },
+    "Cpl": { icon: "↓", tone: "#8B5CF6" },
+    "Cpk": { icon: "✓", tone: "#22C55E" },
+    "Z-Score": { icon: "Z", tone: "#6366F1" },
+    "PPM": { icon: "◉", tone: "#F97316" },
+    "Below LSL": { icon: "↓", tone: "#EF4444" },
+    "Above USL": { icon: "↑", tone: "#F59E0B" },
+    "Out of Spec": { icon: "!", tone: "#F43F5E" },
+    "Capability": { icon: "◆", tone: "#22C55E" },
+  };
+  let meta = iconMap[label] || { icon: "•", tone: "#64748B" };
+  // Capability status uses the three requested semantic states.
+  if (label === "Capability") {
+    const status = String(value ?? "").trim().toUpperCase();
+    if (status.includes("NOT CAPABLE") || status.includes("INCAPABLE") || status.includes("UNACCEPTABLE")) {
+      meta = { icon: "×", tone: "#EF4444" }; // red
+    } else if (status.includes("MARGINAL") || status.includes("MINIMUM") || status.includes("BORDERLINE")) {
+      meta = { icon: "!", tone: "#F59E0B" }; // amber/yellow
+    } else {
+      meta = { icon: "✓", tone: "#22C55E" }; // green capable
+    }
+  }
+  const isCapability = label === "Capability";
   return (
-    <div className="rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-2 py-2.5 flex flex-col items-center gap-1 flex-1 min-w-[110px]">
-      <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider text-center">{label}</span>
-      <span className={`font-bold text-[var(--text-primary)] ${big ? "text-lg" : "text-base"}`}>{value}</span>
+    <div className={`cpk-stat cpk-stat-icon rounded-lg border border-[var(--border-soft)] bg-[var(--bg-surface)] px-3 py-2.5 flex flex-row items-center justify-start gap-3 flex-1 min-w-[150px] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-sm ${big ? "cpk-stat-primary" : ""}`} style={isCapability ? { borderColor: `${meta.tone}55`, background: `linear-gradient(100deg, ${meta.tone}0D, var(--bg-surface) 62%)` } : undefined}>
+      <span
+        aria-hidden="true"
+        className="inline-flex items-center justify-center rounded-lg font-bold leading-none shrink-0"
+        style={{ width: 34, height: 34, fontSize: label === "Cp" ? 11 : 16, color: meta.tone, background: `${meta.tone}18`, border: `1px solid ${meta.tone}35` }}
+      >{meta.icon}</span>
+      <div className="flex min-w-0 flex-col items-start justify-center gap-1">
+        <span className="text-[10px] font-semibold text-[var(--text-secondary)] uppercase tracking-wider text-left leading-tight">{label}</span>
+        <span className={`font-bold text-[var(--text-primary)] leading-tight ${big ? "text-lg" : "text-base"}`}>{value}</span>
+      </div>
     </div>
   );
 }
@@ -199,7 +237,7 @@ function DistributionChart({ title, hist, lsl, usl, mean: meanVal, accent, decim
 
   if (!hist || !Array.isArray(hist.counts) || hist.counts.length === 0) {
     return (
-      <div className="flex flex-col rounded-lg overflow-hidden" style={{ background: "#F8FAFC" }}>
+      <div className="flex flex-col rounded-lg overflow-hidden" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)" }}>
         <svg width="100%" viewBox={`0 0 ${w} ${h}`}><text x={w / 2} y={h / 2} fontSize={11} fill="#94A3B8" textAnchor="middle">No data</text></svg>
       </div>
     );
@@ -214,7 +252,7 @@ function DistributionChart({ title, hist, lsl, usl, mean: meanVal, accent, decim
   const barW = plotW / counts.length;
 
   return (
-    <div className="flex flex-col rounded-lg overflow-hidden" style={{ background: "#F8FAFC" }}>
+    <div className="flex flex-col rounded-lg overflow-hidden" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)" }}>
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
         <text x={w / 2} y={16} fontSize={12} fontWeight="bold" fill="#1E293B" textAnchor="middle">{title}</text>
         {[0.25, 0.5, 0.75, 1].map((f) => (
@@ -258,7 +296,7 @@ function BoxPlotChart({ title, box, lsl, usl, mean: meanVal, accent, decimals, x
 
   if (!box) {
     return (
-      <div className="flex flex-col rounded-lg overflow-hidden" style={{ background: "#F8FAFC" }}>
+      <div className="flex flex-col rounded-lg overflow-hidden" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)" }}>
         <svg width="100%" viewBox={`0 0 ${w} ${h}`}><text x={w / 2} y={h / 2} fontSize={11} fill="#94A3B8" textAnchor="middle">No data</text></svg>
       </div>
     );
@@ -276,7 +314,7 @@ function BoxPlotChart({ title, box, lsl, usl, mean: meanVal, accent, decimals, x
   const boxHalfW = Math.min(plotW * 0.18, 46);
 
   return (
-    <div className="flex flex-col rounded-lg overflow-hidden" style={{ background: "#F8FAFC" }}>
+    <div className="flex flex-col rounded-lg overflow-hidden" style={{ background: "linear-gradient(180deg, #FFFFFF 0%, #F8FAFC 100%)" }}>
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
         <text x={w / 2} y={16} fontSize={12} fontWeight="bold" fill="#1E293B" textAnchor="middle">{title}</text>
         <line x1={padL} y1={padT + plotH} x2={w - padR} y2={padT + plotH} stroke="#94A3B8" strokeWidth={1} />
@@ -323,7 +361,10 @@ export default function CpkAnalyzerPage() {
   const [parameter, setParameter] = useState("");
   const [lineFilter, setLineFilter] = useState("ALL");
   const [stationFilter, setStationFilter] = useState("ALL");
-  const [resultFilter, setResultFilter] = useState("ALL");
+  const [resultFilter, setResultFilter] = useState("Pass");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [snListLoading, setSnListLoading] = useState(false);
   const [lsl, setLsl] = useState("");
   const [usl, setUsl] = useState("");
 
@@ -339,6 +380,7 @@ export default function CpkAnalyzerPage() {
 
   // Result
   const [result, setResult] = useState(null); // { stats, assessment, histogram, boxplot }
+  const [showSimulation, setShowSimulation] = useState(false);
   const [lastFilteredRows, setLastFilteredRows] = useState([]);
   const [lastValues, setLastValues] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -353,7 +395,7 @@ export default function CpkAnalyzerPage() {
   const lineCol = useMemo(() => findColumn(columns, "LINE"), [columns]);
   const stationCol = useMemo(() => findColumn(columns, "STATION"), [columns]);
   const resultCol = useMemo(() => findColumn(columns, "RESULT"), [columns]);
-  const datetimeCol = useMemo(() => findColumn(columns, "DATETIME"), [columns]);
+  const datetimeCol = useMemo(() => columns.find((c) => ["DATETIME", "DATE_TIME", "TIMESTAMP", "TEST_TIME", "DATE"].includes(String(c).toUpperCase())) || null, [columns]);
 
   const lineOptions = useMemo(() => (lineCol ? ["ALL", ...uniqueSorted(rows, lineCol)] : ["ALL"]), [rows, lineCol]);
   const stationOptions = useMemo(() => (stationCol ? ["ALL", ...uniqueSorted(rows, stationCol)] : ["ALL"]), [rows, stationCol]);
@@ -404,6 +446,32 @@ export default function CpkAnalyzerPage() {
     setFileLoading(false);
   };
 
+  // Load active CP SN List directly from SQLite; backend enforces OK/PASS-only and inclusive date range.
+  const handleLoadActiveSnList = async () => {
+    setSnListLoading(true); setError("");
+    try {
+      if (dateFrom && dateTo && dateFrom > dateTo) throw new Error("Tanggal awal tidak boleh melewati tanggal akhir.");
+      const params = new URLSearchParams();
+      if (dateFrom) params.set("date_from", dateFrom);
+      if (dateTo) params.set("date_to", dateTo);
+      const res = await fetch(`${API}/api/cpk/snlist-data${params.toString() ? `?${params.toString()}` : ""}`);
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.message || "Gagal memuat SN List CP aktif.");
+      setRows(data.rows || []); setColumns(data.columns || []);
+      setFileName(`SN LIST ${data.active_cp} · ${data.table}`);
+      setResult(null); setCalibration(null); setLastFilteredRows([]); setLastValues(null);
+      setLineFilter("ALL"); setStationFilter("ALL"); setResultFilter("Pass");
+      const numeric = detectNumericColumns(data.rows || [], data.columns || []);
+      const preferred = ["MAX_HOT_POWER", "STAND_BY_POWER", "MAX_PRESSURE", "VOLTAGE", "HOT_TEMP_MAX"];
+      const chosen = preferred.find((p) => numeric.includes(p)) || numeric[0] || "";
+      setParameter(chosen);
+      if (chosen) autoDetectSpecs(chosen, data.rows || []);
+      const rangeLabel = dateFrom || dateTo ? ` | ${dateFrom || "awal"} → ${dateTo || "sekarang"}` : " | semua tanggal";
+      setInfo(`CP ${data.active_cp} loaded · ${data.count} record OK/PASS${rangeLabel}`);
+    } catch (e) { setError(e.message || "Network error"); }
+    finally { setSnListLoading(false); }
+  };
+
   const handleParameterChange = (name) => {
     setParameter(name);
     if (name) autoDetectSpecs(name, rows);
@@ -414,10 +482,12 @@ export default function CpkAnalyzerPage() {
     let data = rows;
     if (lineCol && lineFilter !== "ALL") data = data.filter((r) => String(r[lineCol]) === lineFilter);
     if (stationCol && stationFilter !== "ALL") data = data.filter((r) => String(r[stationCol]) === stationFilter);
-    if (resultCol && resultFilter !== "ALL") data = data.filter((r) => String(r[resultCol] || "").toLowerCase() === resultFilter.toLowerCase());
+    if (resultCol) data = data.filter((r) => ["ok", "pass", "passed"].includes(String(r[resultCol] || "").trim().toLowerCase()));
+    if (datetimeCol && dateFrom) data = data.filter((r) => String(r[datetimeCol] || "").slice(0, 10) >= dateFrom);
+    if (datetimeCol && dateTo) data = data.filter((r) => String(r[datetimeCol] || "").slice(0, 10) <= dateTo);
     const values = data.map((r) => Number(r[parameter])).filter((v) => Number.isFinite(v));
     return { data, values };
-  }, [rows, lineCol, stationCol, resultCol, lineFilter, stationFilter, resultFilter, parameter]);
+  }, [rows, lineCol, stationCol, resultCol, datetimeCol, lineFilter, stationFilter, resultFilter, dateFrom, dateTo, parameter]);
 
   // ── Calculate ─────────────────────────────────────────────
   const calculate = async () => {
@@ -440,6 +510,7 @@ export default function CpkAnalyzerPage() {
       const json = await res.json();
       if (!json.success) throw new Error(json.message || "Calculate failed");
       setResult(json);
+      setShowSimulation(false);
       setLastFilteredRows(data);
       setLastValues(values);
       setInfo(`Calculation complete. ${values.length.toLocaleString()} data points analyzed.`);
@@ -470,12 +541,29 @@ export default function CpkAnalyzerPage() {
     setLoading(false);
   };
 
-  const manualCalibrateApply = async (k, b) => {
-    if (!lastValues) { setError("Hitung CPK terlebih dahulu."); return; }
+  const manualCalibrateApply = async (currentK, currentB, nextK, nextB) => {
+    if (!lastValues || lastValues.length < 2) {
+      setError("Hitung CPK terlebih dahulu dengan minimal 2 data.");
+      return;
+    }
+    if (!Number.isFinite(currentK) || currentK === 0) {
+      setError("Current K tidak boleh 0 dan harus berupa angka valid.");
+      return;
+    }
+    if (![currentB, nextK, nextB].every(Number.isFinite)) {
+      setError("Semua nilai K dan B harus berupa angka valid.");
+      return;
+    }
+
     setError("");
     setLoading(true);
     try {
-      const calibratedValues = lastValues.map((v) => k * v + b);
+      // Reverse the existing calibration to estimate Actual, then apply the
+      // proposed calibration parameters to simulate the future measurement.
+      const calibratedValues = lastValues.map((measured) => {
+        const actual = (measured - currentB) / currentK;
+        return actual * nextK + nextB;
+      });
       const res = await fetch(`${API}/api/cpk/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -487,14 +575,19 @@ export default function CpkAnalyzerPage() {
       const newCpk = json.stats.cpk;
       const improvement = originalCpk === Infinity ? 0 : newCpk === Infinity ? 100 : (originalCpk > 0 ? ((newCpk - originalCpk) / originalCpk) * 100 : 0);
       setCalibration({
-        k, b,
+        k: nextK,
+        b: nextB,
+        current_k: currentK,
+        current_b: currentB,
+        next_k: nextK,
+        next_b: nextB,
         original: result?.stats,
         calibrated: json.stats,
         calibrated_histogram: json.histogram,
         calibrated_boxplot: json.boxplot,
         improvement_pct: improvement,
       });
-      setInfo(`Manual calibration applied: k=${k.toFixed(4)}, b=${b.toFixed(4)}.`);
+      setInfo(`Manual calibration simulated: current K=${currentK}, B=${currentB}; next K=${nextK}, B=${nextB}.`);
       setDialog(null);
     } catch (e) {
       setError(e.message || "Network error");
@@ -503,15 +596,17 @@ export default function CpkAnalyzerPage() {
   };
 
   const resetCalibration = () => {
+    setShowSimulation(false);
     setCalibration(null);
     setInfo("Calibration reset to default (k=1.0, b=0.0).");
   };
 
   // ── Reset filters ─────────────────────────────────────────
   const resetFilters = () => {
+    setShowSimulation(false);
     setLineFilter("ALL");
     setStationFilter("ALL");
-    setResultFilter("ALL");
+    setResultFilter("Pass");
     setResult(null);
     setCalibration(null);
     setAxisAuto(true);
@@ -633,24 +728,27 @@ export default function CpkAnalyzerPage() {
   }
 
   // ── Derived render values ─────────────────────────────────
-  const stats = result?.stats;
-  const assessment = result?.assessment;
+  const displayResult = showSimulation && calibration ? { ...result, stats: calibration.calibrated, histogram: calibration.calibrated_histogram, boxplot: calibration.calibrated_boxplot || result?.boxplot } : result;
+  const stats = displayResult?.stats;
+  const assessment = displayResult?.assessment;
   const statusColor = !assessment ? "var(--text-muted)"
     : assessment.status === "EXCELLENT" || assessment.status === "CAPABLE" ? "#22C55E"
       : assessment.status === "MARGINAL" ? "#F59E0B" : "#EF4444";
 
-  const xDomain = !axisAuto && axisMin !== "" && axisMax !== "" && Number(axisMin) < Number(axisMax)
-    ? [Number(axisMin), Number(axisMax)]
-    : null;
+  const xDomain = axisAuto && lsl !== "" && usl !== "" && Number(lsl) < Number(usl)
+    ? [Number(lsl), Number(usl)]
+    : (!axisAuto && axisMin !== "" && axisMax !== "" && Number(axisMin) < Number(axisMax)
+      ? [Number(axisMin), Number(axisMax)]
+      : null);
 
   return (
-    <div className="flex-1 flex flex-col bg-[var(--bg-canvas)] overflow-hidden font-sans transition-colors">
+    <div className="cpk-app flex-1 flex flex-col bg-[var(--bg-canvas)] overflow-hidden font-sans transition-colors">
       {/* ── HEADER ──────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-soft)] shrink-0 flex-wrap gap-2">
+      <div className="cpk-page-header flex items-center justify-between px-5 py-3 border-b border-[var(--border-soft)] shrink-0 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <span className="text-xl">🏭</span>
-          <span className="text-[var(--text-primary)] font-bold text-base">FUNCTION TESTER</span>
-          <span className="text-[var(--text-primary)] font-bold text-base">CPK ANALYZER</span>
+          <span className="text-[var(--text-primary)] font-extrabold text-base tracking-tight">FUNCTION TESTER</span>
+          <span className="text-[var(--text-primary)] font-extrabold text-base tracking-tight">CPK ANALYZER</span>
           <span className="text-[var(--text-muted)] text-[10px]">v2.4</span>
         </div>
         <div className="flex items-center gap-3 text-[10px]">
@@ -660,9 +758,27 @@ export default function CpkAnalyzerPage() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4" style={{ scrollbarWidth: "thin" }}>
+      <style>{`
+        .cpk-content-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+        .cpk-content-scroll::-webkit-scrollbar { display: none; width: 0; height: 0; }
+        .cpk-app { background: linear-gradient(135deg, var(--bg-canvas) 0%, color-mix(in srgb, var(--bg-canvas) 94%, #22c55e 6%) 100%); }
+        .cpk-page-header { background: color-mix(in srgb, var(--bg-surface-2) 92%, #22c55e 8%); }
+        .cpk-panel { box-shadow: 0 5px 18px rgba(15, 23, 42, .035); transition: border-color .18s ease, box-shadow .18s ease; }
+        .cpk-panel:hover { border-color: color-mix(in srgb, var(--border-soft) 70%, #22c55e 30%); box-shadow: 0 8px 22px rgba(15, 23, 42, .055); }
+        .cpk-input { min-width: 0; box-shadow: inset 0 1px 1px rgba(15, 23, 42, .025); }
+        .cpk-input:focus { box-shadow: 0 0 0 3px rgba(34, 197, 94, .12); }
+        .cpk-button { box-shadow: 0 1px 2px rgba(15, 23, 42, .035); }
+        .cpk-button:not(:disabled):hover { transform: translateY(-1px); box-shadow: 0 3px 8px rgba(15, 23, 42, .08); }
+        .cpk-button:active { transform: translateY(0); }
+        .cpk-stat { position: relative; overflow: hidden; min-height: 56px; background: linear-gradient(180deg, var(--bg-surface) 0%, color-mix(in srgb, var(--bg-surface) 96%, #64748b 4%) 100%); box-shadow: 0 1px 2px rgba(15, 23, 42, .025); }
+        .cpk-stat-primary { border-color: color-mix(in srgb, var(--border-soft) 70%, #3b82f6 30%); }
+        .cpk-stat-primary::before { content: ''; position: absolute; left: 0; top: 10px; bottom: 10px; width: 3px; border-radius: 0 3px 3px 0; background: #3b82f6; opacity: .8; }
+        .cpk-chart-grid > div { border: 1px solid #e2e8f0; box-shadow: 0 2px 7px rgba(15, 23, 42, .035); }
+        @media (max-width: 900px) { .cpk-content-scroll { padding-left: 10px; padding-right: 10px; } .cpk-panel { padding: 12px; } .cpk-control-row { padding-bottom: 5px; } }
+      `}</style>
+      <div className="cpk-content-scroll flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-4">
         {/* ── CONTROL PANEL ─────────────────────────────────── */}
-        <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface-2)] p-4 flex flex-col gap-3">
+        <div className="cpk-panel rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface-2)] p-4 flex flex-col gap-3">
           <span className="text-[10px] font-bold text-[#22C55E] uppercase tracking-widest">Control Panel</span>
 
           <div className="flex items-center gap-3 flex-wrap">
@@ -676,43 +792,31 @@ export default function CpkAnalyzerPage() {
             <Button variant="primary" onClick={() => fileInputRef.current?.click()} disabled={fileLoading}>
               {fileLoading ? "Loading..." : "📂 LOAD DATA"}
             </Button>
+            <Button variant="accent" onClick={handleLoadActiveSnList} disabled={snListLoading}>
+              {snListLoading ? "Loading SN List..." : "⚡ LOAD ACTIVE CP SN LIST"}
+            </Button>
             <span className="text-[11px] text-[var(--text-secondary)]">
               {rows.length ? `${fileName} | ${rows.length.toLocaleString()} rows | ${columns.length} columns` : "No file loaded"}
             </span>
           </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            <Field label="Parameter">
+          <div className="cpk-control-row flex items-end gap-2 flex-nowrap overflow-x-auto pb-1">
+            <div className="shrink-0"><Field label="Date From"><TextInput type="date" value={dateFrom} onChange={(v) => { setDateFrom(v); setResult(null); setCalibration(null); }} /></Field></div>
+            <div className="shrink-0"><Field label="Date To"><TextInput type="date" value={dateTo} onChange={(v) => { setDateTo(v); setResult(null); setCalibration(null); }} /></Field></div>
+            <div className="shrink-0 min-w-[180px]"><Field label="Parameter">
               <Select value={parameter} onChange={handleParameterChange} options={numericColumns} placeholder={numericColumns.length ? "Select..." : "No numeric columns"} />
-            </Field>
-            <Field label="Line">
-              <Select value={lineFilter} onChange={setLineFilter} options={lineOptions} />
-            </Field>
-            <Field label="Station">
-              <Select value={stationFilter} onChange={setStationFilter} options={stationOptions} />
-            </Field>
-            <Field label="Result">
-              <Select value={resultFilter} onChange={setResultFilter} options={["ALL", "Pass", "Fail"]} />
-            </Field>
-          </div>
-
-          <div className="flex items-end gap-2 flex-wrap">
-            <Field label="LSL"><TextInput type="number" value={lsl} onChange={(v) => setLsl(v === "" ? "" : Number(v))} /></Field>
-            <Field label="USL"><TextInput type="number" value={usl} onChange={(v) => setUsl(v === "" ? "" : Number(v))} /></Field>
+            </Field></div>
+            <div className="shrink-0"><Field label="LSL"><TextInput type="number" value={lsl} onChange={(v) => setLsl(v === "" ? "" : Number(v))} /></Field></div>
+            <div className="shrink-0"><Field label="USL"><TextInput type="number" value={usl} onChange={(v) => setUsl(v === "" ? "" : Number(v))} /></Field></div>
             <Button variant="primary" onClick={calculate} disabled={loading}>{loading ? "Calculating..." : "🧮 CALCULATE CPK"}</Button>
             <Button onClick={resetFilters}>🔄 RESET</Button>
-
-            <Field label="Decimals">
+            <div className="shrink-0"><Field label="Decimals">
               <Select value={String(decimalPlaces)} onChange={(v) => setDecimalPlaces(Number(v))} options={["0", "1", "2", "3", "4", "5", "6"]} />
-            </Field>
-
+            </Field></div>
             <Button onClick={() => setDialog("axis")}>📏 AXIS</Button>
-            <Button onClick={autoCalibrate} disabled={!lastValues || loading}>🔧 AUTO CALIB</Button>
             <Button onClick={() => setDialog("manualcalib")} disabled={!lastValues}>🔧 MANUAL CALIB</Button>
             {calibration && <Button onClick={resetCalibration}>↩ RESET CALIB</Button>}
             <Button onClick={() => setDialog("assessment")} disabled={!result}>📋 ASSESS</Button>
-
-            <span className="text-[10px] text-[var(--text-muted)] ml-auto">{info}</span>
           </div>
 
           {calibration && (
@@ -728,9 +832,19 @@ export default function CpkAnalyzerPage() {
 
         {/* ── RESULT PANEL ──────────────────────────────────── */}
         {stats && (
-          <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface-2)] p-4 flex flex-col gap-3">
-            <span className="text-[10px] font-bold text-[#22C55E] uppercase tracking-widest">CPK Result</span>
-            <div className="flex flex-wrap gap-2">
+          <div className="cpk-panel rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface-2)] p-4 flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-[10px] font-bold text-[#22C55E] uppercase tracking-widest">{showSimulation ? "Simulated CPK Result" : "CPK Result"}</span>
+              <div className="flex items-center justify-end gap-2 flex-wrap">
+                <Button onClick={() => setDialog("data")} disabled={!rows.length}>📋 SHOW DATA</Button>
+                {calibration && <Button variant="primary" onClick={() => setShowSimulation((v) => !v)}>
+                  {showSimulation ? "↩ SHOW ORIGINAL RESULT" : "🧪 SIMULATE RESULT"}
+                </Button>}
+                <Button variant="accent" onClick={exportResult} disabled={!result}>💾 EXPORT RESULT</Button>
+                <Button variant="accent" onClick={exportAllData} disabled={!rows.length}>📤 EXPORT ALL DATA</Button>
+              </div>
+            </div>
+            <div className="cpk-stat-grid flex flex-wrap gap-2">
               <StatBox label="Sample Size" value={stats.sample_size.toLocaleString()} />
               <StatBox label="Mean" value={fmtNum(stats.mean, decimalPlaces)} />
               <StatBox label="Std Dev" value={fmtNum(stats.std, decimalPlaces)} />
@@ -738,7 +852,7 @@ export default function CpkAnalyzerPage() {
               <StatBox label="Maximum" value={fmtNum(stats.maximum, decimalPlaces)} />
               <StatBox label="Range" value={fmtNum(stats.range, decimalPlaces)} />
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="cpk-stat-grid flex flex-wrap gap-2">
               <StatBox label="Cp" value={fmtNum(stats.cp, decimalPlaces)} big />
               <StatBox label="Cpu" value={fmtNum(stats.cpu, decimalPlaces)} big />
               <StatBox label="Cpl" value={fmtNum(stats.cpl, decimalPlaces)} big />
@@ -746,29 +860,23 @@ export default function CpkAnalyzerPage() {
               <StatBox label="Z-Score" value={fmtNum(stats.z_score, decimalPlaces)} big />
               <StatBox label="PPM" value={fmtNum(stats.ppm, decimalPlaces)} big />
             </div>
-            <div className="flex flex-wrap gap-2">
+            <div className="cpk-stat-grid flex flex-wrap gap-2">
               <StatBox label="Below LSL" value={stats.below_lsl} />
               <StatBox label="Above USL" value={stats.above_usl} />
               <StatBox label="Out of Spec" value={stats.out_of_spec} />
               <StatBox label="Capability" value={stats.capability} />
             </div>
 
-            <div className="flex items-center gap-3 pt-1">
-              <span className="text-[var(--text-primary)] font-bold text-xs uppercase">Process Capability:</span>
-              <span className="font-bold text-base" style={{ color: statusColor }}>
-                {assessment.status === "EXCELLENT" || assessment.status === "CAPABLE" ? "✓" : assessment.status === "MARGINAL" ? "⚠" : "✗"} {assessment.status}
-              </span>
-            </div>
           </div>
         )}
 
         {/* ── DATA VISUALIZATION ────────────────────────────── */}
         {stats && (
-          <div className="rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface-2)] p-4 flex flex-col gap-3">
+          <div className="cpk-panel rounded-xl border border-[var(--border-soft)] bg-[var(--bg-surface-2)] p-4 flex flex-col gap-3">
             <span className="text-[10px] font-bold text-[#22C55E] uppercase tracking-widest">Data Visualization</span>
-            <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
-              <DistributionChart title="Distribution" hist={result.histogram} lsl={Number(lsl)} usl={Number(usl)} mean={stats.mean} accent="#3B82F6" decimals={decimalPlaces} xDomain={xDomain} />
-              <BoxPlotChart title="Box Plot" box={result.boxplot} lsl={Number(lsl)} usl={Number(usl)} mean={stats.mean} accent="#3B82F6" decimals={decimalPlaces} xDomain={xDomain} />
+            <div className="cpk-chart-grid grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
+              <DistributionChart title={showSimulation ? "Simulated Distribution" : "Distribution"} hist={displayResult.histogram} lsl={Number(lsl)} usl={Number(usl)} mean={stats.mean} accent="#3B82F6" decimals={decimalPlaces} xDomain={xDomain} />
+              <BoxPlotChart title={showSimulation ? "Simulated Box Plot" : "Box Plot"} box={displayResult.boxplot} lsl={Number(lsl)} usl={Number(usl)} mean={stats.mean} accent="#3B82F6" decimals={decimalPlaces} xDomain={xDomain} />
               {calibration ? (
                 <DistributionChart title="Calibrated Distribution" hist={calibration.calibrated_histogram} lsl={Number(lsl)} usl={Number(usl)} mean={calibration.calibrated.mean} accent="#22C55E" decimals={decimalPlaces} xDomain={xDomain} />
               ) : (
@@ -780,18 +888,6 @@ export default function CpkAnalyzerPage() {
           </div>
         )}
 
-        {/* ── BOTTOM ACTIONS ────────────────────────────────── */}
-        <div className="flex items-center gap-2 flex-wrap pb-2">
-          <Button onClick={() => setDialog("data")} disabled={!rows.length}>📋 SHOW DATA</Button>
-          <Button onClick={() => setDialog("summary")} disabled={!rows.length}>📊 SUMMARY</Button>
-          <Button onClick={() => setDialog("failure")} disabled={!rows.length}>❌ FAILURE ANALYSIS</Button>
-          <Button onClick={() => setDialog("standards")}>📐 CPK STANDARDS</Button>
-          <Button onClick={() => setDialog("about")}>ℹ ABOUT</Button>
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="accent" onClick={exportResult} disabled={!result}>💾 EXPORT RESULT</Button>
-            <Button variant="accent" onClick={exportAllData} disabled={!rows.length}>📤 EXPORT ALL DATA</Button>
-          </div>
-        </div>
       </div>
 
       {/* ── DIALOGS ─────────────────────────────────────────── */}
@@ -980,7 +1076,7 @@ export default function CpkAnalyzerPage() {
             <div className="flex flex-col gap-3">
               <label className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)] cursor-pointer">
                 <input type="checkbox" checked={axisAuto} onChange={(e) => setAxisAuto(e.target.checked)} className="accent-[#22C55E]" />
-                Auto Range (based on data)
+                Auto Range (LSL to USL)
               </label>
               {!axisAuto && (
                 <div className="flex items-center gap-3">
@@ -988,8 +1084,10 @@ export default function CpkAnalyzerPage() {
                   <Field label="Max"><TextInput type="number" value={axisMax} onChange={setAxisMax} /></Field>
                 </div>
               )}
-              {lastValues && (
-                <p className="text-[10px] text-[var(--text-muted)]">Data Range: {fmtNum(Math.min(...lastValues), decimalPlaces)} - {fmtNum(Math.max(...lastValues), decimalPlaces)}</p>
+              {axisAuto ? (
+                <p className="text-[10px] text-[var(--text-muted)]">Axis otomatis mengikuti batas spesifikasi LSL–USL yang diisi.</p>
+              ) : (
+                <p className="text-[10px] text-[var(--text-muted)]">Masukkan nilai Min dan Max secara manual untuk mengatur rentang axis.</p>
               )}
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="primary" onClick={() => setDialog(null)}>Apply</Button>
@@ -1077,21 +1175,69 @@ function StandardsDialog({ standards, onLoaded, onClose }) {
 // ────────────────────────────────────────────────────────────────
 
 function ManualCalibrateDialog({ currentMean, targetMean, onApply, onClose }) {
-  const [k, setK] = useState(1);
-  const [b, setB] = useState(0);
+  const [currentK, setCurrentK] = useState("1");
+  const [currentB, setCurrentB] = useState("0");
+  const [nextK, setNextK] = useState("1");
+  const [nextB, setNextB] = useState("0");
+  const parsed = [currentK, currentB, nextK, nextB].map(Number);
+  const valid = [currentK, currentB, nextK, nextB].every((v) => String(v).trim() !== "")
+    && parsed.every(Number.isFinite) && parsed[0] !== 0;
+  const preview = valid && currentMean !== null && currentMean !== undefined
+    ? ((Number(currentMean) - parsed[1]) / parsed[0]) * parsed[2] + parsed[3]
+    : null;
+
+  const numberField = (label, value, setter) => (
+    <Field label={label}>
+      <TextInput type="number" value={value} onChange={setter} step="any" />
+    </Field>
+  );
 
   return (
-    <Dialog title="Manual Calibration Settings" icon="🔧" onClose={onClose} width={420}>
-      <div className="flex flex-col gap-3">
-        <p className="text-center text-[var(--text-secondary)] text-sm">y = k * x + b</p>
-        <Field label="k"><TextInput type="number" value={k} onChange={(v) => setK(Number(v))} /></Field>
-        <Field label="b"><TextInput type="number" value={b} onChange={(v) => setB(Number(v))} /></Field>
-        {targetMean !== null && (
-          <p className="text-[10px] text-[var(--text-muted)]">Target Mean: {targetMean.toFixed(3)} | Current Mean: {(currentMean ?? 0).toFixed(3)}</p>
-        )}
-        <div className="flex justify-end gap-2 pt-2">
+    <Dialog title="Manual Calibration Simulation" icon="🔧" onClose={onClose} width={560}>
+      <div className="flex flex-col gap-4">
+        <div className="rounded-xl border border-[var(--border)] p-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-bold text-[var(--text-primary)]">CURRENT CALIBRATION</span>
+            <span className="text-[10px] text-[var(--text-muted)]">Parameter yang sedang digunakan</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {numberField("Current K", currentK, setCurrentK)}
+            {numberField("Current B", currentB, setCurrentB)}
+          </div>
+          <p className="text-[10px] text-[var(--text-secondary)]">Actual = (Current measured value − Current B) ÷ Current K</p>
+        </div>
+
+        <div className="rounded-xl border border-[#22C55E]/40 bg-[#22C55E]/5 p-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-bold text-[var(--text-primary)]">NEXT CALIBRATION</span>
+            <span className="text-[10px] text-[#22C55E]">Parameter untuk simulasi</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {numberField("Next K", nextK, setNextK)}
+            {numberField("Next B", nextB, setNextB)}
+          </div>
+          <p className="text-[10px] text-[var(--text-secondary)]">Simulated value = Actual × Next K + Next B</p>
+        </div>
+
+        <div className="rounded-xl bg-[var(--bg-elevated)] border border-[var(--border-soft)] p-3">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] mb-1">Simulation preview</div>
+          {targetMean !== null && targetMean !== undefined && (
+            <div className="text-[10px] text-[var(--text-secondary)] mb-1">Target Mean: {Number(targetMean).toFixed(3)}</div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-[var(--text-secondary)]">Current Mean → Simulated Mean</span>
+            <span className="text-sm font-bold text-[var(--text-primary)]">
+              {currentMean === null || currentMean === undefined ? "—" : Number(currentMean).toFixed(3)}
+              {" → "}
+              {preview === null || !Number.isFinite(preview) ? "—" : preview.toFixed(3)}
+            </span>
+          </div>
+          {!valid && <p className="text-[10px] text-[#EF4444] mt-2">Masukkan angka yang valid. Current K tidak boleh 0.</p>}
+        </div>
+
+        <div className="flex justify-end gap-2 pt-1">
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={() => onApply(k, b)}>Apply</Button>
+          <Button variant="primary" disabled={!valid} onClick={() => onApply(...parsed)}>Simulate Calibration</Button>
         </div>
       </div>
     </Dialog>
