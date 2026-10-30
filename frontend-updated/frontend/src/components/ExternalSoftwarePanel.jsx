@@ -110,41 +110,129 @@ export default function ExternalSoftwarePanel({
     return () => ro.disconnect();
   }, [supported]);
 
-  // Tell Electron where to put the program window
+  // Keep the latest layout values available to both the initial launch request
+  // and the lightweight per-frame geometry channel.
+  const layoutRef = useRef(null);
+  const scheduleLayoutRef = useRef(null);
+  layoutRef.current = {
+    exePath,
+    args,
+    windowTitle,
+    method,
+    scrollMode,
+    contentSize,
+    visible,
+    viewW,
+    viewH,
+    offX,
+    offY,
+  };
+
+  // Initial launch/restart needs an acknowledged IPC response. During navbar
+  // motion, however, waiting for that response on every frame makes the native
+  // EXE trail behind the React layout. Geometry-only changes therefore use a
+  // one-way IPC message, coalesced to one latest rectangle per renderer frame.
   useEffect(() => {
     if (!supported) return undefined;
     const el = ref.current;
     if (!el) return undefined;
 
     let cancelled = false;
-    let timer = null;
+    let started = false;
+    let frameId = 0;
+    let pendingBeforeStart = false;
+    let lastLayoutKey = '';
 
-    const send = async (restart = false) => {
+    const makePayload = () => {
+      const current = layoutRef.current || {};
       const r = el.getBoundingClientRect();
       const bounds = {
-        x: Math.round(r.x), y: Math.round(r.y),
-        width: Math.round(r.width), height: Math.round(r.height),
+        x: Math.round(r.x),
+        y: Math.round(r.y),
+        width: Math.max(0, Math.round(r.width)),
+        height: Math.max(0, Math.round(r.height)),
       };
-      try {
-        const res = await api.embedExternal({
-          exePath,
-          args: args || "",
-          windowTitle: windowTitle || "",
-          method: method === "Attach" ? "attach" : "overlay",
-          fit: scrollMode ? "scroll" : "fit",
-          view: scrollMode && viewW > 0 && viewH > 0
-            ? { x: bounds.x, y: bounds.y, width: Math.round(viewW), height: Math.round(viewH) }
-            : undefined,
-          offset: scrollMode ? { x: offX, y: offY } : undefined,
-          contentPx: scrollMode ? parseSize(contentSize) || undefined : undefined,
-          visible,
-          restart,
-          bounds,
-        });
+      const payload = {
+        exePath: current.exePath,
+        args: current.args || '',
+        windowTitle: current.windowTitle || '',
+        method: current.method === 'Attach' ? 'attach' : 'overlay',
+        fit: current.scrollMode ? 'scroll' : 'fit',
+        view: current.scrollMode && current.viewW > 0 && current.viewH > 0
+          ? {
+              x: bounds.x,
+              y: bounds.y,
+              width: Math.round(current.viewW),
+              height: Math.round(current.viewH),
+            }
+          : undefined,
+        offset: current.scrollMode
+          ? { x: current.offX, y: current.offY }
+          : undefined,
+        contentPx: current.scrollMode
+          ? parseSize(current.contentSize) || undefined
+          : undefined,
+        visible: current.visible,
+        bounds,
+      };
+      const layout = {
+        visible: payload.visible,
+        bounds: payload.bounds,
+        fit: payload.fit,
+        view: payload.view,
+        offset: payload.offset,
+        contentPx: payload.contentPx,
+      };
+      return { payload, layout, layoutKey: JSON.stringify(layout) };
+    };
+
+    const schedule = () => {
+      if (cancelled) return;
+      if (frameId) return;
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
         if (cancelled) return;
+
+        const { payload, layout, layoutKey } = makePayload();
+        if (!started) {
+          pendingBeforeStart = true;
+          return;
+        }
+        if (layoutKey === lastLayoutKey) return;
+        lastLayoutKey = layoutKey;
+
+        try {
+          if (typeof api.updateExternalLayout === 'function') {
+            api.updateExternalLayout(layout);
+          } else {
+            // Compatibility fallback for an older preload. The new preload
+            // uses the one-way layout channel above.
+            void api.embedExternal(payload);
+          }
+        } catch (e) {
+          console.warn('[External] layout update failed:', e?.message || e);
+        }
+      });
+    };
+
+    const send = async (restart = false) => {
+      if (cancelled) return;
+      if (restart) {
+        started = false;
+        setStatus('starting');
+        setMessage('');
+      }
+
+      const { payload, layoutKey } = makePayload();
+      try {
+        const res = await api.embedExternal({ ...payload, restart });
+        if (cancelled) return;
+
         if (res?.ok) {
-          setStatus("running");
-          setMessage("");
+          started = true;
+          lastLayoutKey = layoutKey;
+          setStatus('running');
+          setMessage('');
           if (res.content) {
             setContent((p) =>
               p && Math.abs(p.width - res.content.width) < 1 && Math.abs(p.height - res.content.height) < 1
@@ -152,48 +240,65 @@ export default function ExternalSoftwarePanel({
                 : res.content
             );
           }
+          // Geometry may have changed while the EXE was starting/restarting.
+          if (pendingBeforeStart) {
+            pendingBeforeStart = false;
+            schedule();
+          } else {
+            schedule();
+          }
         } else if (res?.stopped) {
-          setStatus("stopped");
-          setMessage(res.error || "The external program was closed.");
-        } else if (res?.error !== "cancelled") {
-          setStatus("error");
-          setMessage(res?.error || "Failed to start external software");
+          started = false;
+          setStatus('stopped');
+          setMessage(res.error || 'The external program was closed.');
+        } else if (res?.error !== 'cancelled') {
+          started = false;
+          setStatus('error');
+          setMessage(res?.error || 'Failed to start external software');
         }
       } catch (e) {
         if (!cancelled) {
-          setStatus("error");
+          started = false;
+          setStatus('error');
           setMessage(String(e?.message || e));
         }
       }
     };
+
     sendRef.current = send;
+    scheduleLayoutRef.current = schedule;
 
-    // Debounce: ResizeObserver can fire many times during layout
-    const schedule = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => send(false), 30);
-    };
-
-    // The program ended by itself (closed its window / exited)
+    // The program ended by itself (closed its window / exited).
     const offStopped = api.onExternalStopped?.((d) => {
       if (cancelled) return;
-      setStatus("stopped");
-      setMessage(d?.message || "The external program was closed.");
+      started = false;
+      setStatus('stopped');
+      setMessage(d?.message || 'The external program was closed.');
     });
 
-    send(false);
-    const ro = new ResizeObserver(schedule);
+    // Observe geometry before launch so all changes during startup are folded
+    // into the first acknowledged layout plus at most one latest follow-up.
+    const ro = new ResizeObserver(() => schedule());
     ro.observe(el);
-    window.addEventListener("resize", schedule);
+    window.addEventListener('resize', schedule);
+    void send(false);
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      if (frameId) window.cancelAnimationFrame(frameId);
       ro.disconnect();
-      window.removeEventListener("resize", schedule);
+      window.removeEventListener('resize', schedule);
       offStopped?.();
+      if (sendRef.current === send) sendRef.current = null;
+      if (scheduleLayoutRef.current === schedule) scheduleLayoutRef.current = null;
     };
-  }, [supported, exePath, args, windowTitle, method, scrollMode, contentSize, visible, viewW, viewH, offX, offY]);
+  }, [supported, exePath, args, windowTitle, method, scrollMode, contentSize, api]);
+
+  // Scrollbar, visibility and other non-size layout changes still need to reach
+  // the native window, but they are coalesced into the next animation frame.
+  useEffect(() => {
+    scheduleLayoutRef.current?.();
+  }, [visible, scrollMode, viewW, viewH, offX, offY]);
 
   // Close the external program when this panel is removed (mode switched back, path cleared)
   useEffect(() => {

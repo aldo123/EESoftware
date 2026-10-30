@@ -1125,7 +1125,7 @@ export default function MainPage({ user: initialUser, onLogout }) {
         <motion.aside
           initial={false}
           animate={{ width: sidebarOpen ? 150 : 0 }}
-          transition={{ duration: 0.22, ease: EASE_OUT }}
+          transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
           className="bg-[var(--bg-surface-2)] border-r border-[var(--border-soft)] flex flex-col shrink-0 overflow-hidden transition-colors"
         >
           <div className="w-[150px] h-full flex flex-col">

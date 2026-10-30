@@ -40,6 +40,23 @@ const RUNTIME_RESOLUTION_PRESETS = [
 
 const DEFAULT_RUNTIME_RESOLUTION = { width: 1920, height: 1080 };
 
+// Shared immutable fallback keeps memoized chart widgets from receiving a
+// fresh [] reference on every unrelated parent render.
+const EMPTY_CHART_HISTORY = Object.freeze([]);
+
+// Only these widget types consume a value resolved by getRuntimeValue().
+// Shape, chart, camera, image, test-table, message, and popup widgets obtain
+// their data through their own existing runtime paths.
+const RUNTIME_VALUE_WIDGET_TYPES = new Set([
+  "button",
+  "light",
+  "textbox",
+  "gauge",
+  "alarmbanner",
+  "progressbar",
+  "selectorswitch",
+]);
+
 const resolutionKey = (w, h) => `${w}x${h}`;
 
 const getWidgetRect = (widget) => {
@@ -3733,7 +3750,12 @@ function DynamicCPPage({ cpNumber, user }) {
 
   const renderRuntimeWidget = useCallback((widget) => {
     const { type, id } = widget;
-    const runtimeValue = getRuntimeValue(widget);
+    // Avoid resolving PLC/Internal Variable/field values for visual widgets
+    // that do not consume runtimeValue. This does not alter acquisition or
+    // trigger evaluation; it only skips redundant render-time lookups.
+    const runtimeValue = RUNTIME_VALUE_WIDGET_TYPES.has(type)
+      ? getRuntimeValue(widget)
+      : undefined;
 
     if (type === "button") return <RuntimeButton key={id} widget={widget} value={runtimeValue} onChange={(value) => handleButtonChange(widget, value)} onNavigate={navigateToPage} />;
     if (type === "light") return <RuntimeLight key={id} widget={widget} value={runtimeValue} />;
@@ -3746,7 +3768,7 @@ function DynamicCPPage({ cpNumber, user }) {
         onWrite={(value) => handleTextBoxWrite(widget, value)}
       />
     );
-    if (type === "linechart") return <RuntimeLineChart key={id} widget={widget} history={chartHistory[id] || []} running={chartRunning[id] !== false} />;
+    if (type === "linechart") return <RuntimeLineChart key={id} widget={widget} history={chartHistory[id] || EMPTY_CHART_HISTORY} running={chartRunning[id] !== false} />;
     if (type === "gauge") return <RuntimeGauge key={id} widget={widget} value={runtimeValue} />;
     if (type === "testtable") return <RuntimeTestTable key={id} widget={widget} getValue={getTestTableValue} />;
     if (type === "camerafeed") return <RuntimeCameraFeed key={id} widget={widget} cpNumber={cpNumber} />;
