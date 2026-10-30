@@ -66,6 +66,7 @@ const GWLP_HWNDPARENT = -8;
 const WS_EX_TOOLWINDOW = 0x00000080;
 const WS_EX_APPWINDOW = 0x00040000;
 const SWP_NOACTIVATE = 0x0010;
+const SWP_NOZORDER = 0x0004;
 const SW_SHOWNOACTIVATE = 4;
 const SLOW_WIN32_MS = 50;      // log a warning when moving the program window takes longer
 const APPLY_MIN_GAP_MS = 16;   // at most ~60 window updates per second
@@ -228,6 +229,9 @@ function registerExternalEmbed({ getWindow, killTree }) {
   let needFrameChanged = false; // only the first SetWindowPos after the style change needs it
   let lastApplyAt = 0;
   let applyTimer = null;
+  let pendingForceZOrder = false;
+  let needZOrder = true;
+  let lastPositionLogAt = 0;
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -247,6 +251,7 @@ function registerExternalEmbed({ getWindow, killTree }) {
     naturalPx = null;
     rgnKey = '';
     lastAppliedKey = '';
+    needZOrder = true;
     clearTimeout(applyTimer);
     applyTimer = null;
     log('external window lost:', message, `; auto-restart attempt ${restartAttempts + 1}/${MAX_AUTO_RESTARTS}`);
@@ -275,7 +280,7 @@ function registerExternalEmbed({ getWindow, killTree }) {
         currentKey = `${config.exePath}|${config.args || ''}|${config.windowTitle || ''}|${config.method || 'overlay'}`;
         log('automatic restart and reattach succeeded');
         restartAttempts = 0;
-        requestApply();
+        requestApply(true);
       } catch (error) {
         log('automatic restart failed:', error?.message || error);
         notifyStopped(error?.message || 'Could not restart the external program.');
@@ -310,6 +315,8 @@ function registerExternalEmbed({ getWindow, killTree }) {
     naturalPx = null;
     rgnKey = '';
     lastAppliedKey = '';
+    needZOrder = true;
+    pendingForceZOrder = false;
     clearTimeout(applyTimer);
     applyTimer = null;
     const hwnd = childHwnd;
@@ -330,7 +337,7 @@ function registerExternalEmbed({ getWindow, killTree }) {
 
   // Position / show / hide the program window according to the last layout
   // reported by the panel. Also re-run when the Electron window moves/resizes/restores.
-  function applyLayout() {
+  function applyLayout(forceZOrder = false) {
     if (!childHwnd || !lastLayout || stopped) return;
     const w = loadWin32();
     const win = getWindow();
@@ -387,7 +394,8 @@ function registerExternalEmbed({ getWindow, killTree }) {
     // Every SetWindowPos makes the other program recompute and repaint itself (a LabVIEW
     // front panel with graphs is expensive), and this function runs on every resize /
     // focus / move event and on every request of the panel.
-    if (posKey === lastAppliedKey && isShown) return;
+    const raiseToTop = needZOrder || forceZOrder || !isShown;
+    if (posKey === lastAppliedKey && isShown && !raiseToTop) return;
 
     const t0 = Date.now();
     if (rkey !== rgnKey) {
@@ -397,13 +405,22 @@ function registerExternalEmbed({ getWindow, killTree }) {
       rgnKey = rkey;
     }
     if (posKey !== lastPosKey) {
-      log(`position css=${JSON.stringify(bounds)} -> ${posKey}`);
+      // Avoid a console write on every animation frame; retain a periodic
+      // geometry breadcrumb for diagnostics without flooding the main process.
+      const now = Date.now();
+      if (now - lastPositionLogAt >= 1000) {
+        log(`position css=${JSON.stringify(bounds)} -> ${posKey}`);
+        lastPositionLogAt = now;
+      }
       lastPosKey = posKey;
     }
     if (!isShown) w.ShowWindow(childHwnd, SW_SHOWNOACTIVATE);
-    w.SetWindowPos(childHwnd, HWND_TOP, px.x, px.y, px.w, px.h,
-      SWP_SHOWWINDOW | SWP_NOACTIVATE | (needFrameChanged ? SWP_FRAMECHANGED : 0));
+    const positionFlags = SWP_SHOWWINDOW | SWP_NOACTIVATE |
+      (raiseToTop ? 0 : SWP_NOZORDER) |
+      (needFrameChanged ? SWP_FRAMECHANGED : 0);
+    w.SetWindowPos(childHwnd, raiseToTop ? HWND_TOP : 0, px.x, px.y, px.w, px.h, positionFlags);
     needFrameChanged = false;
+    needZOrder = false;
     lastAppliedKey = posKey;
 
     // Calls into another program can block while ITS window thread is busy.
@@ -415,20 +432,26 @@ function registerExternalEmbed({ getWindow, killTree }) {
 
   // Layout requests can arrive in bursts (dragging a scrollbar, window events). The program
   // window is updated at most about 60 times per second; the LAST requested layout always wins.
-  function requestApply() {
+  function requestApply(forceZOrder = false) {
+    if (forceZOrder) pendingForceZOrder = true;
+    const run = () => {
+      const raise = pendingForceZOrder;
+      pendingForceZOrder = false;
+      lastApplyAt = Date.now();
+      try { applyLayout(raise); } catch (e) { log('layout update failed:', e?.message || e); }
+    };
+
     const wait = APPLY_MIN_GAP_MS - (Date.now() - lastApplyAt);
     if (wait <= 0) {
       clearTimeout(applyTimer);
       applyTimer = null;
-      lastApplyAt = Date.now();
-      applyLayout();
+      run();
       return;
     }
     if (!applyTimer) {
       applyTimer = setTimeout(() => {
         applyTimer = null;
-        lastApplyAt = Date.now();
-        try { applyLayout(); } catch (e) { log('layout update failed:', e?.message || e); }
+        run();
       }, wait);
     }
   }
@@ -437,7 +460,12 @@ function registerExternalEmbed({ getWindow, killTree }) {
     if (hooked.has(win)) return;
     hooked.add(win);
     for (const ev of ['move', 'resize', 'restore', 'show', 'focus']) {
-      win.on(ev, () => { try { requestApply(); } catch { /* ignore */ } });
+      // Geometry changes do not need a z-order operation every frame. Reassert
+      // the owned window's order only when the Electron window regains focus.
+      win.on(ev, () => {
+        try { requestApply(ev === 'restore' || ev === 'show' || ev === 'focus'); }
+        catch { /* ignore */ }
+      });
     }
   }
 
@@ -605,6 +633,7 @@ function registerExternalEmbed({ getWindow, killTree }) {
     log(`${method} ok: hwnd=${hwnd} pid=${childPid} parent/owner=${parent}`);
     childHwnd = hwnd;
     needFrameChanged = true;
+    needZOrder = true;
     lastAppliedKey = '';
     startWatching();
   }
@@ -655,7 +684,7 @@ function registerExternalEmbed({ getWindow, killTree }) {
           ? { w: Math.min(10000, Math.round(rawContent.width)), h: Math.min(10000, Math.round(rawContent.height)) }
           : null;
       lastLayout = { visible, bounds, method, fit: rawFit === 'scroll' ? 'scroll' : 'fit', view, offset, contentPx };
-      requestApply();
+      requestApply(true);
       const sc = screen.getDisplayMatching(getWindow().getBounds()).scaleFactor || 1;
       return {
         ok: true,
@@ -668,6 +697,58 @@ function registerExternalEmbed({ getWindow, killTree }) {
       console.error('[External] embed failed:', error);
       await closeExternal(`embed error: ${error.message}`);
       return { ok: false, error: error.message || String(error) };
+    }
+  });
+
+  // High-frequency layout-only updates use a one-way channel. This avoids
+  // re-validating the executable, touching launch/recovery state, and waiting
+  // for an IPC response on every animation frame.
+  ipcMain.on('external:layout', (event, opts = {}) => {
+    try {
+      const win = getWindow();
+      if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
+      if (!childHwnd || !lastLayout || stopped || !opts || typeof opts !== 'object') return;
+
+      const rect = (value, minSize = 1) => {
+        if (!value || typeof value !== 'object') return null;
+        const fields = ['x', 'y', 'width', 'height'];
+        if (!fields.every((key) => Number.isFinite(Number(value[key])))) return null;
+        return {
+          x: Math.max(-100000, Math.min(100000, Math.round(Number(value.x)))),
+          y: Math.max(-100000, Math.min(100000, Math.round(Number(value.y)))),
+          width: Math.max(minSize, Math.min(20000, Math.round(Number(value.width)))),
+          height: Math.max(minSize, Math.min(20000, Math.round(Number(value.height)))),
+        };
+      };
+      const bounds = rect(opts.bounds);
+      if (!bounds) return;
+
+      const next = { ...lastLayout, bounds };
+      if (typeof opts.visible === 'boolean') next.visible = opts.visible;
+      if (opts.fit === 'scroll' || opts.fit === 'fit') next.fit = opts.fit;
+      if (next.fit === 'scroll') {
+        next.view = rect(opts.view) || bounds;
+        const offset = opts.offset && typeof opts.offset === 'object' ? opts.offset : {};
+        next.offset = {
+          x: Math.max(0, Math.min(100000, Number(offset.x) || 0)),
+          y: Math.max(0, Math.min(100000, Number(offset.y) || 0)),
+        };
+        const content = opts.contentPx && typeof opts.contentPx === 'object' ? opts.contentPx : null;
+        if (content && Number.isFinite(Number(content.width)) && Number.isFinite(Number(content.height))) {
+          next.contentPx = {
+            w: Math.max(200, Math.min(10000, Math.round(Number(content.width)))),
+            h: Math.max(150, Math.min(10000, Math.round(Number(content.height)))),
+          };
+        }
+      } else {
+        next.view = undefined;
+        next.offset = undefined;
+      }
+
+      lastLayout = next;
+      requestApply(false);
+    } catch (error) {
+      log('layout IPC update failed:', error?.message || error);
     }
   });
 
