@@ -8,6 +8,7 @@ const COLORS = ["#ef4444", "#f97316", "#eab308", "#8b5cf6", "#3b82f6", "#14b8a6"
 
 export default function TopDefectModal({ cpNumber = "1" }) {
   const [bucket, setBucket] = useState("day");
+  const [testStage, setTestStage] = useState("fpy1");
   const [dateFrom, setDateFrom] = useState(today());
   const [dateTo, setDateTo] = useState(today());
   const [data, setData] = useState({ summary: [], trend: [], details: [], records_scanned: 0, defects_total: 0 });
@@ -18,14 +19,14 @@ export default function TopDefectModal({ cpNumber = "1" }) {
   const load = useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const q = new URLSearchParams({ cp: String(cpNumber || "1"), bucket, date_from: dateFrom, date_to: dateTo });
+      const q = new URLSearchParams({ cp: String(cpNumber || "1"), bucket, test_stage: testStage, date_from: dateFrom, date_to: dateTo });
       const res = await fetch(`${API}/api/snlist/top-defects?${q}`);
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || body.message || `HTTP ${res.status}`);
       setData(body); setSelectedDefect("");
     } catch (e) { setError(e.message || "Failed to load top defects"); }
     finally { setLoading(false); }
-  }, [cpNumber, bucket, dateFrom, dateTo]);
+  }, [cpNumber, bucket, testStage, dateFrom, dateTo]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -70,10 +71,15 @@ export default function TopDefectModal({ cpNumber = "1" }) {
     <div className="w-full h-full min-h-0 flex flex-col gap-3 p-3 md:p-4 overflow-hidden" style={{ background: "var(--bg-page, transparent)" }}>
       <section className="w-full h-full min-h-0 rounded-xl border border-[var(--border)] overflow-hidden flex flex-col" style={{ background: "var(--bg-surface)" }}>
         <header className="px-5 py-4 border-b border-[var(--border)] flex items-center justify-between gap-3">
-          <div><h2 className="text-lg font-bold text-[#22C55E]">TOP DEFECT</h2><p className="text-xs text-[var(--text-secondary)] mt-1">Defect analysis from SN List inspection data · CP{cpNumber}</p></div>
+          <div><h2 className="text-lg font-bold text-[#22C55E]">TOP DEFECT</h2><p className="text-xs text-[var(--text-secondary)] mt-1">Defect analysis from SN List inspection data · CP{cpNumber} · {testStage === "fpy1" ? "FPY1: first test only" : "FPY2: second test and subsequent retests"}</p></div>
         </header>
         <div className="p-3 md:p-4 flex-1 min-h-0 overflow-hidden">
           <div className="flex flex-wrap items-end gap-3 mb-4">
+            <div className="flex flex-wrap gap-1.5" aria-label="Test stage filter">
+              {[ ["fpy1", "FPY1 · First Test"], ["fpy2", "FPY2 · Retest & Later"] ].map(([value, label]) =>
+                <button key={value} onClick={() => setTestStage(value)} className={`px-3 py-2 rounded-lg text-xs font-bold border ${testStage === value ? "bg-[#22C55E] text-[#052e16] border-[#22C55E]" : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"}`}>{label}</button>
+              )}
+            </div>
             <div className="flex flex-wrap gap-1.5">
               {[["hour","Per Day (Hours)"],["day","Per Day"],["7days","7 Days"],["month","Monthly"]].map(([v,label]) =>
                 <button key={v} onClick={() => preset(v)} className={`px-3 py-2 rounded-lg text-xs font-semibold border ${bucket===v ? "bg-[#22C55E] text-[#052e16] border-[#22C55E]" : "border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)]"}`}>{label}</button>
@@ -122,7 +128,7 @@ export default function TopDefectModal({ cpNumber = "1" }) {
           </div>
           <div className="mt-4 rounded-xl border border-[var(--border)] overflow-hidden">
             <div className="px-4 py-3 border-b border-[var(--border)] flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-bold">DEFECT DETAILS {selectedDefect ? `— ${selectedDefect}` : ""}</h3>
+              <h3 className="text-sm font-bold">DEFECT DETAILS · {testStage.toUpperCase()} {selectedDefect ? `— ${selectedDefect}` : ""}</h3>
               <div className="flex gap-2 items-center">
                 {selectedDefect && <button onClick={()=>setSelectedDefect("")} className="text-xs text-[#22C55E]">Clear filter</button>}
                 <button onClick={exportDetailsCsv} disabled={!detailRows.length} className="px-3 py-1.5 rounded-lg border border-[#22C55E] text-[#22C55E] text-xs font-bold disabled:opacity-40">Export CSV</button>
@@ -137,7 +143,7 @@ export default function TopDefectModal({ cpNumber = "1" }) {
               {!detailRows.length && <p className="p-6 text-center text-sm text-[var(--text-secondary)]">No defects found for this range.</p>}
             </div>
           </div>
-          <p className="mt-3 text-[11px] text-[var(--text-secondary)]">Source: SN List only. Numeric measurements are compared against their Lowlimit/Uplimit columns. RESULT NG/FAIL is not counted as a defect category; only identified parameter defects and incomplete tests are shown.</p>
+          <p className="mt-3 text-[11px] text-[var(--text-secondary)]">Source: SN List only. FPY1 includes each SN's first-ever test; FPY2 includes each SN's second test and all subsequent retests. Numeric measurements are compared against Lowlimit/Uplimit columns. RESULT NG/FAIL itself is not a defect category; only identified parameter defects and incomplete tests are shown.</p>
         </div>
       </section>
     </div>
