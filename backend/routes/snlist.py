@@ -768,6 +768,9 @@ def get_snlist_top_defects():
     date_from = str(request.args.get("date_from", "")).strip()
     date_to = str(request.args.get("date_to", "")).strip()
     bucket = str(request.args.get("bucket", "day")).strip().lower()
+    test_stage = str(request.args.get("test_stage", "fpy1")).strip().lower()
+    if test_stage not in {"fpy1", "fpy2"}:
+        test_stage = "fpy1"
     if bucket not in {"hour", "day", "7days", "month"}:
         bucket = "day"
 
@@ -814,20 +817,26 @@ def get_snlist_top_defects():
             except Exception:
                 return None
 
-    # Keep only the first-ever test record per serial number. Rows without an
-    # SN are not grouped together; they remain individually inspectable.
-    first_by_sn = {}
-    first_rows_without_sn = []
+    # Classify each SN's tests using its full chronological history.
+    # FPY1 includes only test #1. FPY2 includes test #2 and every later retest.
+    test_rows_by_sn = {}
+    rows_without_sn = []
     for row in rows:
         sn_key = _sn_value(row)
         if not sn_key:
-            first_rows_without_sn.append(row)
-        elif sn_key not in first_by_sn:
-            first_by_sn[sn_key] = row
-    first_test_rows = list(first_by_sn.values()) + first_rows_without_sn
+            rows_without_sn.append(row)
+        else:
+            test_rows_by_sn.setdefault(sn_key, []).append(row)
 
-    # Apply the requested date range AFTER selecting first-ever tests. This
-    # ensures a later retest is not counted as the first test in a date range.
+    if test_stage == "fpy1":
+        stage_rows = [items[0] for items in test_rows_by_sn.values() if items]
+        # Rows without an SN cannot be assigned a repeat-test number; retain
+        # them in FPY1 as individual records, but exclude them from FPY2.
+        stage_rows.extend(rows_without_sn)
+    else:
+        stage_rows = [row for items in test_rows_by_sn.values() for row in items[1:]]
+
+    # Apply selected date range only after assigning each row to its test stage.
     def _within_selected_dates(row):
         stamp = str(row.get("date_time") or "")
         dt = _parse_stamp(row)
@@ -851,7 +860,7 @@ def get_snlist_top_defects():
                     return False
         return True
 
-    rows = [row for row in first_test_rows if _within_selected_dates(row)]
+    rows = [row for row in stage_rows if _within_selected_dates(row)]
 
     from collections import Counter
     counts = Counter()
@@ -906,8 +915,8 @@ def get_snlist_top_defects():
             key = measured_present[first_blank][0]
             row_defects.append({"key": key, "label": labels.get(key, key.replace("_", " ").title()), "reason": "Incomplete test (blank field)", "value": "", "low": row.get(key + "_lowlimit"), "high": row.get(key + "_uplimit")})
         # RESULT NG/FAIL is not itself a defect category.
-        # For each SN's first-ever test, report ONLY ONE defect: whichever
-        # defective measurement appears earliest in the configured SN List
+        # For each eligible test record in the selected FPY stage, report ONLY
+        # ONE defect: whichever defective measurement appears earliest in the configured SN List
         # column order. This avoids counting multiple NG parameters from the
         # same test and makes the displayed defect deterministic.
         if row_defects:
@@ -926,7 +935,7 @@ def get_snlist_top_defects():
     periods = sorted(trend_counts)
     trend = [{"period": p, **dict(trend_counts[p])} for p in periods]
     return jsonify({
-        "cp": cp, "bucket": bucket, "date_from": date_from, "date_to": date_to,
+        "cp": cp, "bucket": bucket, "test_stage": test_stage, "date_from": date_from, "date_to": date_to,
         "records_scanned": len(rows), "defects_total": len(defect_rows),
         "summary": defect_summary, "trend": trend, "details": defect_rows[-500:],
     })
