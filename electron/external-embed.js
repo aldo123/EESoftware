@@ -213,7 +213,12 @@ function registerExternalEmbed({ getWindow, killTree }) {
   let generation = 0;   // bumped on every close; lets an in-flight start notice it was cancelled
   let closeTimer = null;
   let watchTimer = null;
-  let stopped = null;   // { message } when the program ended by itself (no auto-restart)
+  let stopped = null;   // set only when automatic recovery has exhausted its retries
+  let activeConfig = null;
+  let restartTimer = null;
+  let restartAttempts = 0;
+  const MAX_AUTO_RESTARTS = 5;
+  const AUTO_RESTART_DELAY_MS = 2500;
   let lastPosKey = '';
   let lastLayout = null; // { visible, bounds, method } last requested by the panel
   const hooked = new WeakSet();
@@ -227,21 +232,58 @@ function registerExternalEmbed({ getWindow, killTree }) {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   function notifyStopped(message) {
-    stopped = { message };
+    // Recover automatically if the external window disappears unexpectedly.
+    if (!activeConfig || isClosingForShutdown) return;
+    if (restartTimer) return;
+
+    const lostPid = childPid || child?.pid || 0;
+    stopped = null;
     clearInterval(watchTimer);
     watchTimer = null;
     childHwnd = 0;
     childPid = 0;
+    child = null;
     currentKey = '';
     naturalPx = null;
     rgnKey = '';
     lastAppliedKey = '';
     clearTimeout(applyTimer);
     applyTimer = null;
-    log('program stopped by itself:', message);
-    const win = getWindow();
-    if (win && !win.isDestroyed()) win.webContents.send('external:stopped', { message });
+    log('external window lost:', message, `; auto-restart attempt ${restartAttempts + 1}/${MAX_AUTO_RESTARTS}`);
+
+    if (lostPid) {
+      Promise.resolve(killTree(lostPid)).catch((err) =>
+        log('cleanup before auto-restart failed:', err?.message || err)
+      );
+    }
+
+    if (restartAttempts >= MAX_AUTO_RESTARTS) {
+      stopped = { message: `${message} Automatic restart failed after ${MAX_AUTO_RESTARTS} attempts.` };
+      const win = getWindow();
+      if (win && !win.isDestroyed()) win.webContents.send('external:stopped', { message: stopped.message });
+      return;
+    }
+
+    restartAttempts += 1;
+    restartTimer = setTimeout(async () => {
+      restartTimer = null;
+      if (!activeConfig || isClosingForShutdown) return;
+      try {
+        const config = { ...activeConfig };
+        stopped = null;
+        await start(config);
+        currentKey = `${config.exePath}|${config.args || ''}|${config.windowTitle || ''}|${config.method || 'overlay'}`;
+        log('automatic restart and reattach succeeded');
+        restartAttempts = 0;
+        requestApply();
+      } catch (error) {
+        log('automatic restart failed:', error?.message || error);
+        notifyStopped(error?.message || 'Could not restart the external program.');
+      }
+    }, AUTO_RESTART_DELAY_MS * Math.min(restartAttempts, 3));
   }
+
+  let isClosingForShutdown = false;
 
   function startWatching() {
     clearInterval(watchTimer);
@@ -256,6 +298,10 @@ function registerExternalEmbed({ getWindow, killTree }) {
     log('closeExternal, reason:', reason);
     generation++;
     clearTimeout(closeTimer);
+    clearTimeout(restartTimer);
+    restartTimer = null;
+    restartAttempts = 0;
+    activeConfig = null;
     clearInterval(watchTimer);
     watchTimer = null;
     stopped = null;
@@ -572,10 +618,11 @@ function registerExternalEmbed({ getWindow, killTree }) {
       if (bad) return { ok: false, error: bad };
 
       if (stopped && !restart) return { ok: false, stopped: true, error: stopped.message };
-      if (restart) { stopped = null; log('restart requested'); }
+      if (restart) { stopped = null; restartAttempts = 0; log('restart requested'); }
 
       const key = `${exePath}|${args}|${windowTitle}|${method}`;
       if (currentKey && currentKey !== key) await closeExternal('configuration changed');
+      activeConfig = { exePath, args, windowTitle, method };
 
       const w = loadWin32();
       if (childHwnd && !w.IsWindow(childHwnd)) {
@@ -600,6 +647,7 @@ function registerExternalEmbed({ getWindow, killTree }) {
       if (!childHwnd) return { ok: false, error: 'External window not available.' };
 
       hookWindow(getWindow());
+      restartAttempts = 0;
       // Optional user override of the program window size (physical px), Scroll mode only
       const contentPx =
         rawContent && Number.isFinite(rawContent.width) && Number.isFinite(rawContent.height) &&
