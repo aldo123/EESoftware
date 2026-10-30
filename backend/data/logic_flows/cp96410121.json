@@ -1,0 +1,30 @@
+{
+  "cp": "96410121",
+  "nodes": [
+    {
+      "config": {
+        "camera_id": "0",
+        "duration": "3",
+        "max_count": "999",
+        "method": "contour_blob",
+        "method_params": {
+          "threshold": 100,
+          "min_contour": 250,
+          "max_contour": 3000,
+          "match_dist": 70,
+          "debounce_seconds": 1
+        },
+        "roi_h": 166,
+        "roi_w": 648,
+        "roi_x": -8,
+        "roi_y": 86,
+        "target_field": ""
+      },
+      "id": "n1793329082988_4",
+      "type": "count_over_time",
+      "x": 332.2578125,
+      "y": 187.8828125
+    }
+  ],
+  "connections": []
+}

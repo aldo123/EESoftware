@@ -14,7 +14,7 @@ from db_manager import db
 from routes.interlock import interlock_bp, init_interlock
 from routes.setting import setting_bp, init_settings
 from routes.maintenance import maintenance_bp, init_maintenance_db
-from routes.snlist import snlist_bp
+from routes.snlist import snlist_bp, start_source_watcher
 from routes.reference import reference_bp
 from routes.page_config import page_config_bp
 from routes.testtable import testtable_bp
@@ -223,5 +223,14 @@ def change_password():
 
 
 if __name__ == "__main__":
+    # Start SN List source monitoring when the backend starts, not when the
+    # user opens the SN List page. This keeps source data importing in the
+    # background so OEE and Top Defect can read updated database records.
+    try:
+        start_source_watcher()
+        print("[SNLIST] Background source watcher started")
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Failed to start SN List source watcher: %s", exc)
+
     print("[START] Server running on http://0.0.0.0:8000")
     app.run(host="0.0.0.0", port=8000, debug=False, threaded=True)

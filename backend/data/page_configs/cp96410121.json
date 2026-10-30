@@ -1,0 +1,19 @@
+{
+  "cp": "96410121",
+  "widgets": [],
+  "pages": {
+    "dynamic": {
+      "name": "Dynamic Page",
+      "icon": "🖥",
+      "widgets": []
+    }
+  },
+  "canvas": {
+    "width": 1920,
+    "height": 1080
+  },
+  "canvasWidth": 1920,
+  "canvasHeight": 1080,
+  "designCanvasWidth": 1920,
+  "designCanvasHeight": 1080
+}

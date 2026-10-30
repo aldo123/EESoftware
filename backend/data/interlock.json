@@ -1,14 +1,23 @@
 {
     "Control Point": {
-        "Control Point Code": "BM01-VM01-CP01",
-        "Control Point Family": "CP01 EE Software",
-        "Control Point Name": "CP01 - Equipment Software",
-        "Data Point": "CP01 EE",
+        "Control Point Code": "BM01-VM01-CP21",
+        "Control Point Family": "CP21 - Bubble Tester",
+        "Control Point Name": "CP21 - Bubble Tester",
+        "Data Point": "CP9641-01",
         "Interlock ByPass": "No",
-        "Process": "CP101"
+        "Process": "CP01"
     },
     "Documents": {
         "Max Document Size": "10485760"
+    },
+    "Main Page": {
+        "Display Mode": "Dynamic Page",
+        "External Content Size": "",
+        "External Embed Method": "Overlay",
+        "External Exe Args": "",
+        "External Exe Path": "",
+        "External Fit Mode": "Fit",
+        "External Window Title": ""
     },
     "Tester": {
         "Max Retest Number": "1"

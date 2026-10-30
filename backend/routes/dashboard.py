@@ -337,7 +337,19 @@ def _parse_datetime(value):
     if not raw:
         return None
 
-    # Format standar SQLite dan ISO 8601.
+    # Fast path for the common SQLite timestamp format. fromisoformat() is
+    # substantially cheaper than strptime() and raw[:19] preserves the
+    # existing behavior of ignoring fractional seconds / timezone suffixes
+    # when the base YYYY-MM-DD HH:MM:SS portion is valid.
+    try:
+        parsed = datetime.fromisoformat(raw[:19])
+        if parsed.tzinfo is not None:
+            parsed = parsed.replace(tzinfo=None)
+        return parsed
+    except (ValueError, TypeError):
+        pass
+
+    # Compatibility fallback for legacy / less common timestamp formats.
     candidates = [
         raw[:19],
         raw[:23],

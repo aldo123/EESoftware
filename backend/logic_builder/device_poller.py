@@ -54,26 +54,102 @@ def node_sources(cfg: dict) -> list:
     return [cfg]
 
 
-def _iter_polled_trigger_nodes():
-    """Yield the config of every individual source (across every Device Trigger
-    node, and every alternative source within a multi-source node) that must be
-    polled (Modbus registers and Internal Variables) — RS232 is push-based and
-    never appears here."""
-    if not os.path.isdir(FLOWS_DIR):
-        return
-    for path in glob.glob(os.path.join(FLOWS_DIR, "cp*.json")):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                flow = json.load(f)
-        except Exception:
+# Flow files change only when Logic Builder saves a CP configuration. The
+# poller runs every 50 ms, so re-opening and JSON-decoding every cp*.json on
+# every cycle is unnecessary filesystem/CPU work. Keep parsed trigger sources
+# per file and invalidate them when the file's size or nanosecond mtime changes.
+_FLOW_CACHE_LOCK = threading.RLock()
+_FLOW_SOURCE_CACHE = {}  # path -> (mtime_ns, size, tuple[source_config, ...])
+_POLLED_CONNECTION_TYPES = frozenset((
+    "modbus_tcp", "modbus_rtu", "fins", "ethernet_ip", "internal",
+))
+
+
+def _flow_file_signature(path):
+    try:
+        stat = os.stat(path)
+        return (stat.st_mtime_ns, stat.st_size)
+    except OSError:
+        return None
+
+
+def _parse_polled_sources(path):
+    """Read one flow file and return only Device Trigger sources we poll."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            flow = json.load(f)
+    except Exception:
+        return ()
+
+    sources = []
+    nodes = flow.get("nodes", []) if isinstance(flow, dict) else []
+    if not isinstance(nodes, list):
+        return ()
+
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("type") != "device_trigger":
             continue
-        for node in flow.get("nodes", []):
-            if node.get("type") != "device_trigger":
+        cfg = node.get("config", {})
+        if not isinstance(cfg, dict):
+            continue
+        for source in node_sources(cfg):
+            if (
+                isinstance(source, dict)
+                and source.get("connection_type") in _POLLED_CONNECTION_TYPES
+            ):
+                sources.append(source)
+    return tuple(sources)
+
+
+def _iter_polled_trigger_nodes():
+    """Yield polled sources, re-parsing a flow only when its file changes.
+
+    The 50 ms hardware/register polling cadence is intentionally unchanged.
+    New, edited, deleted, or temporarily malformed flow files are reflected
+    through the directory listing and file signature checks.
+    """
+    if not os.path.isdir(FLOWS_DIR):
+        with _FLOW_CACHE_LOCK:
+            _FLOW_SOURCE_CACHE.clear()
+        return
+
+    paths = glob.glob(os.path.join(FLOWS_DIR, "cp*.json"))
+    active_paths = set(paths)
+
+    collected_sources = []
+    with _FLOW_CACHE_LOCK:
+        # Drop deleted CP files so the cache cannot retain obsolete triggers.
+        for stale_path in tuple(_FLOW_SOURCE_CACHE):
+            if stale_path not in active_paths:
+                _FLOW_SOURCE_CACHE.pop(stale_path, None)
+
+        for path in paths:
+            signature = _flow_file_signature(path)
+            if signature is None:
+                _FLOW_SOURCE_CACHE.pop(path, None)
                 continue
-            cfg = node.get("config", {})
-            for source in node_sources(cfg):
-                if source.get("connection_type") in ("modbus_tcp", "modbus_rtu", "fins", "ethernet_ip", "internal"):
-                    yield source
+
+            cached = _FLOW_SOURCE_CACHE.get(path)
+            if cached and cached[0] == signature:
+                sources = cached[1]
+            else:
+                sources = _parse_polled_sources(path)
+                final_signature = _flow_file_signature(path)
+                if final_signature is None:
+                    _FLOW_SOURCE_CACHE.pop(path, None)
+                    continue
+                if final_signature == signature:
+                    # Cache only a read that happened while the file signature
+                    # remained stable. If Logic Builder was saving concurrently,
+                    # retry on the next 50 ms cycle instead of caching a partial file.
+                    _FLOW_SOURCE_CACHE[path] = (signature, sources)
+                else:
+                    _FLOW_SOURCE_CACHE.pop(path, None)
+
+            collected_sources.extend(sources)
+
+    # Never hold the cache lock while the caller performs register/DB reads.
+    yield from collected_sources
 
 
 def _read_register(cfg: dict):
