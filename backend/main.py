@@ -35,6 +35,7 @@ from udp import udp_bp
 from modbus_rtu import modbus_rtu_bp
 from fins import fins_bp
 from vision.routes import vision_bp
+from shift_reset import shift_reset_bp, start_shift_reset_scheduler
 # ── App setup ──────────────────────────────────────────────────
 app = Flask(__name__)
 CORS(app)
@@ -75,6 +76,7 @@ app.register_blueprint(udp_bp)
 app.register_blueprint(modbus_rtu_bp)
 app.register_blueprint(fins_bp)
 app.register_blueprint(vision_bp)
+app.register_blueprint(shift_reset_bp)
 
 # ══════════════════════════════════════════════════════════════
 # Routes yang tetap di main.py (butuh db MySQL langsung)
@@ -231,6 +233,12 @@ if __name__ == "__main__":
         print("[SNLIST] Background source watcher started")
     except Exception as exc:
         logging.getLogger(__name__).exception("Failed to start SN List source watcher: %s", exc)
+
+    try:
+        start_shift_reset_scheduler()
+        print("[SHIFT RESET] Scheduler started")
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Failed to start shift reset scheduler: %s", exc)
 
     print("[START] Server running on http://0.0.0.0:8000")
     app.run(host="0.0.0.0", port=8000, debug=False, threaded=True)
