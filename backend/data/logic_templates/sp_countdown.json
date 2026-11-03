@@ -1,0 +1,199 @@
+{
+  "id": "sp_countdown",
+  "name": "Bubble Vmini SP - 5 s countdown (sensor must stay on)",
+  "description": "Part of the Bubble Vmini Spare Part flow (CP 2100).",
+  "nodes": [
+    {
+      "id": "gi",
+      "type": "group_input",
+      "x": 60.0,
+      "y": 40.0,
+      "config": {
+        "read_source": "none",
+        "protocol": "tcp",
+        "device_name": "",
+        "address_type": "holding_register",
+        "address": "0",
+        "variable_name": "",
+        "field_key": ""
+      }
+    },
+    {
+      "id": "cd",
+      "type": "countdown",
+      "x": 60.0,
+      "y": 150.0,
+      "config": {
+        "seconds": "5",
+        "variable_name": "SP_Countdown",
+        "reason_variable": "",
+        "checks": [
+          {
+            "source_type": "tcpip",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "discrete_input",
+            "address": "10",
+            "data_type": "",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "1",
+            "value2": "",
+            "label": "Sensor lost"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ot",
+      "type": "group_output",
+      "x": 60.0,
+      "y": 260.0,
+      "config": {
+        "port": "true",
+        "write_target": "none",
+        "protocol": "tcp",
+        "device_name": "",
+        "address_type": "holding_register",
+        "address": "0",
+        "variable_name": "",
+        "value_source": "static",
+        "value": "1",
+        "value_field_key": ""
+      }
+    },
+    {
+      "id": "fail",
+      "type": "write_output",
+      "x": 320.0,
+      "y": 260.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_State",
+            "value_source": "static",
+            "value": "FAIL",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Message",
+            "value_source": "static",
+            "value": "Fail to Test",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Countdown",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hold",
+      "type": "timer",
+      "x": 320.0,
+      "y": 370.0,
+      "config": {
+        "duration_seconds": "2.5"
+      }
+    },
+    {
+      "id": "idle",
+      "type": "write_output",
+      "x": 320.0,
+      "y": 480.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_State",
+            "value_source": "static",
+            "value": "IDLE",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Message",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_001",
+      "fromId": "gi",
+      "fromPort": "next",
+      "toId": "cd"
+    },
+    {
+      "id": "c_002",
+      "fromId": "cd",
+      "fromPort": "true",
+      "toId": "ot"
+    },
+    {
+      "id": "c_003",
+      "fromId": "cd",
+      "fromPort": "false",
+      "toId": "fail"
+    },
+    {
+      "id": "c_004",
+      "fromId": "fail",
+      "fromPort": "next",
+      "toId": "hold"
+    },
+    {
+      "id": "c_005",
+      "fromId": "hold",
+      "fromPort": "next",
+      "toId": "idle"
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_01",
+      "x": 40,
+      "y": 110,
+      "w": 220,
+      "h": 320,
+      "title": "COUNTDOWN 5 s",
+      "text": "Every second the PLC sensor (discrete input 10) is checked again. The seconds left go to SP_Countdown.",
+      "color": "blue"
+    },
+    {
+      "id": "note_02",
+      "x": 300,
+      "y": 220,
+      "w": 220,
+      "h": 380,
+      "title": "SENSOR LOST",
+      "text": "The sensor dropped during the countdown: the test is cancelled and the line goes back to IDLE.",
+      "color": "orange"
+    }
+  ]
+}

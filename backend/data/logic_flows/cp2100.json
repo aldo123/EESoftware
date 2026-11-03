@@ -1,0 +1,792 @@
+{
+  "cp": "2100",
+  "nodes": [
+    {
+      "id": "sp_trig_sensor",
+      "type": "device_trigger",
+      "x": 40.0,
+      "y": 40.0,
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "connection_type": "modbus_tcp",
+            "device_name": "PLC_SP",
+            "address_type": "discrete_input",
+            "address": "10",
+            "data_type": "",
+            "trigger_value": "1",
+            "device": "",
+            "variable_name": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_idle",
+      "type": "multi_condition_gate",
+      "x": 40.0,
+      "y": 150.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "SP_State",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "IDLE",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "sp_start",
+      "type": "write_output",
+      "x": 40.0,
+      "y": 260.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_Result",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Message",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_BubbleCount",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Countdown",
+            "value_source": "static",
+            "value": "5",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_State",
+            "value_source": "static",
+            "value": "COUNTDOWN",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "holding_register",
+            "address": "2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_countdown_call",
+      "type": "subflow_call",
+      "x": 40.0,
+      "y": 440.0,
+      "config": {
+        "template_id": "sp_countdown",
+        "template_name": "Bubble Vmini SP - 5 s countdown (sensor must stay on)",
+        "expose_check": true
+      }
+    },
+    {
+      "id": "sp_detect",
+      "type": "write_output",
+      "x": 40.0,
+      "y": 550.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_State",
+            "value_source": "static",
+            "value": "DETECTING",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Countdown",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "holding_register",
+            "address": "1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_count",
+      "type": "count_over_time",
+      "x": 40.0,
+      "y": 660.0,
+      "config": {
+        "camera_id": "0",
+        "duration": "5",
+        "max_count": "2",
+        "method": "contour_blob",
+        "roi_mode": "center",
+        "method_params": {
+          "threshold": 197,
+          "min_contour": 250,
+          "max_contour": 3000,
+          "match_dist": 70,
+          "debounce_seconds": 0.2
+        },
+        "param_variables": {
+          "threshold": "SP_Threshold",
+          "max_count": "SP_MaxBubbles",
+          "min_contour": "SP_MinArea",
+          "max_contour": "SP_MaxArea",
+          "roi_x": "SP_RoiX",
+          "roi_y": "SP_RoiY",
+          "roi_w": "SP_RoiW",
+          "roi_h": "SP_RoiH"
+        },
+        "roi_x": 0,
+        "roi_y": 310,
+        "roi_w": 640,
+        "roi_h": 70,
+        "target_field": "bubble_count"
+      }
+    },
+    {
+      "id": "sp_result_hold",
+      "type": "timer",
+      "x": 270.0,
+      "y": 1300.0,
+      "config": {
+        "duration_seconds": "2.5"
+      }
+    },
+    {
+      "id": "sp_back_idle",
+      "type": "write_output",
+      "x": 270.0,
+      "y": 1410.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_State",
+            "value_source": "static",
+            "value": "IDLE",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Result",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_BubbleCount",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Countdown",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Message",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_fail",
+      "type": "write_output",
+      "x": 270.0,
+      "y": 970.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_State",
+            "value_source": "static",
+            "value": "FAIL",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Message",
+            "value_source": "static",
+            "value": "Fail to Test",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Countdown",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "3",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "holding_register",
+            "address": "1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_sensor_ok",
+      "type": "multi_condition_gate",
+      "x": 40.0,
+      "y": 860.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "tcpip",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "discrete_input",
+            "address": "10",
+            "data_type": "",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "1",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "sp_result_ok",
+      "type": "write_output",
+      "x": 40.0,
+      "y": 970.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_Result",
+            "value_source": "static",
+            "value": "OK",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_BubbleCount",
+            "value_source": "field_key",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "value_field_key": "bubble_count"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_State",
+            "value_source": "static",
+            "value": "RESULT",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "holding_register",
+            "address": "1"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "holding_register",
+            "address": "2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_count_ok",
+      "type": "write_output",
+      "x": 40.0,
+      "y": 1080.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_OK",
+            "value_source": "increment",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Total",
+            "value_source": "increment",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_TestID",
+            "value_source": "datetime",
+            "value": "SP_",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_log_ok",
+      "type": "write_sn_list",
+      "x": 40.0,
+      "y": 1190.0,
+      "config": {
+        "mappings": [
+          {
+            "variable_name": "SP_TestID",
+            "column_key": "sn"
+          },
+          {
+            "variable_name": "SP_BubbleCount",
+            "column_key": "bubble_count"
+          },
+          {
+            "variable_name": "SP_Result",
+            "column_key": "result"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_sensor_ng",
+      "type": "multi_condition_gate",
+      "x": 500.0,
+      "y": 860.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "tcpip",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "discrete_input",
+            "address": "10",
+            "data_type": "",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "1",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "sp_result_ng",
+      "type": "write_output",
+      "x": 500.0,
+      "y": 970.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_Result",
+            "value_source": "static",
+            "value": "NG",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_BubbleCount",
+            "value_source": "field_key",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "value_field_key": "bubble_count"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_State",
+            "value_source": "static",
+            "value": "RESULT",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "2",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "holding_register",
+            "address": "1"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "PLC_SP",
+            "address_type": "holding_register",
+            "address": "2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_count_ng",
+      "type": "write_output",
+      "x": 500.0,
+      "y": 1080.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "SP_NG",
+            "value_source": "increment",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_Total",
+            "value_source": "increment",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "SP_TestID",
+            "value_source": "datetime",
+            "value": "SP_",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sp_log_ng",
+      "type": "write_sn_list",
+      "x": 500.0,
+      "y": 1190.0,
+      "config": {
+        "mappings": [
+          {
+            "variable_name": "SP_TestID",
+            "column_key": "sn"
+          },
+          {
+            "variable_name": "SP_BubbleCount",
+            "column_key": "bubble_count"
+          },
+          {
+            "variable_name": "SP_Result",
+            "column_key": "result"
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_001",
+      "fromId": "sp_trig_sensor",
+      "fromPort": "next",
+      "toId": "sp_idle"
+    },
+    {
+      "id": "c_002",
+      "fromId": "sp_idle",
+      "fromPort": "true",
+      "toId": "sp_start"
+    },
+    {
+      "id": "c_003",
+      "fromId": "sp_start",
+      "fromPort": "next",
+      "toId": "sp_countdown_call"
+    },
+    {
+      "id": "c_004",
+      "fromId": "sp_countdown_call",
+      "fromPort": "true",
+      "toId": "sp_detect"
+    },
+    {
+      "id": "c_005",
+      "fromId": "sp_detect",
+      "fromPort": "next",
+      "toId": "sp_count"
+    },
+    {
+      "id": "c_006",
+      "fromId": "sp_result_hold",
+      "fromPort": "next",
+      "toId": "sp_back_idle"
+    },
+    {
+      "id": "c_007",
+      "fromId": "sp_fail",
+      "fromPort": "next",
+      "toId": "sp_result_hold"
+    },
+    {
+      "id": "c_008",
+      "fromId": "sp_count",
+      "fromPort": "true",
+      "toId": "sp_sensor_ok"
+    },
+    {
+      "id": "c_009",
+      "fromId": "sp_sensor_ok",
+      "fromPort": "false",
+      "toId": "sp_fail"
+    },
+    {
+      "id": "c_010",
+      "fromId": "sp_sensor_ok",
+      "fromPort": "true",
+      "toId": "sp_result_ok"
+    },
+    {
+      "id": "c_011",
+      "fromId": "sp_result_ok",
+      "fromPort": "next",
+      "toId": "sp_count_ok"
+    },
+    {
+      "id": "c_012",
+      "fromId": "sp_count_ok",
+      "fromPort": "next",
+      "toId": "sp_log_ok"
+    },
+    {
+      "id": "c_013",
+      "fromId": "sp_log_ok",
+      "fromPort": "next",
+      "toId": "sp_result_hold"
+    },
+    {
+      "id": "c_014",
+      "fromId": "sp_count",
+      "fromPort": "false",
+      "toId": "sp_sensor_ng"
+    },
+    {
+      "id": "c_015",
+      "fromId": "sp_sensor_ng",
+      "fromPort": "false",
+      "toId": "sp_fail"
+    },
+    {
+      "id": "c_016",
+      "fromId": "sp_sensor_ng",
+      "fromPort": "true",
+      "toId": "sp_result_ng"
+    },
+    {
+      "id": "c_017",
+      "fromId": "sp_result_ng",
+      "fromPort": "next",
+      "toId": "sp_count_ng"
+    },
+    {
+      "id": "c_018",
+      "fromId": "sp_count_ng",
+      "fromPort": "next",
+      "toId": "sp_log_ng"
+    },
+    {
+      "id": "c_019",
+      "fromId": "sp_log_ng",
+      "fromPort": "next",
+      "toId": "sp_result_hold"
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_01",
+      "x": 25,
+      "y": 0,
+      "w": 210,
+      "h": 400,
+      "title": "SENSOR START",
+      "text": "Discrete input 10 rises 0 -> 1, only while IDLE: holding 2 = 0, then a 5 s countdown. The sensor must stay ON.",
+      "color": "blue"
+    },
+    {
+      "id": "note_02",
+      "x": 25,
+      "y": 520,
+      "w": 210,
+      "h": 290,
+      "title": "COUNT BUBBLES",
+      "text": "The camera counts bubbles for 5 s inside the ROI band (y 310-380). Count <= Max Bubbles = OK, otherwise NG.",
+      "color": "orange"
+    },
+    {
+      "id": "note_03",
+      "x": 25,
+      "y": 820,
+      "w": 210,
+      "h": 480,
+      "title": "RESULT OK",
+      "text": "Sensor still ON: holding 1 = 1, holding 2 = 1, OK/Total counters + one row in the SN List.",
+      "color": "green"
+    },
+    {
+      "id": "note_04",
+      "x": 480,
+      "y": 820,
+      "w": 210,
+      "h": 480,
+      "title": "RESULT NG",
+      "text": "Sensor still ON: holding 1 = 2, holding 2 = 1, NG/Total counters + one row in the SN List.",
+      "color": "red"
+    },
+    {
+      "id": "note_05",
+      "x": 250,
+      "y": 820,
+      "w": 210,
+      "h": 300,
+      "title": "SENSOR LOST WHILE COUNTING",
+      "text": "The sensor dropped before the count ended: FAIL screen, holding 1 = 3 (invalid), nothing is counted.",
+      "color": "orange"
+    },
+    {
+      "id": "note_06",
+      "x": 250,
+      "y": 1260,
+      "w": 210,
+      "h": 230,
+      "title": "SHOW RESULT",
+      "text": "The result stays on screen for 2.5 s, then back to IDLE.",
+      "color": "gray"
+    }
+  ]
+}
