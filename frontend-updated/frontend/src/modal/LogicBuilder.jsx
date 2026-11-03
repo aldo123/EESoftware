@@ -1,5 +1,5 @@
 // src/modal/LogicBuilder.jsx
-import { useState, useRef, useCallback, useEffect, useMemo, memo } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect, useMemo, memo } from "react";
 import { API } from "../service/api";
 import { ModalBackdrop, ModalPanel } from "../components/motion";
 import { useInternalVariables } from "../hooks/useInternalVariables";
@@ -16,6 +16,8 @@ const NODE_TYPES = [
   { type: "count_over_time", category: "check", color: "#8B5CF6", icon: "⏱", label: "Count Over Time", desc: "Count detections in a camera ROI over N seconds" },
   { type: "custom_script", category: "check", color: "#F59E0B", icon: "🧩", label: "Custom Script", desc: "Write custom logic for cases no other node covers" },
   { type: "multi_condition_gate", category: "check", color: "#EAB308", icon: "🚦", label: "Multi-Condition Gate", desc: "AND-check Internal Variable, TCP/IP, SN List, or Database data" },
+  { type: "countdown", category: "check", color: "#F97316", icon: "⏳", label: "Countdown", desc: "Count down N seconds and re-check conditions every second — ✓ completed / ✗ aborted" },
+  { type: "db_procedure", category: "check", color: "#8B5CF6", icon: "⚙️", label: "Call Procedure", desc: "Run a MySQL stored procedure — ✓ success / ✗ failure, results go to Internal Variables" },
   { type: "parse_data", category: "data", color: "#EC4899", icon: "✂️", label: "Parse Data", desc: "Read TCP/IP, Internal Variable, or RS232 data, slice by index, and store the result" },
   { type: "read_communication", category: "data", color: "#0EA5E9", icon: "📥", label: "Read Communication", desc: "Read/request data from Modbus, FINS, EtherNet/IP, UDP, Raw TCP/IP, or RS232" },
   { type: "write_output", category: "action", color: "#22C55E", icon: "✍️", label: "Write Output", desc: "Write a value to a PLC coil/register or an Internal Variable" },
@@ -67,10 +69,16 @@ const DEFAULT_NODE_CONFIG = {
   },
   count_over_time: {
     camera_id: "", roi_x: "0", roi_y: "0", roi_w: "100", roi_h: "100",
-    method: "contour_blob", method_params: {}, duration: "3", max_count: "999", target_field: "",
+    method: "contour_blob", method_params: {}, duration: "3", max_count: "999", target_field: "", roi_mode: "crop",
   },
   custom_script: {
     code: "# fields: dict of current field values (read/write)\n# result: set True/False to pick the True/False output\n# log(msg): add a line to the run log\n\nresult = True\n",
+  },
+  countdown: {
+    seconds: "5",
+    variable_name: "",        // Internal Variable that shows the seconds left (written after every second)
+    reason_variable: "",      // Internal Variable that gets the label of the check that stopped the countdown
+    checks: [],               // re-checked after every second; the first one that fails takes the ✗ port
   },
   multi_condition_gate: {
     conditions: [{
@@ -198,6 +206,14 @@ const DEFAULT_NODE_CONFIG = {
     destination_internal_variable: "",
   },
 
+  db_procedure: {
+    database: "",            // "" = EE (interlock); otherwise a connection from data/database_connections.json
+    procedure: "",
+    params: [],              // { source_type: static|internal_variable|field_key|now, value, variable_name, field_key, format, data_type: text|number }
+    results: [],             // { column: 0|1|..., variable_name, prefix }
+    success_rule: "no_error", // no_error | col0_gt | col0_equals | col0_not_equals | col1_equals
+    success_value: "",
+  },
   subflow_call: {
     template_id: "",
     template_name: "",
@@ -338,6 +354,9 @@ const prefixPatch = (patch, prefix) =>
 const triggerProtocolOf = (connectionType) =>
   ({ modbus_tcp: "tcp", modbus_rtu: "rtu" }[connectionType] || connectionType);
 const triggerTypePatch = (prev, next) => {
+  // Serial over UDP has no address at all — it fires on every datagram the device sends.
+  if (next === "udp_serial") return { connection_type: next, device_name: "", encoding: "utf-8" };
+  if (prev === "udp_serial") return { connection_type: next, device_name: "", address_type: defaultAddressTypeFor(addressKindOf(triggerProtocolOf(next))), data_type: "" };
   const from = addressKindOf(triggerProtocolOf(prev)), to = addressKindOf(triggerProtocolOf(next));
   if (next === "internal" || from === to) return { connection_type: next };
   return { connection_type: next, device_name: "", address_type: defaultAddressTypeFor(to), data_type: "" };
@@ -487,7 +506,7 @@ function RoiPicker({ cameraId, roi, onChange, thresholdValue }) {
 // No per-type config blocks yet — add one `{node.type === "..." && (<>...</>)}`
 // block per node type as they get rebuilt (see git history for the old patterns:
 // static/field-key/device-register "source" dropdowns, condition rows, etc.)
-const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevices = [], rtuDevices = [], finsDevices = [], enipDevices = [], udpDevices = [], rawTcpDevices = [], rs232Devices = [], templates = [], onCreateTemplate, onOpenGroup, cpNumber = "", activeGroupName = "" }) {
+const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevices = [], rtuDevices = [], finsDevices = [], enipDevices = [], udpDevices = [], rawTcpDevices = [], rs232Devices = [], dbConnections = [], templates = [], onCreateTemplate, onOpenGroup, cpNumber = "", activeGroupName = "" }) {
   const [localConfig, setLocalConfig] = useState({});
   const [checking, setChecking] = useState(false);
   const [checkResult, setCheckResult] = useState(null);
@@ -617,7 +636,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
   // Device Trigger supports Modbus TCP, Modbus RTU, Omron FINS and Internal Variable only.
   // Any legacy unsupported source is converted to a blank Modbus TCP source.
   const normalizeTriggerSource = (src) => {
-    const allowed = ["modbus_tcp", "modbus_rtu", "fins", "ethernet_ip", "internal"];
+    const allowed = ["modbus_tcp", "modbus_rtu", "fins", "ethernet_ip", "udp_serial", "internal"];
     const normalized = allowed.includes(src?.connection_type)
       ? { ...src }
       : { ...EMPTY_TRIGGER_SOURCE };
@@ -699,6 +718,17 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
       return { ...prev, writes: base.filter((_, i) => i !== idx) };
     });
   };
+
+  // Database dropdown shared by every node that talks to MySQL ("" = the default EE connection).
+  const dbOptions = [
+    { value: "", label: "EE (interlock) — default" },
+    ...((dbConnections || []).filter(d => !d.default).map(d => ({ value: d.name, label: d.server ? `${d.name} — ${d.server}` : d.name }))),
+  ];
+  // Call Procedure: parameter / result lists
+  const procList = (key) => (Array.isArray(c[key]) ? c[key] : []);
+  const updateProcItem = (key, idx, patch) => setLocalConfig(prev => ({ ...prev, [key]: (Array.isArray(prev[key]) ? prev[key] : []).map((it, i) => (i === idx ? { ...it, ...patch } : it)) }));
+  const addProcItem = (key, item) => setLocalConfig(prev => ({ ...prev, [key]: [...(Array.isArray(prev[key]) ? prev[key] : []), item] }));
+  const removeProcItem = (key, idx) => setLocalConfig(prev => ({ ...prev, [key]: (Array.isArray(prev[key]) ? prev[key] : []).filter((_, i) => i !== idx) }));
 
   const EMPTY_RESET_TARGET = { kind: "internal", protocol: "tcp", device_name: "", address_type: "holding_register", address: "0", variable_name: "" };
   const resetTargets = Array.isArray(c.targets) ? c.targets : [EMPTY_RESET_TARGET];
@@ -970,9 +1000,22 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
                   { value: "modbus_rtu", label: "Modbus RTU (RS485)" },
                   { value: "fins", label: "Omron FINS (UDP/TCP)" },
                   { value: "ethernet_ip", label: "EtherNet/IP (CIP)" },
+                  { value: "udp_serial", label: "Serial over UDP (receive)" },
                   { value: "internal", label: "Internal Variable" },
                 ]} />
               </Field>
+
+              {src.connection_type === "udp_serial" && (<>
+                <Field label="UDP Device">
+                  <Select value={src.device_name || ""} onChange={v => updateTriggerSource(idx, { device_name: v })} options={[{ value: "", label: "Select device…" }, ...((udpDevices || []).map(d => ({ value: d.name, label: d.name })))]} />
+                </Field>
+                <Field label="Encoding">
+                  <Select value={src.encoding || "utf-8"} onChange={v => updateTriggerSource(idx, { encoding: v })} options={[{ value: "utf-8", label: "UTF-8" }, { value: "ascii", label: "ASCII" }, { value: "latin-1", label: "Latin-1" }]} />
+                </Field>
+                <p className="text-[var(--text-muted)] text-[9px]">
+                  Flow jalan setiap kali device ini mengirim data (misalnya barcode dari scanner). Isi data (CR/LF dibuang) disimpan ke field key node ini.
+                </p>
+              </>)}
 
               {(src.connection_type === "modbus_tcp" || src.connection_type === "modbus_rtu" || src.connection_type === "fins" || src.connection_type === "ethernet_ip") && (<>
                 <PlcAddressFields protocol={triggerProtocolOf(src.connection_type)} cfg={src} onPatch={patch => updateTriggerSource(idx, patch)} devices={plcDeviceLists} />
@@ -1150,7 +1193,40 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
             {(protocol === "udp_serial" || protocol === "rs232") && (<>
               <label className="flex items-center gap-2 text-[9px] text-[var(--text-muted)]"><input type="checkbox" checked={!!c.append_cr} onChange={e => setLocal("append_cr", e.target.checked)} /> Append CR</label>
               <label className="flex items-center gap-2 text-[9px] text-[var(--text-muted)]"><input type="checkbox" checked={!!c.append_lf} onChange={e => setLocal("append_lf", e.target.checked)} /> Append LF</label>
+              {protocol === "udp_serial" && (<>
+                <label className="flex items-center gap-2 text-[9px] text-[var(--text-muted)]"><input type="checkbox" checked={c.wait_response !== false} onChange={e => setLocal("wait_response", e.target.checked)} /> Wait for response (off = send only, e.g. LOFF)</label>
+                <p className="text-[var(--text-muted)] text-[9px]">Request text dikosongkan = node menunggu data yang dikirim device sendiri (misalnya hasil tester) dan memakai yang terbaru.</p>
+              </>)}
             </>)}
+
+            <div className="rounded-lg border border-[var(--border-soft)] p-2 flex flex-col gap-1.5">
+              <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Comma separated response (optional)</span>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Delimiter"><Input value={c.field_delimiter ?? ""} onChange={v => setLocal("field_delimiter", v)} placeholder="," /></Field>
+                <Field label="Valid field counts"><Input value={c.valid_field_counts ?? ""} onChange={v => setLocal("valid_field_counts", v)} placeholder="6,7" /></Field>
+              </div>
+              <Field label="If the count is not valid, store"><Input value={c.invalid_value ?? ""} onChange={v => setLocal("invalid_value", v)} placeholder="NA" /></Field>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Keep field no. (1-based)"><Input value={c.field_index ?? ""} onChange={v => setLocal("field_index", v)} placeholder="5" /></Field>
+                <Field label="…only when count is"><Input value={c.field_count ?? ""} onChange={v => setLocal("field_count", v)} placeholder="7" /></Field>
+              </div>
+              <Field label="Store that field in">
+                <Select value={c.field_destination_variable_name || ""} onChange={v => setLocal("field_destination_variable_name", v)} options={[{ value: "", label: "— none —" }, ...sourceInternalVariables.map(v => ({ value: v.name, label: v.name }))]} />
+              </Field>
+            </div>
+
+            <Field label="Extract from response">
+              <Select value={c.value_extract || "none"} onChange={v => setLocal("value_extract", v)} options={[
+                { value: "none", label: "Whole response" },
+                { value: "number", label: "First number only" },
+              ]} />
+            </Field>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Divide by (scale)"><Input value={c.scale ?? ""} onChange={v => setLocal("scale", v)} placeholder="e.g. 100" /></Field>
+              <Field label="Decimals"><Input value={c.decimals ?? ""} onChange={v => setLocal("decimals", v)} placeholder="e.g. 2" /></Field>
+            </div>
+            <label className="flex items-center gap-2 text-[9px] text-[var(--text-muted)]"><input type="checkbox" checked={!!c.strip_whitespace} onChange={e => setLocal("strip_whitespace", e.target.checked)} /> Trim spaces / CR / LF from the response</label>
+            <label className="flex items-center gap-2 text-[9px] text-[var(--text-muted)]"><input type="checkbox" checked={!!c.clear_before_read} onChange={e => setLocal("clear_before_read", e.target.checked)} /> Clear the variable before reading (empty = read failed)</label>
 
             <Field label="Destination Internal Variable">
               <select value={c.destination_variable_name || ""} onChange={e => setLocal("destination_variable_name", e.target.value)} className="w-full bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#0EA5E9]/60">
@@ -1483,6 +1559,43 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
 
           <Field label="Duration (seconds, max 15)"><Input value={c.duration} onChange={v => setLocal("duration", v)} placeholder="3" /></Field>
           <Field label="Max Count (pass threshold)"><Input value={c.max_count} onChange={v => setLocal("max_count", v)} placeholder="e.g. 4" /></Field>
+          <Field label="Live tuning — Internal Variable per parameter (optional)">
+            <div className="grid grid-cols-2 gap-1">
+              {[
+                ["threshold", "Threshold", c.method === "contour_blob"],
+                ["max_count", "Max Count", true],
+                ["min_contour", "Contour Min", c.method === "contour_blob"],
+                ["max_contour", "Contour Max", c.method === "contour_blob"],
+                ["duration", "Duration", true],
+                ["roi_x", "ROI X", true],
+                ["roi_y", "ROI Y", true],
+                ["roi_w", "ROI Width", true],
+                ["roi_h", "ROI Height", true],
+              ].filter(([, , show]) => show).map(([key, label]) => (
+                <Input
+                  key={key}
+                  value={(c.param_variables || {})[key] || ""}
+                  onChange={v => setLocal("param_variables", { ...(c.param_variables || {}), [key]: v })}
+                  placeholder={`${label} variable`}
+                />
+              ))}
+            </div>
+            <p className="text-[var(--text-muted)] text-[9px] mt-1">
+              Isi nama Internal Variable untuk parameter yang mau bisa diubah live (mis. dari widget Slider di Page Builder). Kosong = pakai nilai statis di atas.
+            </p>
+          </Field>
+          {c.method === "contour_blob" && (
+            <Field label="ROI mode">
+              <Select
+                value={c.roi_mode || "crop"}
+                onChange={v => setLocal("roi_mode", v)}
+                options={[
+                  { value: "crop", label: "Crop — only look inside the ROI box" },
+                  { value: "center", label: "Centre in ROI — like Buble Tester (whole frame, count a blob when its centre is inside)" },
+                ]}
+              />
+            </Field>
+          )}
           <Field label="Store count in field key"><Input value={c.target_field} onChange={v => setLocal("target_field", v)} placeholder="e.g. zone1_count" /></Field>
           <p className="text-[var(--text-muted)] text-[9px] mt-1">
             Node ini nunggu selama Duration detik sambil ngitung. Count ≤ Max Count → <b style={{ color: "#22C55E" }}>Green (True)</b>, lebih dari itu → <b style={{ color: "#EF4444" }}>Red (False)</b>.
@@ -1647,6 +1760,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
                 </>)}
 
                 {sourceType === "database" && (<>
+                  <Field label="Database"><Select value={cond.database_connection || ""} onChange={v => updateCondition(idx, { database_connection: v })} options={dbOptions} /></Field>
                   <Field label="Database Table">
                     <Input value={cond.database_table || ""} onChange={v => updateCondition(idx, { database_table: v })} placeholder="e.g. hipot" />
                   </Field>
@@ -1860,14 +1974,18 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
                     { value: "static", label: "Fixed Value" },
                     { value: "internal_variable", label: "Internal Variable" },
                     { value: "tcpip", label: "TCP/IP" },
+                    ...(w.target === "internal" ? [{ value: "increment", label: "Counter (+ step)" }, { value: "datetime", label: "Prefix + current date/time" }] : []),
                   ]}
                 />
               </Field>
 
-              {(w.value_source || "static") === "static" && (
-                <Field label="Value">
-                  <Input value={w.value ?? ""} onChange={v => updateWriteTarget(idx, { value: v })} placeholder="e.g. 1" />
+              {((w.value_source || "static") === "static" || (w.value_source || "static") === "increment" || (w.value_source || "static") === "datetime") && (
+                <Field label={(w.value_source || "static") === "increment" ? "Step (added to the variable each time)" : (w.value_source || "static") === "datetime" ? "Prefix (e.g. TO_)" : "Value"}>
+                  <Input value={w.value ?? ""} onChange={v => updateWriteTarget(idx, { value: v })} placeholder={(w.value_source || "static") === "increment" ? "1" : "e.g. 1"} />
                 </Field>
+              )}
+              {(w.value_source || "static") === "datetime" && (
+                <Field label="Date/time format"><Input value={w.datetime_format ?? ""} onChange={v => updateWriteTarget(idx, { datetime_format: v })} placeholder="%Y%m%d%H%M%S (default)" /></Field>
               )}
 
               {(w.value_source || "static") === "internal_variable" && (
@@ -1913,6 +2031,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
         </>)}
 
         {node.type === "write_sn_database" && (<>
+          <Field label="Database"><Select value={c.database || ""} onChange={v => setLocal("database", v)} options={dbOptions} /></Field>
           <div className="rounded-lg border border-[#8B5CF6]/30 bg-[#8B5CF6]/5 px-2.5 py-2 text-[9px] text-[var(--text-muted)]">
             <b style={{ color: "#8B5CF6" }}>CP{String(cpNumber || "").padStart(2, "0")}</b> — Write SN Database ke MySQL.
           </div>
@@ -2065,6 +2184,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
         </>)}
 
         {node.type === "read_sn_database" && (<>
+          <Field label="Database"><Select value={c.database || ""} onChange={v => setLocal("database", v)} options={dbOptions} /></Field>
           <div className="rounded-lg border border-[#A855F7]/30 bg-[#A855F7]/5 px-2.5 py-2 text-[9px] text-[var(--text-muted)]">
             <b style={{ color: "#A855F7" }}>Database → Internal Variable</b> — tentukan kolom target database untuk pencarian, lalu ambil nilainya dari Internal Variable. Setelah itu baru mapping data yang akan dibaca.
           </div>
@@ -2169,6 +2289,69 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
           </p>
         </>)}
 
+        {node.type === "db_procedure" && (<>
+          <div className="rounded-lg border border-[#8B5CF6]/30 bg-[#8B5CF6]/5 px-2.5 py-2 text-[9px] text-[var(--text-muted)]">
+            <b style={{ color: "#8B5CF6" }}>Call Procedure</b> — menjalankan stored procedure MySQL. Hasil kolom yang dipilih disimpan ke Internal Variable. Port ✓ = sukses, ✗ = gagal / error.
+          </div>
+          <Field label="Database"><Select value={c.database || ""} onChange={v => setLocal("database", v)} options={dbOptions} /></Field>
+          <Field label="Procedure name"><Input value={c.procedure || ""} onChange={v => setLocal("procedure", v)} placeholder="e.g. test_item_insert_new" /></Field>
+
+          <Field label="Parameters (in order)">
+            <div className="flex flex-col gap-1.5">
+              {procList("params").map((pr, i) => (
+                <div key={i} className="rounded-lg border border-[var(--border-soft)] p-1.5 flex flex-col gap-1">
+                  <div className="flex gap-1">
+                    <div className="flex-1"><Select value={pr.source_type || "static"} onChange={v => updateProcItem("params", i, { source_type: v })} options={[
+                      { value: "static", label: "Fixed value" },
+                      { value: "internal_variable", label: "Internal Variable" },
+                      { value: "field_key", label: "Flow field" },
+                      { value: "now", label: "Current date/time" },
+                    ]} /></div>
+                    <div className="w-20"><Select value={pr.data_type || "text"} onChange={v => updateProcItem("params", i, { data_type: v })} options={[{ value: "text", label: "text" }, { value: "number", label: "number" }]} /></div>
+                    <button type="button" onClick={() => removeProcItem("params", i)} className="w-6 h-7 rounded border border-[var(--border)] text-[var(--text-muted)] hover:text-[#EF4444]">×</button>
+                  </div>
+                  {(pr.source_type || "static") === "static" && <Input value={pr.value ?? ""} onChange={v => updateProcItem("params", i, { value: v })} placeholder="value" />}
+                  {pr.source_type === "internal_variable" && (
+                    <Select value={pr.variable_name || ""} onChange={v => updateProcItem("params", i, { variable_name: v })} options={[{ value: "", label: "Select variable…" }, ...sourceInternalVariables.map(v => ({ value: v.name, label: v.name }))]} />
+                  )}
+                  {pr.source_type === "field_key" && <Input value={pr.field_key ?? ""} onChange={v => updateProcItem("params", i, { field_key: v })} placeholder="field key" />}
+                  {pr.source_type === "now" && <Input value={pr.format ?? ""} onChange={v => updateProcItem("params", i, { format: v })} placeholder="%Y-%m-%d %H:%M:%S (default)" />}
+                </div>
+              ))}
+              <button type="button" onClick={() => addProcItem("params", { source_type: "static", value: "", variable_name: "", field_key: "", format: "", data_type: "text" })} className="h-7 rounded-lg border border-[#8B5CF6]/60 text-[#8B5CF6] text-[10px] font-bold hover:bg-[#8B5CF6]/10">+ Add Parameter</button>
+            </div>
+          </Field>
+
+          <Field label="Results → Internal Variable (first row of the result)">
+            <div className="flex flex-col gap-1.5">
+              {procList("results").map((rs, i) => (
+                <div key={i} className="rounded-lg border border-[var(--border-soft)] p-1.5 flex flex-col gap-1">
+                  <div className="flex gap-1">
+                    <div className="w-16"><Input value={rs.column ?? 0} onChange={v => updateProcItem("results", i, { column: v })} placeholder="col" /></div>
+                    <div className="flex-1"><Select value={rs.variable_name || ""} onChange={v => updateProcItem("results", i, { variable_name: v })} options={[{ value: "", label: "Select variable…" }, ...sourceInternalVariables.map(v => ({ value: v.name, label: v.name }))]} /></div>
+                    <button type="button" onClick={() => removeProcItem("results", i)} className="w-6 h-7 rounded border border-[var(--border)] text-[var(--text-muted)] hover:text-[#EF4444]">×</button>
+                  </div>
+                  <Input value={rs.prefix ?? ""} onChange={v => updateProcItem("results", i, { prefix: v })} placeholder="prefix text (optional), e.g. MOVE IN: " />
+                </div>
+              ))}
+              <button type="button" onClick={() => addProcItem("results", { column: 0, variable_name: "", prefix: "" })} className="h-7 rounded-lg border border-[#8B5CF6]/60 text-[#8B5CF6] text-[10px] font-bold hover:bg-[#8B5CF6]/10">+ Add Result</button>
+            </div>
+          </Field>
+
+          <Field label="Success when">
+            <Select value={c.success_rule || "no_error"} onChange={v => setLocal("success_rule", v)} options={[
+              { value: "no_error", label: "No error" },
+              { value: "col0_gt", label: "Column 0 is greater than…" },
+              { value: "col0_equals", label: "Column 0 equals…" },
+              { value: "col0_not_equals", label: "Column 0 does not equal…" },
+              { value: "col1_equals", label: "Column 1 equals…" },
+            ]} />
+          </Field>
+          {(c.success_rule || "no_error") !== "no_error" && (
+            <Field label="Value"><Input value={c.success_value ?? ""} onChange={v => setLocal("success_value", v)} placeholder="e.g. -1" /></Field>
+          )}
+        </>)}
+
         {node.type === "write_sn_list" && (<>
           <div className="rounded-lg border border-[#06B6D4]/30 bg-[#06B6D4]/5 px-2.5 py-2 text-[9px] text-[var(--text-muted)]">
             <b style={{ color: "#06B6D4" }}>CP{String(cpNumber || "").padStart(2, "0")}</b> — menulis ke SN List DB CP ini. Date/Time otomatis saat node dieksekusi.
@@ -2204,6 +2387,92 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
           </button>
           <p className="text-[var(--text-muted)] text-[9px] mt-1">Semua mapping ditulis sebagai <b>1 row</b>. CP otomatis mengikuti flow. <b>date_time</b> dibuat otomatis oleh Logic Engine saat node dieksekusi.</p>
         </>)}
+
+        {node.type === "countdown" && (() => {
+          const checks = Array.isArray(c.checks) ? c.checks : [];
+          const updateCheck = (i, patch) => setLocal("checks", checks.map((ch, j) => (j === i ? { ...ch, ...patch } : ch)));
+          const removeCheck = (i) => setLocal("checks", checks.filter((_, j) => j !== i));
+          const addCheck = () => setLocal("checks", [...checks, {
+            label: "", source_type: "tcpip", protocol: "tcp", device_name: "", address_type: "holding_register", address: "0",
+            variable_name: "", operator: "equals", value: "", value2: "",
+          }]);
+          const variableSelect = (value, onChange, empty) => (
+            <select
+              value={value || ""}
+              onChange={e => onChange(e.target.value)}
+              className="bg-[var(--bg-surface)] border border-[var(--border)] text-[var(--text-primary)] text-[10px] rounded px-2 h-7 outline-none focus:border-[#F97316]/60"
+              disabled={internalVariablesLoading}
+            >
+              <option value="">{internalVariablesLoading ? "Loading variables…" : empty}</option>
+              {sourceInternalVariables.map(v => (<option key={v.id} value={v.name}>{v.name} ({v.data_type})</option>))}
+            </select>
+          );
+          const operatorOptions = [
+            { value: "equals", label: "Equals (=)" }, { value: "not_equals", label: "Not Equals (≠)" },
+            { value: "greater_than", label: "Greater Than (>)" }, { value: "less_than", label: "Less Than (<)" },
+            { value: "greater_equal", label: "Greater or Equal (≥)" }, { value: "less_equal", label: "Less or Equal (≤)" },
+            { value: "contains", label: "Contains" },
+          ];
+          return (<>
+            <Field label="Duration (seconds)">
+              <Input value={c.seconds} onChange={v => setLocal("seconds", v)} placeholder="5" />
+            </Field>
+            <Field label="Remaining-time variable">
+              {variableSelect(c.variable_name, v => setLocal("variable_name", v), "(none)")}
+            </Field>
+
+            <div className="flex items-center justify-between pt-1">
+              <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Checks</span>
+              <span className="text-[8px] text-[var(--text-dim)]">re-evaluated after every second</span>
+            </div>
+
+            {checks.map((ch, i) => {
+              const source = ch.source_type || "internal_variable";
+              return (
+                <div key={i} className="flex flex-col gap-1 rounded-lg border border-[var(--border-soft)] p-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold text-[var(--text-muted)] uppercase tracking-wider">Check {i + 1}</span>
+                    <button type="button" onClick={() => removeCheck(i)} className="w-6 h-6 rounded flex items-center justify-center text-[var(--text-muted)] hover:text-[#EF4444]" title="Remove check"><IconTrash /></button>
+                  </div>
+                  <Field label="Failure label">
+                    <Input value={ch.label || ""} onChange={v => updateCheck(i, { label: v })} placeholder="e.g. Sensor lost" />
+                  </Field>
+                  <Field label="Data Source">
+                    <Select value={source} onChange={v => updateCheck(i, { source_type: v })}
+                      options={[{ value: "internal_variable", label: "Internal Variable" }, { value: "tcpip", label: "TCP/IP (Modbus TCP)" }]} />
+                  </Field>
+                  {source === "internal_variable" && (
+                    <Field label="Internal Variable">{variableSelect(ch.variable_name, v => updateCheck(i, { variable_name: v }), "Select variable…")}</Field>
+                  )}
+                  {source === "tcpip" && (<>
+                    <Field label="Protocol">
+                      <Select value={ch.protocol || "tcp"} onChange={v => updateCheck(i, protocolPatch(ch.protocol || "tcp", v))} options={PLC_PROTOCOL_OPTIONS} />
+                    </Field>
+                    <PlcAddressFields protocol={ch.protocol || "tcp"} cfg={ch} onPatch={patch => updateCheck(i, patch)} devices={plcDeviceLists} />
+                  </>)}
+                  <Field label="Pass condition">
+                    <div className="grid grid-cols-2 gap-1">
+                      <Select value={ch.operator || "equals"} onChange={v => updateCheck(i, { operator: v })} options={operatorOptions} />
+                      <Input value={ch.value ?? ""} onChange={v => updateCheck(i, { value: v })} placeholder="Value" />
+                    </div>
+                  </Field>
+                </div>
+              );
+            })}
+
+            <button type="button" onClick={addCheck}
+              className="h-7 rounded-lg border border-dashed border-[var(--border)] text-[10px] font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:border-[#F97316]/60">
+              + Add check
+            </button>
+
+            <Field label="Abort reason variable">
+              {variableSelect(c.reason_variable, v => setLocal("reason_variable", v), "(none)")}
+            </Field>
+            <p className="text-[var(--text-muted)] text-[9px] mt-1">
+              Counts down the configured number of seconds. After <b>every second</b> all checks are evaluated again. If a check fails (or its value cannot be read), the countdown stops and the flow continues through <b style={{ color: "#EF4444" }}>✗ False</b>; the failing check's label is written to the abort reason variable. If every check holds until the end, the flow continues through <b style={{ color: "#22C55E" }}>✓ True</b>. The remaining seconds are written to the remaining-time variable after each second.
+            </p>
+          </>);
+        })()}
 
         {node.type === "timer" && (<>
           <Field label="Duration (detik)">
@@ -2573,45 +2842,223 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
   );
 });
 
-// ── SVG connection lines ──────────────────────────────────────────────────────
-function ConnectionLines({ connections, nodes, draggingConnection, selectedEdge, onSelectEdge }) {
-  const getPortPos = (nodeId, portType) => {
-    const node = nodes.find(n => n.id === nodeId);
-    if (!node) return { x: 0, y: 0 };
-    const W = 180, H = 80;
-    if (portType === "in") return { x: node.x + W / 2, y: node.y };
-    if (portType === "true") return { x: node.x + W / 4, y: node.y + H };
-    if (portType === "false") return { x: node.x + W * 3 / 4, y: node.y + H };
-    return { x: node.x + W / 2, y: node.y + H };
+// ── Notes: coloured boxes that label a group of nodes ("these nodes = Dummy Check"). Saved with the flow, never executed. ──
+const NOTE_COLORS = { blue: "#3B82F6", green: "#22C55E", orange: "#F59E0B", purple: "#A855F7", red: "#EF4444", gray: "#94A3B8" };
+
+function NoteBox({ note, zoomRef, onChange, onDelete, onGrow, onBegin }) {
+  const [drag, setDrag] = useState(null);
+  const movedRef = useRef(false);   // the drag pushed its undo step already
+  const typedRef = useRef(false);   // the current text edit pushed its undo step already
+  const [editing, setEditing] = useState(false);
+  const color = NOTE_COLORS[note.color] || NOTE_COLORS.blue;
+  const w = note.w || 320, h = note.h || 200;
+
+  useEffect(() => {
+    if (!drag) return;
+    const onMove = (e) => {
+      const z = zoomRef.current || 1;
+      const dx = (e.clientX - drag.sx) / z, dy = (e.clientY - drag.sy) / z;
+      if (!movedRef.current) { movedRef.current = true; onBegin?.(); }
+      if (drag.mode === "move") {
+        const x = Math.max(0, Math.round(drag.o.x + dx)), y = Math.max(0, Math.round(drag.o.y + dy));
+        onChange({ x, y });
+        onGrow(x + w, y + h);
+      } else {
+        const nw = Math.max(160, Math.round(drag.o.w + dx)), nh = Math.max(80, Math.round(drag.o.h + dy));
+        onChange({ w: nw, h: nh });
+        onGrow(note.x + nw, note.y + nh);
+      }
+    };
+    const onUp = () => setDrag(null);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [drag]);
+
+  const begin = (e, mode) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    movedRef.current = false;
+    setDrag({ mode, sx: e.clientX, sy: e.clientY, o: { x: note.x, y: note.y, w, h } });
+  };
+
+  const edit = (patch) => {   // title / text typing: the first keystroke after focusing is one undo step
+    if (!typedRef.current) { typedRef.current = true; onBegin?.(); }
+    onChange(patch);
   };
 
   return (
-    <svg className="absolute inset-0" style={{ width: "100%", height: "100%", overflow: "visible", pointerEvents: "none" }}>
-      <defs>
+    <div className="absolute select-none" style={{ left: note.x, top: note.y, width: w, height: h, pointerEvents: "none",
+         border: `2px dashed ${color}99`, background: `${color}14`, borderRadius: 14 }}>
+      <div onMouseDown={(e) => begin(e, "move")} onClick={(e) => e.stopPropagation()}
+           className="group flex items-center gap-1.5 px-2.5"
+           style={{ height: 30, pointerEvents: "auto", cursor: drag ? "grabbing" : "grab", borderBottom: `1px solid ${color}44`,
+                    background: `${color}26`, borderRadius: "12px 12px 0 0" }}>
+        <input value={note.title || ""} onChange={(e) => edit({ title: e.target.value })} onFocus={() => { typedRef.current = false; }} onMouseDown={(e) => e.stopPropagation()}
+               placeholder="Title" spellCheck={false}
+               className="flex-1 min-w-0 bg-transparent outline-none text-[12px] font-extrabold tracking-wide" style={{ color }} />
+        <div className={`items-center gap-1.5 ${editing ? "flex" : "hidden group-hover:flex"}`}>
+        {Object.entries(NOTE_COLORS).map(([name, hex]) => (
+          <button key={name} type="button" title={name} onMouseDown={(e) => e.stopPropagation()} onClick={() => { onBegin?.(); onChange({ color: name }); }}
+                  style={{ width: 11, height: 11, borderRadius: 6, background: hex, border: note.color === name ? "2px solid #fff" : "1px solid #0006", flex: "0 0 auto" }} />
+        ))}
+        <button type="button" title={editing ? "Done" : "Edit text"} onMouseDown={(e) => e.stopPropagation()} onClick={() => setEditing((v) => !v)}
+                className="text-[11px] px-1 text-[var(--text-muted)] hover:text-[var(--text-primary)]">{editing ? "✓" : "✎"}</button>
+        <button type="button" title="Delete note" onMouseDown={(e) => e.stopPropagation()} onClick={onDelete}
+                className="text-[11px] px-1 text-[#EF4444] hover:text-[#F87171]">✕</button>
+        </div>
+      </div>
+      {editing ? (
+        <textarea autoFocus value={note.text || ""} onChange={(e) => edit({ text: e.target.value })} onFocus={() => { typedRef.current = false; }} onMouseDown={(e) => e.stopPropagation()}
+                  placeholder="What do these nodes do?"
+                  className="absolute left-2 right-2 bottom-2 bg-[var(--bg-surface-2)] border border-[var(--border)] rounded-md p-2 text-[11px] text-[var(--text-primary)] outline-none resize-none"
+                  style={{ top: 38, pointerEvents: "auto" }} />
+      ) : (
+        <div className="absolute left-3 right-3 bottom-2.5 text-[11px] leading-snug whitespace-pre-wrap" style={{ color: "var(--text-muted)", pointerEvents: "none" }}>{note.text}</div>
+      )}
+      <div onMouseDown={(e) => begin(e, "resize")} title="Resize"
+           style={{ position: "absolute", right: 0, bottom: 0, width: 16, height: 16, cursor: "se-resize", pointerEvents: "auto",
+                    background: `linear-gradient(135deg, transparent 50%, ${color} 50%)`, borderRadius: "0 0 12px 0" }} />
+    </div>
+  );
+}
+
+// ── SVG connection lines ──────────────────────────────────────────────────────
+// Orthogonal ("elbow") routing with rounded corners, from the CENTRE of the output port to the centre of the input port:
+// down out of the port, across, down into the target. A link that goes back up (a loop) leaves to the right of both nodes
+// so it never cuts through them. Every link has a small handle on its middle segment: drag it to move that segment
+// (up/down for a normal link, left/right for a loop) when links pile up; double-click the handle to reset it. The chosen
+// position is stored on the connection (`midY` / `sideX`) and saved with the flow.
+const NODE_W = 180, NODE_H = 40;   // size of a node card as it is really drawn
+
+function portPos(node, port) {
+  if (port === "in") return { x: node.x + NODE_W / 2, y: node.y };
+  if (port === "true") return { x: node.x + NODE_W / 4, y: node.y + 26 };         // centre of the green ✓ port
+  if (port === "false") return { x: node.x + NODE_W * 3 / 4, y: node.y + 26 };    // centre of the red ✗ port
+  return { x: node.x + NODE_W / 2, y: node.y + NODE_H };                           // the single "next" port
+}
+
+function edgeRoute(from, to, bend = {}, spread = 0) {
+  const stub = 22;
+  if (to.y >= from.y + 12) {
+    const base = from.y + Math.max(6, Math.min((to.y - from.y) / 2, 44));
+    let midY = Number.isFinite(bend.midY) ? bend.midY : base + spread;
+    midY = Math.min(Math.max(midY, from.y + 6), to.y - 6);
+    return {
+      pts: [[from.x, from.y], [from.x, midY], [to.x, midY], [to.x, to.y]],
+      handle: from.x !== to.x ? { x: (from.x + to.x) / 2, y: midY, axis: "y" } : null,
+    };
+  }
+  const side = Number.isFinite(bend.sideX) ? bend.sideX : Math.max(from.x, to.x) + 120 + spread;
+  return {
+    pts: [[from.x, from.y], [from.x, from.y + stub], [side, from.y + stub], [side, to.y - stub], [to.x, to.y - stub], [to.x, to.y]],
+    handle: { x: side, y: (from.y + to.y) / 2, axis: "x" },
+  };
+}
+
+function pathFromPoints(points, radius = 10) {
+  const pts = points.filter((p, i) => i === 0 || p[0] !== points[i - 1][0] || p[1] !== points[i - 1][1]);
+  if (pts.length < 3) return `M${pts[0][0]},${pts[0][1]} L${pts[pts.length - 1][0]},${pts[pts.length - 1][1]}`;
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i - 1], [cx, cy] = pts[i], [nx, ny] = pts[i + 1];
+    const r = Math.min(radius, Math.hypot(cx - px, cy - py) / 2, Math.hypot(nx - cx, ny - cy) / 2);
+    const l1 = Math.hypot(cx - px, cy - py) || 1, l2 = Math.hypot(nx - cx, ny - cy) || 1;
+    const ax = cx - ((cx - px) / l1) * r, ay = cy - ((cy - py) / l1) * r;
+    const bx = cx + ((nx - cx) / l2) * r, by = cy + ((ny - cy) / l2) * r;
+    d += ` L${ax},${ay} Q${cx},${cy} ${bx},${by}`;
+  }
+  const last = pts[pts.length - 1];
+  return d + ` L${last[0]},${last[1]}`;
+}
+
+const elbowPath = (from, to) => pathFromPoints(edgeRoute(from, to).pts);
+
+// layer = "lines": the links under the nodes; layer = "handles": only their drag handles, drawn ABOVE the nodes so a handle
+// can never end up hidden behind a node card after it was dragged there.
+function ConnectionLines({ connections, nodes, draggingConnection, selectedEdge, onSelectEdge, onBend, onBendStart, getPointer, layer = "lines" }) {
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+  const endPoints = (conn) => {
+    const a = nodeById.get(conn.fromId), b = nodeById.get(conn.toId);
+    return { from: a ? portPos(a, conn.fromPort) : { x: 0, y: 0 }, to: b ? portPos(b, "in") : { x: 0, y: 0 } };
+  };
+
+  // Links that would run on top of each other (same two rows, overlapping spans, not moved by hand) get separate lanes.
+  const spreads = {};
+  const rows = {};
+  connections.forEach(conn => {
+    const { from, to } = endPoints(conn);
+    if (to.y >= from.y + 12 && from.x !== to.x && !Number.isFinite(conn.midY)) {
+      const key = `${Math.round(from.y)}|${Math.round(to.y)}`;
+      (rows[key] = rows[key] || []).push({ id: conn.id, lo: Math.min(from.x, to.x), hi: Math.max(from.x, to.x) });
+    }
+  });
+  Object.values(rows).forEach(list => {
+    const laneEnds = [];
+    list.sort((p, q) => p.lo - q.lo).forEach(item => {
+      let lane = laneEnds.findIndex(end => end < item.lo - 4);
+      if (lane === -1) { lane = laneEnds.length; laneEnds.push(item.hi); } else laneEnds[lane] = item.hi;
+      item.lane = lane;
+    });
+    const count = laneEnds.length;
+    list.forEach(item => { spreads[item.id] = count > 1 ? (item.lane - (count - 1) / 2) * 12 : 0; });
+  });
+
+  const startBend = (e, conn, axis) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    onBendStart?.();
+    onSelectEdge(conn.id);
+    const move = (ev) => {
+      const pt = getPointer(ev);
+      onBend(conn.id, axis === "y" ? { midY: Math.round(pt.y) } : { sideX: Math.max(0, Math.round(pt.x)) });
+    };
+    const up = () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  };
+
+  return (
+    <svg className="absolute inset-0" style={{ width: "100%", height: "100%", overflow: "visible", pointerEvents: "none", zIndex: layer === "handles" ? 30 : undefined }}>
+      {layer !== "handles" && <defs>
         <marker id="arrow-gray" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#94A3B8" /></marker>
         <marker id="arrow-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#22C55E" /></marker>
         <marker id="arrow-red" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#EF4444" /></marker>
-      </defs>
+      </defs>}
       {connections.map(conn => {
-        const from = getPortPos(conn.fromId, conn.fromPort);
-        const to = getPortPos(conn.toId, "in");
-        const dx = Math.abs(to.x - from.x) * 0.5;
+        const { from, to } = endPoints(conn);
         const color = conn.fromPort === "true" ? "#22C55E" : conn.fromPort === "false" ? "#EF4444" : "#94A3B8";
         const arrow = conn.fromPort === "true" ? "url(#arrow-green)" : conn.fromPort === "false" ? "url(#arrow-red)" : "url(#arrow-gray)";
-        const d = `M${from.x},${from.y} C${from.x},${from.y + dx} ${to.x},${to.y - dx} ${to.x},${to.y}`;
+        const route = edgeRoute(from, to, conn, spreads[conn.id] || 0);
+        const d = pathFromPoints(route.pts);
         const isSelected = conn.id === selectedEdge;
         return (
           <g key={conn.id}>
-            {isSelected && (
+            {layer !== "handles" && isSelected && (
               <path d={d} fill="none" stroke="#FBBF24" strokeWidth="6" opacity="0.35" style={{ pointerEvents: "none" }} />
             )}
-            <path d={d} fill="none" stroke={isSelected ? "#FBBF24" : color} strokeWidth={isSelected ? 3 : 2} strokeDasharray={conn.fromPort === "false" ? "6 3" : "none"} markerEnd={arrow} opacity={isSelected ? 1 : 0.8}
-              className="cursor-pointer hover:stroke-[3px]" style={{ pointerEvents: "visiblePainted" }}
-              onClick={(e) => { e.stopPropagation(); onSelectEdge(conn.id); }} />
+            {layer !== "handles" && (
+              <path d={d} fill="none" stroke={isSelected ? "#FBBF24" : color} strokeWidth={isSelected ? 3 : 2} strokeDasharray={conn.fromPort === "false" ? "6 3" : "none"} markerEnd={arrow} opacity={isSelected ? 1 : 0.8}
+                className="cursor-pointer hover:stroke-[3px]" style={{ pointerEvents: "visiblePainted" }}
+                onClick={(e) => { e.stopPropagation(); onSelectEdge(conn.id); }} />
+            )}
+            {layer === "handles" && route.handle && (
+              <circle
+                cx={route.handle.x} cy={route.handle.y} r={isSelected ? 6 : 4.5}
+                fill="#0B1120" stroke={isSelected ? "#FBBF24" : color} strokeWidth="2" opacity={isSelected ? 1 : 0.65}
+                style={{ pointerEvents: "all", cursor: route.handle.axis === "y" ? "ns-resize" : "ew-resize" }}
+                onMouseDown={(e) => startBend(e, conn, route.handle.axis)}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => { e.stopPropagation(); onBendStart?.(); onBend(conn.id, { midY: undefined, sideX: undefined }); }}
+              >
+                <title>Drag to move this part of the link · double-click to reset</title>
+              </circle>
+            )}
           </g>
         );
       })}
-      {draggingConnection && (<path d={`M${draggingConnection.x1},${draggingConnection.y1} C${draggingConnection.x1},${draggingConnection.y1 + 50} ${draggingConnection.x2},${draggingConnection.y2 - 50} ${draggingConnection.x2},${draggingConnection.y2}`} fill="none" stroke="#22C55E" strokeWidth="2" strokeDasharray="4 2" opacity="0.6" />)}
+      {layer !== "handles" && draggingConnection && (<path d={elbowPath({ x: draggingConnection.x1, y: draggingConnection.y1 }, { x: draggingConnection.x2, y: draggingConnection.y2 })} fill="none" stroke="#22C55E" strokeWidth="2" strokeDasharray="4 2" opacity="0.6" />)}
     </svg>
   );
 }
@@ -2622,7 +3069,7 @@ function ConnectionLines({ connections, nodes, draggingConnection, selectedEdge,
 //   { kind: "cp", cpNumber }             -> GET/POST /api/logic-config/<cp>
 //   { kind: "template", templateId }     -> GET/POST /api/logic-templates/<id>
 // ════════════════════════════════════════════════════════════════
-function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices, finsDevices, enipDevices, udpDevices, rawTcpDevices, rs232Devices, templates, onCreateTemplate, onOpenGroup }) {
+function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices, finsDevices, enipDevices, udpDevices, rawTcpDevices, rs232Devices, dbConnections, templates, onCreateTemplate, onOpenGroup }) {
   const [nodes, setNodesRaw] = useState([]);
   const [connections, setConnectionsRaw] = useState([]);
   const [selected, setSelected] = useState([]); // array of selected node ids (multi-select)
@@ -2635,12 +3082,78 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
   const [applyMsg, setApplyMsg] = useState("");
   const [paletteSearch, setPaletteSearch] = useState("");
   const [clipboard, setClipboard] = useState(null); // { nodes, connections } deep-cloned
+  const [notes, setNotes] = useState([]); // annotation boxes: { id, x, y, w, h, title, text, color }
   const [marquee, setMarquee] = useState(null); // { x, y, w, h } for the visual box
   const marqueeRef = useRef(null); // live drag data: { startX, startY, additive, baseSelected }
   const justMarqueedRef = useRef(false);
   const canvasRef = useRef(null);
 
   const [canvasSize, setCanvasSize] = useState({ width: 1400, height: 900 });
+
+  // ── Zoom ────────────────────────────────────────────────────
+  // The canvas is drawn with transform: scale(zoom); every pointer position measured against it is divided by the zoom
+  // (read through zoomRef so handlers never see a stale value). Ctrl + wheel zooms around the cursor.
+  const ZOOM_MIN = 0.25, ZOOM_MAX = 2;
+  const [zoom, setZoom] = useState(1);
+  const zoomRef = useRef(1);
+  const scrollRef = useRef(null);
+  const pendingScrollRef = useRef(null);
+
+  const applyZoom = useCallback((next, anchor) => {
+    next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(next * 100) / 100));
+    const z = zoomRef.current;
+    if (next === z) return;
+    const el = scrollRef.current;
+    if (el) {
+      const mx = anchor ? anchor.x : el.clientWidth / 2;
+      const my = anchor ? anchor.y : el.clientHeight / 2;
+      pendingScrollRef.current = { left: (el.scrollLeft + mx) / z * next - mx, top: (el.scrollTop + my) / z * next - my };
+    }
+    zoomRef.current = next;
+    setZoom(next);
+  }, []);
+
+  useLayoutEffect(() => {
+    const p = pendingScrollRef.current;
+    if (p && scrollRef.current) {
+      scrollRef.current.scrollLeft = Math.max(0, p.left);
+      scrollRef.current.scrollTop = Math.max(0, p.top);
+    }
+    pendingScrollRef.current = null;
+  }, [zoom]);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      applyZoom(zoomRef.current * (e.deltaY < 0 ? 1.1 : 1 / 1.1), { x: e.clientX - r.left, y: e.clientY - r.top });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [applyZoom]);
+
+  const addNote = useCallback(() => {
+    const el = scrollRef.current, z = zoomRef.current || 1;
+    const w = 320, h = 220;
+    const x = el ? Math.max(0, Math.round((el.scrollLeft + el.clientWidth / 2) / z - w / 2)) : 40;
+    const y = el ? Math.max(0, Math.round((el.scrollTop + el.clientHeight / 2) / z - h / 2)) : 40;
+    setNotes(ns => [...ns, { id: `note_${Date.now()}`, x, y, w, h, title: "Note", text: "", color: "blue" }]);
+  }, []);
+
+  const fitToScreen = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || !(nodes.length || notes.length)) { applyZoom(1); return; }
+    const maxX = Math.max(0, ...nodes.map(n => n.x + 240), ...notes.map(n => n.x + (n.w || 320) + 20));
+    const maxY = Math.max(0, ...nodes.map(n => n.y + 120), ...notes.map(n => n.y + (n.h || 200) + 20));
+    pendingScrollRef.current = { left: 0, top: 0 };
+    const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.floor(Math.min(el.clientWidth / maxX, el.clientHeight / maxY) * 100) / 100));
+    zoomRef.current = next;
+    setZoom(next);
+    el.scrollLeft = 0; el.scrollTop = 0;
+  }, [nodes, notes, applyZoom]);
 
   const [templateMeta, setTemplateMeta] = useState({ name: "", description: "" });
 
@@ -2657,12 +3170,17 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
 
   // Snapshots the state *before* a mutation. Call this before applying a
   // change you want to be undoable.
+  // Always-current copy of the flow. History callbacks read it instead of closing over `nodes`: a callback that changes
+  // with `nodes` is re-created on every mouse move of a drag, which used to push one undo step per pixel moved.
+  const flowRef = useRef({ nodes, connections, notes });
+  flowRef.current = { nodes, connections, notes };
+
   const pushHistory = useCallback(() => {
-    undoStackRef.current.push({ nodes, connections });
+    undoStackRef.current.push({ ...flowRef.current });
     if (undoStackRef.current.length > 100) undoStackRef.current.shift();
     redoStackRef.current = [];
     syncUndoRedoFlags();
-  }, [nodes, connections, syncUndoRedoFlags]);
+  }, [syncUndoRedoFlags]);
 
   const setNodes = useCallback((updater, opts) => {
     if (!opts?.skipHistory) pushHistory();
@@ -2685,26 +3203,28 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
   const undo = useCallback(() => {
     if (!undoStackRef.current.length) return;
     const prev = undoStackRef.current.pop();
-    redoStackRef.current.push({ nodes, connections });
+    redoStackRef.current.push({ ...flowRef.current });
     if (redoStackRef.current.length > 100) redoStackRef.current.shift();
     setNodesRaw(prev.nodes);
     setConnectionsRaw(prev.connections);
+    setNotes(prev.notes || []);
     setSelected([]);
     setSelectedEdge(null);
     syncUndoRedoFlags();
-  }, [nodes, connections, syncUndoRedoFlags]);
+  }, [syncUndoRedoFlags]);
 
   const redo = useCallback(() => {
     if (!redoStackRef.current.length) return;
     const next = redoStackRef.current.pop();
-    undoStackRef.current.push({ nodes, connections });
+    undoStackRef.current.push({ ...flowRef.current });
     if (undoStackRef.current.length > 100) undoStackRef.current.shift();
     setNodesRaw(next.nodes);
     setConnectionsRaw(next.connections);
+    setNotes(next.notes || []);
     setSelected([]);
     setSelectedEdge(null);
     syncUndoRedoFlags();
-  }, [nodes, connections, syncUndoRedoFlags]);
+  }, [syncUndoRedoFlags]);
 
   const loadUrl = source.kind === "template" ? `${API}/api/logic-templates/${encodeURIComponent(source.templateId)}` : `${API}/api/logic-config/${source.cpNumber}`;
   const saveUrl = loadUrl;
@@ -2719,14 +3239,16 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
         const loadedNodes = d.nodes || [];
         setNodesRaw(loadedNodes);
         setConnectionsRaw(d.connections || []);
+        const loadedNotes = Array.isArray(d.notes) ? d.notes : [];
+        setNotes(loadedNotes);
         setLoading(false);
         if (source.kind === "template") {
           setTemplateMeta({ name: d.name || source.templateId, description: d.description || "" });
         }
-        if (loadedNodes.length) {
+        if (loadedNodes.length || loadedNotes.length) {
           const margin = 300;
-          const maxX = Math.max(...loadedNodes.map(n => n.x || 0)) + 180 + margin;
-          const maxY = Math.max(...loadedNodes.map(n => n.y || 0)) + 80 + margin;
+          const maxX = Math.max(0, ...loadedNodes.map(n => (n.x || 0) + 180), ...loadedNotes.map(n => (n.x || 0) + (n.w || 320))) + margin;
+          const maxY = Math.max(0, ...loadedNodes.map(n => (n.y || 0) + 80), ...loadedNotes.map(n => (n.y || 0) + (n.h || 200))) + margin;
           setCanvasSize({ width: Math.max(maxX, 1400), height: Math.max(maxY, 900) });
         } else {
           setCanvasSize({ width: 1400, height: 900 });
@@ -2821,6 +3343,21 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
     deleteSelection();
   }, [selected, copySelection, deleteSelection]);
 
+  // A text field keeps the keyboard focus after you typed in it (a note title, a node setting) and the shortcut handler
+  // below ignores keys while a field has focus, so Ctrl+A / Ctrl+Z / Delete looked dead. Clicking anywhere that is not a
+  // field itself now drops that focus first.
+  useEffect(() => {
+    const release = (e) => {
+      const a = document.activeElement;
+      if (!a || a === document.body) return;
+      if (!["INPUT", "TEXTAREA", "SELECT"].includes(a.tagName) && !a.isContentEditable) return;
+      if (e.target?.closest?.("input, textarea, select, button, [contenteditable='true']")) return;
+      a.blur();
+    };
+    window.addEventListener("mousedown", release, true);
+    return () => window.removeEventListener("mousedown", release, true);
+  }, []);
+
   // ── Keyboard shortcuts: Delete, Undo/Redo, Copy/Cut/Paste, Select All ──
   useEffect(() => {
     const h = e => {
@@ -2860,8 +3397,8 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
     if (!type) return;
     const rect = canvasRef.current.getBoundingClientRect();
     const id = nid();
-    const x = Math.max(0, e.clientX - rect.left - 90);
-    const y = Math.max(0, e.clientY - rect.top - 40);
+    const x = Math.max(0, (e.clientX - rect.left) / zoomRef.current - 90);
+    const y = Math.max(0, (e.clientY - rect.top) / zoomRef.current - 40);
     setNodes(ns => [...ns, { id, type, x, y, config: { ...DEFAULT_NODE_CONFIG[type] } }]);
     ensureCanvasSize(x, y);
     selectOnly(id);
@@ -2882,8 +3419,8 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
     if (!dragInfo) return;
     let historyPushed = false;
     const onMove = e => {
-      const dxTotal = e.clientX - dragInfo.startClientX;
-      const dyTotal = e.clientY - dragInfo.startClientY;
+      const dxTotal = (e.clientX - dragInfo.startClientX) / zoomRef.current;
+      const dyTotal = (e.clientY - dragInfo.startClientY) / zoomRef.current;
       if (!historyPushed) { pushHistory(); historyPushed = true; }
       setNodes(ns => ns.map(n => {
         const start = dragInfo.startPositions[n.id];
@@ -2908,8 +3445,8 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
     if (e.button !== 0 || e.target !== canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
     marqueeRef.current = {
-      startX: e.clientX - rect.left,
-      startY: e.clientY - rect.top,
+      startX: (e.clientX - rect.left) / zoomRef.current,
+      startY: (e.clientY - rect.top) / zoomRef.current,
       additive: e.shiftKey,
       baseSelected: e.shiftKey ? selected : [],
     };
@@ -2920,8 +3457,8 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
     const onMove = (e) => {
       if (!marqueeRef.current || !canvasRef.current) return;
       const rect = canvasRef.current.getBoundingClientRect();
-      const curX = e.clientX - rect.left;
-      const curY = e.clientY - rect.top;
+      const curX = (e.clientX - rect.left) / zoomRef.current;
+      const curY = (e.clientY - rect.top) / zoomRef.current;
       const { startX, startY, additive, baseSelected } = marqueeRef.current;
       const x = Math.min(startX, curX), y = Math.min(startY, curY);
       const w = Math.abs(curX - startX), h = Math.abs(curY - startY);
@@ -2932,8 +3469,9 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
         const el = document.getElementById(`node-${n.id}`);
         if (!el) return false;
         const r = el.getBoundingClientRect();
-        const nx = r.left - rect.left, ny = r.top - rect.top;
-        return nx < x + w && nx + r.width > x && ny < y + h && ny + r.height > y;
+        const zf = zoomRef.current;
+        const nx = (r.left - rect.left) / zf, ny = (r.top - rect.top) / zf;
+        return nx < x + w && nx + r.width / zf > x && ny < y + h && ny + r.height / zf > y;
       }).map(n => n.id);
       setSelected(additive ? Array.from(new Set([...baseSelected, ...hitIds])) : hitIds);
       setSelectedEdge(null);
@@ -2952,7 +3490,9 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
     const el = e.currentTarget;
     const rect = el.getBoundingClientRect();
     const canvasRect = canvasRef.current.getBoundingClientRect();
-    setDraggingConn({ fromId, fromPort, x1: rect.left + rect.width / 2 - canvasRect.left, y1: rect.top + rect.height / 2 - canvasRect.top, x2: rect.left + rect.width / 2 - canvasRect.left, y2: rect.top + rect.height / 2 - canvasRect.top });
+    const zf = zoomRef.current;
+    const px = (rect.left + rect.width / 2 - canvasRect.left) / zf, py = (rect.top + rect.height / 2 - canvasRect.top) / zf;
+    setDraggingConn({ fromId, fromPort, x1: px, y1: py, x2: px, y2: py });
   }, []);
 
   useEffect(() => {
@@ -2960,7 +3500,7 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
     const onMove = e => {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
-      setDraggingConn(dc => dc ? { ...dc, x2: e.clientX - rect.left, y2: e.clientY - rect.top } : null);
+      setDraggingConn(dc => dc ? { ...dc, x2: (e.clientX - rect.left) / zoomRef.current, y2: (e.clientY - rect.top) / zoomRef.current } : null);
     };
     const onUp = () => setDraggingConn(null);
     window.addEventListener("mousemove", onMove);
@@ -2981,8 +3521,8 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
     setSaving(true); setSaveMsg("");
     try {
       const body = source.kind === "template"
-        ? { name: templateMeta.name, description: templateMeta.description, nodes, connections }
-        : { nodes, connections };
+        ? { name: templateMeta.name, description: templateMeta.description, nodes, connections, notes }
+        : { nodes, connections, notes };
       const r = await fetch(saveUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const d = await r.json();
       setSaveMsg(d.success ? "✓ Saved!" : "✗ Failed");
@@ -3057,7 +3597,8 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
             <button onClick={pasteClipboard} disabled={!clipboard?.nodes?.length} title="Paste (Ctrl+V)" className="w-7 h-7 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex items-center justify-center text-xs">📋</button>
           </div>
           <div className="w-px h-5 bg-[var(--border)]" />
-          <button onClick={() => { commitFlow(() => [], () => []); setSelected([]); }} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-[10px] font-bold transition-colors">Clear</button>
+          <button onClick={() => { pushHistory(); addNote(); }} title="Add a coloured note box to label a group of nodes" className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-[10px] font-bold transition-colors">＋ Note</button>
+          <button onClick={() => { commitFlow(() => [], () => []); setSelected([]); setNotes([]); }} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-[10px] font-bold transition-colors">Clear</button>
           <button onClick={save} disabled={saving} className="h-7 px-4 rounded-lg bg-[#3B82F6] hover:bg-[#2563EB] text-white font-bold text-[10px] transition-colors disabled:opacity-50 flex items-center gap-1.5">{saving ? <><div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" /> Saving…</> : "💾 Save Flow"}</button>
           <button onClick={onClose} className="w-7 h-7 rounded-lg flex items-center justify-center text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)] transition-colors"><IconX /></button>
         </div>
@@ -3077,8 +3618,10 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
             ))}
           </div>
         </div>
-        <div className="flex-1 overflow-auto min-h-0 relative" style={{ background: "var(--bg-surface-2)", scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
+        <div className="flex-1 min-w-0 min-h-0 relative flex">
+        <div ref={scrollRef} className="flex-1 overflow-auto min-h-0 relative" style={{ background: "var(--bg-surface-2)", scrollbarWidth: "thin", scrollbarColor: "#334155 var(--bg-surface-2)" }}>
           {loading ? (<div className="flex items-center justify-center h-full gap-2 text-[#3B82F6] text-xs"><div className="w-4 h-4 border-2 border-[#3B82F6] border-t-transparent rounded-full animate-spin" /> Loading flow…</div>) : (
+            <div style={{ width: canvasSize.width * zoom, height: canvasSize.height * zoom }}>
             <div ref={canvasRef} onDragOver={e => e.preventDefault()} onDrop={handleDrop}
                  onMouseDown={startMarquee}
                  onClick={(e) => {
@@ -3086,24 +3629,47 @@ function FlowEditor({ source, cpNumber, onClose, onBack, tcpDevices, rtuDevices,
                    if (justMarqueedRef.current) { justMarqueedRef.current = false; return; }
                    clearSelection();
                  }} className="relative"
-                 style={{ width: canvasSize.width, height: canvasSize.height, background: "var(--bg-surface-2)", backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
+                 style={{ width: canvasSize.width, height: canvasSize.height, transform: `scale(${zoom})`, transformOrigin: "0 0", background: "var(--bg-surface-2)", backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
               {nodes.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-5xl opacity-10 mb-3">⚡</span><p className="text-[var(--text-faint)] text-sm font-mono">Drag logic nodes here to build your flow</p></div>)}
-              <ConnectionLines connections={connections} nodes={nodes} draggingConnection={draggingConn} selectedEdge={selectedEdge} onSelectEdge={selectEdge} />
+              {notes.map(note => (
+                <NoteBox key={note.id} note={note} zoomRef={zoomRef}
+                         onChange={patch => setNotes(ns => ns.map(n => n.id === note.id ? { ...n, ...patch } : n))}
+                         onDelete={() => { pushHistory(); setNotes(ns => ns.filter(n => n.id !== note.id)); }}
+                         onBegin={pushHistory}
+                         onGrow={(x, y) => ensureCanvasSize(x, y, 0, 0)} />
+              ))}
+              <ConnectionLines connections={connections} nodes={nodes} draggingConnection={draggingConn} selectedEdge={selectedEdge} onSelectEdge={selectEdge}
+                onBendStart={pushHistory}
+                onBend={(id, patch) => setConnectionsRaw(cs => cs.map(c => c.id === id ? { ...c, ...patch } : c))}
+                getPointer={e => { const r = canvasRef.current.getBoundingClientRect(); const z = zoomRef.current || 1; return { x: (e.clientX - r.left) / z, y: (e.clientY - r.top) / z }; }} />
               {nodes.map(node => (<NodeCard key={node.id} node={node} selected={selected.includes(node.id)} onSelect={toggleSelect} onDragStart={startNodeDrag} onDelete={id => { commitFlow(ns => ns.filter(n => n.id !== id), cs => cs.filter(c => c.fromId !== id && c.toId !== id)); setSelected(sel => sel.filter(s => s !== id)); }} onPortMouseDown={startPortDrag} onPortMouseUp={finishConnection} onOpenGroup={openGroupNode} />))}
+              <ConnectionLines layer="handles" connections={connections} nodes={nodes} selectedEdge={selectedEdge} onSelectEdge={selectEdge}
+                onBendStart={pushHistory}
+                onBend={(id, patch) => setConnectionsRaw(cs => cs.map(c => c.id === id ? { ...c, ...patch } : c))}
+                getPointer={e => { const r = canvasRef.current.getBoundingClientRect(); const z = zoomRef.current || 1; return { x: (e.clientX - r.left) / z, y: (e.clientY - r.top) / z }; }} />
               {marquee && (
                 <div className="absolute border-2 border-dashed border-[#3B82F6] bg-[#3B82F6]/10 pointer-events-none z-30"
                      style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />
               )}
             </div>
+            </div>
           )}
         </div>
+        <div className="absolute bottom-4 right-6 z-40 flex items-center gap-1 rounded-lg border border-[var(--border)] px-1 py-1 shadow-lg" style={{ background: "var(--bg-surface-2)" }}>
+          <button onClick={() => applyZoom(zoomRef.current / 1.2)} disabled={zoom <= ZOOM_MIN} title="Zoom out (Ctrl + scroll)" className="w-7 h-7 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 text-sm font-bold">−</button>
+          <button onClick={() => applyZoom(1)} title="Reset to 100%" className="min-w-[46px] h-7 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-[10px] font-mono font-bold">{Math.round(zoom * 100)}%</button>
+          <button onClick={() => applyZoom(zoomRef.current * 1.2)} disabled={zoom >= ZOOM_MAX} title="Zoom in (Ctrl + scroll)" className="w-7 h-7 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] disabled:opacity-30 text-sm font-bold">+</button>
+          <div className="w-px h-5 bg-[var(--border)] mx-0.5" />
+          <button onClick={fitToScreen} title="Fit the whole flow on screen" className="h-7 px-2 rounded-md text-[var(--text-secondary)] hover:bg-[var(--bg-elevated)] text-[10px] font-bold">Fit</button>
+        </div>
+        </div>
         <div className="w-64 shrink-0 border-l border-[var(--border-soft)] flex flex-col" style={{ background: "var(--bg-surface-2)" }}>
-          <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} tcpDevices={tcpDevices} rtuDevices={rtuDevices} finsDevices={finsDevices} enipDevices={enipDevices} udpDevices={udpDevices} rawTcpDevices={rawTcpDevices} rs232Devices={rs232Devices} templates={templates} onCreateTemplate={onCreateTemplate} onOpenGroup={onOpenGroup} cpNumber={cpNumber} activeGroupName={source.kind === "template" ? (templateMeta.name || source.templateName || source.templateId || "") : ""} />
+          <ConfigPanel node={selectedNode} onChange={updateNode} onApply={handleApplySuccess} tcpDevices={tcpDevices} rtuDevices={rtuDevices} finsDevices={finsDevices} enipDevices={enipDevices} udpDevices={udpDevices} rawTcpDevices={rawTcpDevices} rs232Devices={rs232Devices} dbConnections={dbConnections} templates={templates} onCreateTemplate={onCreateTemplate} onOpenGroup={onOpenGroup} cpNumber={cpNumber} activeGroupName={source.kind === "template" ? (templateMeta.name || source.templateName || source.templateId || "") : ""} />
         </div>
       </div>
       <div className="flex items-center justify-between px-4 py-1.5 border-t border-[var(--border-soft)] shrink-0" style={{ background: "var(--bg-surface-2)" }}>
         <span className="text-[var(--text-faint)] text-[9px] font-mono">{nodes.length} node{nodes.length !== 1 ? "s" : ""} · {connections.length} connection{connections.length !== 1 ? "s" : ""}</span>
-        <span className="text-[var(--text-faint)] text-[9px] font-mono">Del = delete · Ctrl+Z/Y = undo/redo · Ctrl+C/X/V = copy/cut/paste · Ctrl+A = select all · drag box = multi-select · drag port → port to connect · double-click Group = buka isinya</span>
+        <span className="text-[var(--text-faint)] text-[9px] font-mono">Del = delete · Ctrl+Z/Y = undo/redo · Ctrl+C/X/V = copy/cut/paste · Ctrl+A = select all · drag box = multi-select · Ctrl + scroll = zoom · drag port → port to connect · double-click Group = buka isinya</span>
       </div>
     </>
   );
@@ -3124,6 +3690,7 @@ export default function LogicBuilder({ cpNumber, onClose }) {
   const [udpDevices, setUdpDevices] = useState([]);    // Serial over UDP
   const [rawTcpDevices, setRawTcpDevices] = useState([]); // Raw TCP/IP
   const [rs232Devices, setRs232Devices] = useState([]); // RS232 / COM
+  const [dbConnections, setDbConnections] = useState([]); // selectable MySQL connections
   const [templates, setTemplates] = useState([]);      // Group templates (id/name/node_count)
 
   const refreshTemplates = useCallback(() => {
@@ -3138,6 +3705,7 @@ export default function LogicBuilder({ cpNumber, onClose }) {
     fetch(`${API}/api/udp/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setUdpDevices(d.devices || [])).catch(() => {});
     fetch(`${API}/api/tcp-raw/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setRawTcpDevices(d.devices || [])).catch(() => {});
     fetch(`${API}/api/rs232/devices`).then(r => r.ok ? r.json() : { devices: [] }).then(d => setRs232Devices(d.devices || [])).catch(() => {});
+    fetch(`${API}/api/db-connections`).then(r => r.ok ? r.json() : { connections: [] }).then(d => setDbConnections(d.connections || [])).catch(() => {});
     refreshTemplates();
   }, [refreshTemplates]);
 
@@ -3196,6 +3764,7 @@ export default function LogicBuilder({ cpNumber, onClose }) {
           udpDevices={udpDevices}
           rawTcpDevices={rawTcpDevices}
           rs232Devices={rs232Devices}
+          dbConnections={dbConnections}
           templates={templates}
           onCreateTemplate={createTemplate}
           onOpenGroup={openGroup}

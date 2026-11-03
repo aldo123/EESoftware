@@ -86,6 +86,7 @@ def save_logic_template(template_id):
         "description": body.get("description", ""),
         "nodes": body.get("nodes", []),
         "connections": body.get("connections", []),
+        "notes": body.get("notes", []),
     }
     try:
         with open(_template_path(template_id), "w", encoding="utf-8") as f:

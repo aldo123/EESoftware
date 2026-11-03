@@ -39,11 +39,12 @@ def save_logic_config(cp):
     body        = request.get_json() or {}
     nodes       = body.get("nodes", [])
     connections = body.get("connections", [])
+    notes       = body.get("notes", [])   # annotation boxes of the Logic Builder (never executed)
 
     path = _flow_path(cp)
     try:
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"cp": cp, "nodes": nodes, "connections": connections},
+            json.dump({"cp": cp, "nodes": nodes, "connections": connections, "notes": notes},
                       f, indent=2, ensure_ascii=False)
         print(f"[LOGIC CONFIG] Saved CP{cp}: {len(nodes)} nodes, {len(connections)} connections")
 
