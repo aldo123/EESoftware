@@ -66,6 +66,9 @@ def _stopbits_from_str(s):
     }.get(str(s), serial.STOPBITS_ONE)
 
 
+_last_logged_rtu = None
+
+
 def _load_rtu_devices():
     path = _settings_path()
 
@@ -114,7 +117,10 @@ def _load_rtu_devices():
             })
             result.append(item)
 
-        print(f"[MODBUS RTU] Loaded {len(result)} device(s)")
+        global _last_logged_rtu
+        if result != _last_logged_rtu:   # polled constantly: log only when the list changed
+            print(f"[MODBUS RTU] Loaded {len(result)} device(s)")
+            _last_logged_rtu = result
         return result
 
     except Exception as e:

@@ -180,6 +180,9 @@ _logic_buffers: dict[str, deque] = {}
 _logic_buffers_lock = threading.Lock()
 
 
+_last_logged_rs232 = None
+
+
 def _load_com_devices():
     path = _get_settings_path()
     if not os.path.exists(path):
@@ -197,7 +200,10 @@ def _load_com_devices():
             return []
             
         result = [d for d in devices if str(d.get("Type", "")).upper() == "COM"]
-        print(f"[RS232] Berhasil memuat {len(result)} perangkat COM dari setting.json.")
+        global _last_logged_rs232
+        if len(result) != _last_logged_rs232:   # polled constantly: log only when the count changed
+            print(f"[RS232] Berhasil memuat {len(result)} perangkat COM dari setting.json.")
+            _last_logged_rs232 = len(result)
         return result
         
     except json.JSONDecodeError as e:

@@ -29,6 +29,7 @@ from flask import Blueprint, request, jsonify
 # ============================================================
 
 DEFAULT_TIMEOUT = 0.35
+CONNECT_RETRY_SECONDS = 2.0   # wait this long after a failed connect before trying the same device again
 DEFAULT_RECONNECT_INTERVAL = 1.0
 CONFIG_SYNC_INTERVAL = 1.0
 MAX_WRITE_QUEUE = 4096
@@ -171,14 +172,15 @@ def _load_tcp_devices():
 
             result.append(item)
 
-        print(f"[MODBUS] Loaded {len(result)} TCP device(s)")
-
-        for d in result:
-            print(
-                f"[MODBUS] {d['Device Name']} -> "
-                f"{d['IP Address']}:{d['Port']} "
-                f"Unit={d['Device ID']}"
-            )
+        # Called by every poll that touches a device: only log when the list really changed.
+        if result != _last_good_tcp_devices:
+            print(f"[MODBUS] Loaded {len(result)} TCP device(s)")
+            for d in result:
+                print(
+                    f"[MODBUS] {d['Device Name']} -> "
+                    f"{d['IP Address']}:{d['Port']} "
+                    f"Unit={d['Device ID']}"
+                )
 
         _last_good_tcp_devices = list(result)
         return result
@@ -281,6 +283,11 @@ class ModbusTCPClient:
             if not self.ip or not self.port:
                 return False
 
+            # A device that just failed to connect is not retried for a moment: every poller would otherwise block for
+            # the whole connect timeout, back to back, while holding this lock — which makes the entire app sluggish.
+            if time.monotonic() < getattr(self, "_retry_after", 0.0):
+                return False
+
             s = None
 
             try:
@@ -296,25 +303,31 @@ class ModbusTCPClient:
                     pass
                 s.settimeout(self.timeout)
 
-                print(
-                    f"[MODBUS] Connecting {self.name} "
-                    f"-> {self.ip}:{self.port} "
-                    f"Unit={self.unit_id}"
-                )
+                if not getattr(self, "_connect_failed", False):
+                    print(
+                        f"[MODBUS] Connecting {self.name} "
+                        f"-> {self.ip}:{self.port} "
+                        f"Unit={self.unit_id}"
+                    )
 
                 s.connect((self.ip, self.port))
 
                 self.sock = s
                 self.running = True
+                self._connect_failed = False
+                self._retry_after = 0.0
 
                 print(f"[MODBUS] Connected: {self.name}")
                 return True
 
             except Exception as e:
-                print(
-                    f"[MODBUS] Connect error "
-                    f"[{self.name}]: {e}"
-                )
+                if not getattr(self, "_connect_failed", False):   # log the first failure only, not every retry
+                    print(
+                        f"[MODBUS] Connect error "
+                        f"[{self.name}]: {e} (retrying every {CONNECT_RETRY_SECONDS:g}s)"
+                    )
+                self._connect_failed = True
+                self._retry_after = time.monotonic() + CONNECT_RETRY_SECONDS
 
                 try:
                     if s:
