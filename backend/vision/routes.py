@@ -9,6 +9,7 @@ from flask import Blueprint, request, jsonify, Response
 
 from vision import capture_worker, live_status
 from vision.camera_engine import get_raw_frame
+from vision.blob_counter import detect_blobs
 
 vision_bp = Blueprint("vision", __name__)
 
@@ -25,6 +26,30 @@ def count_status(camera_id):
     widget to render on top of the stream. Purely observability, no effect on
     the actual counting logic in blob_counter.py / window_counter.py."""
     return jsonify(live_status.get(camera_id))
+
+
+@vision_bp.get("/api/vision/blob-preview/<camera_id>")
+def blob_preview(camera_id):
+    """The blobs currently visible in the ROI of the latest frame (green circles on the live view), with the same
+    detection the 'Contour Blob' counting uses. Query: threshold, min_contour, max_contour, roi_x, roi_y, roi_w, roi_h
+    (defaults: the whole 640 x 480 frame). Pure read, nothing is counted or stored."""
+    def num(key, default):
+        try:
+            return float(request.args.get(key, default))
+        except (TypeError, ValueError):
+            return float(default)
+
+    frame = get_raw_frame(camera_id)
+    if frame is None:
+        return jsonify({"blobs": [], "count": 0, "frame": None})
+    h, w = frame.shape[:2]
+    params = {"threshold": num("threshold", 165), "min_contour": num("min_contour", 250), "max_contour": num("max_contour", 3000),
+              "roi_mode": request.args.get("roi_mode", "crop")}   # "crop" | "center" (see vision/blob_counter.py)
+    blobs = detect_blobs(frame, num("roi_x", 0), num("roi_y", 0), num("roi_w", w), num("roi_h", h), params)
+    return jsonify({
+        "blobs": [{"cx": round(b["cx"], 1), "cy": round(b["cy"], 1), "r": round(b["r"], 1)} for b in blobs],
+        "count": len(blobs), "frame": {"w": w, "h": h},
+    })
 
 
 @vision_bp.post("/api/vision/cameras/<camera_id>/start")

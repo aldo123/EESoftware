@@ -16,7 +16,7 @@ TEMPLATES_DIR = os.path.join(DATA_DIR, "logic_templates")
 
 # Node types with true/false branch outputs, used when flattening Group (subflow_call)
 # nodes. Add a type here whenever a new check-style node is built.
-CHECK_NODE_TYPES = {"zone_inspect", "count_over_time", "custom_script", "multi_condition_gate"}
+CHECK_NODE_TYPES = {"zone_inspect", "count_over_time", "custom_script", "multi_condition_gate", "countdown"}
 MAX_SUBFLOW_DEPTH = 8
 
 # ─── Runtime State per CP ──────────────────────────────────────────
@@ -532,6 +532,16 @@ class FlowExecutor:
         right = self._resolve_source(cond.get("compare_source", "static"), cond, static_value=cond.get("value", ""), field_key=cond.get("value_source", ""), device_prefix="value_")
         return self._compare_values(left, operator, right)
 
+    @staticmethod
+    def _select_db(cfg: dict, default_db):
+        """The MySQL connection a node / condition asked for ("database" / "database_connection"),
+        or the shared default one. See db_connections.py."""
+        name = str((cfg or {}).get("database") or (cfg or {}).get("database_connection") or "").strip()
+        if not name:
+            return default_db
+        from db_connections import get_database
+        return get_database(name)
+
     def _read_internal_variable(self, name: str):
         """Read the CURRENT Internal Variable value.
 
@@ -943,6 +953,87 @@ class FlowExecutor:
 
         return text[start:end]
 
+    @staticmethod
+    def _shape_read_value(value, cfg: dict) -> str:
+        """Optional post-processing of a Read Communication result:
+          value_extract = "number"  -> keep only the first number found in the response text
+          scale / decimals          -> divide by `scale` (e.g. a PLC register holding value x 100)
+        Both are off by default, so existing nodes behave exactly as before."""
+        text = str(value if value is not None else "")
+        if cfg.get("strip_whitespace"):
+            text = text.strip()   # drops the scanner's trailing CR/LF
+        if str(cfg.get("value_extract", "none") or "none").strip().lower() == "number":
+            match = re.search(r"[-+]?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?", text)
+            if not match:
+                raise ValueError(f"no number found in response {text!r}")
+            text = match.group(0)
+        scale = str(cfg.get("scale", "") or "").strip()
+        if scale:
+            divisor = float(scale)
+            if divisor == 0:
+                raise ValueError("scale must not be 0")
+            number = float(text) / divisor
+            decimals = str(cfg.get("decimals", "") or "").strip()
+            text = f"{number:.{int(decimals)}f}" if decimals else repr(round(number, 6))
+        return text
+
+    def _procedure_param(self, p: dict):
+        """One stored-procedure argument: fixed value, Internal Variable, flow field or "now"."""
+        source = str(p.get("source_type", "static") or "static").strip().lower()
+        if source == "internal_variable":
+            value = self._read_internal_variable(p.get("variable_name", ""))
+            if value is None:
+                raise ValueError(f"Internal Variable '{p.get('variable_name', '')}' not found")
+        elif source == "field_key":
+            value = self._get_field(p.get("field_key", ""))
+        elif source == "now":
+            from datetime import datetime
+            value = datetime.now().strftime(str(p.get("format") or "%Y-%m-%d %H:%M:%S"))
+        else:
+            value = p.get("value", "")
+        if str(p.get("data_type", "text")).strip().lower() == "number":
+            number = float(value)
+            return int(number) if number == int(number) else number
+        return str(value)
+
+    @staticmethod
+    def _procedure_success(cfg: dict, values: list) -> bool:
+        """success_rule: no_error (default) | col0_gt | col0_equals | col0_not_equals | col1_equals."""
+        rule = str(cfg.get("success_rule", "no_error") or "no_error").strip().lower()
+        want = cfg.get("success_value", "")
+        if rule == "no_error":
+            return True
+        col = 1 if rule.startswith("col1") else 0
+        got = values[col] if col < len(values) else None
+        if rule == "col0_gt":
+            try:
+                return float(got) > float(want)
+            except (TypeError, ValueError):
+                return False
+        same = str("" if got is None else got).strip().lower() == str(want).strip().lower()
+        return not same if rule == "col0_not_equals" else same
+
+    def _store_response_fields(self, cfg: dict, text: str) -> str:
+        """Instruments that answer with "a,b,c,d,e,f,g": check how many fields came back and optionally
+        keep one of them in a second Internal Variable.
+          valid_field_counts = "6,7"  -> any other count turns the main value into `invalid_value` (default NA)
+          field_index        = 5      -> 1-based field kept in field_destination_variable_name
+          field_count        = 7      -> that field is only kept when exactly this many fields arrived
+        Everything is off unless configured."""
+        delimiter = str(cfg.get("field_delimiter") or ",")
+        parts = [p.strip() for p in str(text).split(delimiter)] if text != "" else []
+        valid = [int(x) for x in re.findall(r"\d+", str(cfg.get("valid_field_counts", "") or ""))]
+        if valid and len(parts) not in valid:
+            text = str(cfg.get("invalid_value") or "NA")
+        field_var = str(cfg.get("field_destination_variable_name", "") or "").strip()
+        index = str(cfg.get("field_index", "") or "").strip()
+        if field_var and index:
+            need = str(cfg.get("field_count", "") or "").strip()
+            i = int(index)
+            keep = parts[i - 1] if 1 <= i <= len(parts) and (not need or len(parts) == int(need)) else ""
+            self._write_internal_variable(field_var, keep)
+        return text
+
     def _execute_read_communication(self, cfg: dict) -> dict:
         """Universal communication read node.
 
@@ -987,7 +1078,36 @@ class FlowExecutor:
                 "append_cr": bool(cfg.get("append_cr", True)),
                 "append_lf": bool(cfg.get("append_lf", True)),
             }
-            result = mod.request_config(body)
+            has_request = bool(str(cfg.get("request_text") or "").strip() or str(cfg.get("request_hex") or "").strip())
+            if has_request and cfg.get("wait_response") is False:
+                # Fire-and-forget command (e.g. a scanner's LOFF): send, do not wait for any reply.
+                text = str(cfg.get("request_text") or "")
+                if body["append_cr"]:
+                    text += "\r"
+                if body["append_lf"]:
+                    text += "\n"
+                mod.send_config({"device_name": device_name, "data_text": text, "data_hex": cfg.get("request_hex") if cfg.get("request_mode") == "hex" else None,
+                                 "encoding": body["encoding"], "wait_response": False})
+                result = {"value": "", "response": ""}
+            elif has_request:
+                result = mod.request_config(body)
+            else:
+                # No request configured: the device pushes its own data (a tester that sends its
+                # result when the test ends). Take the LATEST datagram already queued, otherwise
+                # wait for the next one — never an older, stale result.
+                client = mod.get_client(device_name)
+                latest = None
+                if str(cfg.get("receive_mode", "latest") or "latest").strip().lower() == "latest":
+                    while True:
+                        try:
+                            latest = client.rx_queue.get_nowait()
+                        except Exception:
+                            break
+                if latest is not None:
+                    decoded = mod.UdpSerialClient._decode_response(latest, body["response_mode"], body["encoding"])
+                    result = {"value": decoded, "response": decoded, "response_hex": latest.hex().upper()}
+                else:
+                    result = mod.receive_config(body)
             return {"protocol": protocol, "device_name": device_name, "value": result.get("value", result.get("response", "")), "response": result.get("response", result.get("value", "")), "response_hex": result.get("response_hex", "")}
 
         if protocol == "raw_tcp":
@@ -1231,11 +1351,50 @@ class FlowExecutor:
                 w = h = 100
             params = cfg.get("method_params", {}) or {}
 
+            # Optional live tuning: a parameter bound to an Internal Variable (cfg["param_variables"])
+            # takes the variable's CURRENT value on every run, so an operator can adjust it from a
+            # Page Builder slider without editing the flow. Unbound / non-numeric -> the static value.
+            pvars = cfg.get("param_variables") or {}
+            if isinstance(pvars, dict) and any(str(v or "").strip() for v in pvars.values()):
+                params = dict(params)
+
+                def _bound_number(key):
+                    var_name = str(pvars.get(key, "") or "").strip()
+                    if not var_name:
+                        return None
+                    try:
+                        return float(self._read_internal_variable(var_name))
+                    except (TypeError, ValueError):
+                        self._log(f"Count Over Time: variable '{var_name}' for {key} is not a number - using the static value", "#F59E0B")
+                        return None
+
+                for key in ("threshold", "min_contour", "max_contour"):
+                    val = _bound_number(key)
+                    if val is not None:
+                        params[key] = int(val) if key == "threshold" else val
+                val = _bound_number("max_count")
+                if val is not None:
+                    max_count = int(val)
+                val = _bound_number("duration")
+                if val is not None:
+                    duration = min(max(val, 0.5), 15)
+                roi = {"roi_x": x, "roi_y": y, "roi_w": w, "roi_h": h}
+                for key in roi:
+                    val = _bound_number(key)
+                    if val is not None:
+                        roi[key] = int(val)
+                x, y, w, h = roi["roi_x"], roi["roi_y"], roi["roi_w"], roi["roi_h"]
+
             get_frame = lambda: get_raw_frame(camera_id)  # noqa: E731
 
             if method == "contour_blob":
                 from vision.blob_counter import count_blobs_over_time
-                count = count_blobs_over_time(get_frame, x, y, w, h, params, duration, camera_id=camera_id)
+                # "crop" (default) looks only inside the ROI; "center" counts a blob when its CENTRE is inside the ROI
+                # (the original Buble Tester programs) — see vision/blob_counter.py
+                params = {**params, "roi_mode": str(cfg.get("roi_mode", "crop") or "crop")}
+                # the original programs look at EVERY frame (~30 ms); the 0.2 s debounce needs a comparable rate
+                interval = 0.03 if params["roi_mode"] == "center" else 0.1
+                count = count_blobs_over_time(get_frame, x, y, w, h, params, duration, camera_id=camera_id, sample_interval=interval)
             else:
                 from vision.inspection_methods import METHOD_FUNCS
                 from vision.window_counter import count_events_over_time
@@ -1316,7 +1475,8 @@ class FlowExecutor:
                 table = get_table_name(self.cp)
                 columns = list(get_columns_from_table(self.cp) or [])
                 lookup_col = "sn"
-                value_col = str(cond.get("data_column", cond.get("column", "")) or "").strip()
+                # The editor saves the chosen data column as `sn_column`; older configs used data_column/column.
+                value_col = str(cond.get("data_column", cond.get("column", cond.get("sn_column", ""))) or "").strip()
                 if lookup_col not in columns:
                     actual = next((c for c in columns if str(c).lower() == lookup_col), None)
                     if actual:
@@ -1373,12 +1533,16 @@ class FlowExecutor:
                     }
 
             def _database_lookup(cond):
-                if db is None:
+                lookup_db = self._select_db(cond, db)
+                if lookup_db is None:
                     raise ValueError("database is disconnected")
 
-                table = _safe_identifier(cond.get("table_name", cond.get("source_table", "")), "database table")
-                key_col = _safe_identifier(cond.get("sn_column", cond.get("target_database_column", "sn")), "database SN column")
-                value_col = str(cond.get("data_column", cond.get("column", "")) or "").strip()
+                # The editor saves database_table / database_lookup_column / database_data_column;
+                # table_name / source_table, sn_column / target_database_column and data_column / column
+                # are the older names — both are accepted.
+                table = _safe_identifier(cond.get("database_table", cond.get("table_name", cond.get("source_table", ""))), "database table")
+                key_col = _safe_identifier(cond.get("database_lookup_column", cond.get("sn_column", cond.get("target_database_column", "sn"))) or "sn", "database SN column")
+                value_col = str(cond.get("database_data_column", cond.get("data_column", cond.get("column", ""))) or "").strip()
                 operator = str(cond.get("operator", "equals") or "equals").strip().lower()
 
                 # The DB manager/connection may be shared by concurrent Race
@@ -1388,7 +1552,7 @@ class FlowExecutor:
                 with self._db_gate_lock:
                     available = self._db_schema_cache.get(table)
                     if available is None:
-                        meta = db.fetch_all(f"SHOW COLUMNS FROM `{table}`")
+                        meta = lookup_db.fetch_all(f"SHOW COLUMNS FROM `{table}`")
                         if not meta:
                             raise ValueError(f"database table '{table}' not found")
                         available = [str(r.get("Field", "")) for r in meta if isinstance(r, dict) and r.get("Field")]
@@ -1408,7 +1572,7 @@ class FlowExecutor:
                     qtable = "`" + table.replace("`", "``") + "`"
                     qkey = "`" + key_actual.replace("`", "``") + "`"
                     with self._db_gate_lock:
-                        row = db.fetch_one(
+                        row = lookup_db.fetch_one(
                             f"SELECT COUNT(*) AS cnt FROM {qtable} WHERE {qkey} = %s",
                             (str(sn_value),),
                         )
@@ -1436,7 +1600,7 @@ class FlowExecutor:
                     sql += f" ORDER BY {qdate} DESC"
                 sql += " LIMIT 1"
                 with self._db_gate_lock:
-                    row = db.fetch_one(sql, (str(sn_value),))
+                    row = lookup_db.fetch_one(sql, (str(sn_value),))
                 if not row:
                     return {"exists": False, "count": 0, "value": None, "display": f"SN={sn_value}, no row"}
                 return {
@@ -1699,6 +1863,42 @@ class FlowExecutor:
 
         # ─── WRITE SN LIST: write one or more Internal Variables into one
         #     SN List row for this CP. date_time is generated here at execution.
+        # ─── CALL STORED PROCEDURE: run a MySQL stored procedure with parameters taken from Internal
+        #     Variables / flow fields / fixed values / the current time, store chosen result columns
+        #     in Internal Variables, and continue on the true (success) or false (failure) port.
+        if ntype == "db_procedure":
+            cfg = node.get("config", {}) or {}
+            procedure = str(cfg.get("procedure", "") or "").strip()
+            ok = False
+            try:
+                if not re.fullmatch(r"[A-Za-z0-9_]+", procedure):
+                    raise ValueError(f"invalid procedure name '{procedure}'")
+                node_db = self._select_db(cfg, db)
+                if node_db is None:
+                    raise ValueError("database is disconnected")
+                args = [self._procedure_param(p) for p in (cfg.get("params") or []) if isinstance(p, dict)]
+                rows = node_db.call_procedure(procedure, args)
+                first = rows[0] if rows else {}
+                values = list(first.values()) if isinstance(first, dict) else list(first or [])
+                for m in (cfg.get("results") or []):
+                    var = str(m.get("variable_name", "") or "").strip()
+                    if not var:
+                        continue
+                    col = int(m.get("column", 0) or 0)
+                    raw_value = values[col] if col < len(values) else ""
+                    self._write_internal_variable(var, f"{m.get('prefix', '')}{'' if raw_value is None else raw_value}")
+                ok = self._procedure_success(cfg, values)
+                self._log(f"Call Procedure {procedure}({', '.join(str(a) for a in args)}) → {values} → {'OK' if ok else 'NG'}",
+                          "#22C55E" if ok else "#EF4444")
+            except Exception as e:
+                self._log(f"Call Procedure error ({procedure or '?'}): {e}", "#EF4444")
+                for m in (cfg.get("results") or []):
+                    # the failure text goes where the procedure's message column would have gone
+                    if int(m.get("column", 0) or 0) == 1 and str(m.get("variable_name", "") or "").strip():
+                        self._write_internal_variable(str(m["variable_name"]).strip(), f"{m.get('prefix', '')}{e}")
+            self._follow(outputs, "true" if ok else "false", db)
+            return
+
         if ntype == "write_sn_list":
             cfg = node.get("config", {}) or {}
             mappings = cfg.get("mappings")
@@ -1781,14 +1981,25 @@ class FlowExecutor:
             cfg = node.get("config", {}) or {}
             try:
                 destination = str(cfg.get("destination_variable_name", "") or "").strip()
-                if not destination:
+                send_only = cfg.get("protocol") == "udp_serial" and cfg.get("wait_response") is False
+                if not destination and not send_only:
                     raise ValueError("Read Communication: destination Internal Variable is not configured")
+                if send_only and not destination:
+                    self._execute_read_communication(cfg)      # command only (LOFF ...): nothing to store
+                    self._log(f"Read Communication [udp_serial] {cfg.get('device_name', '?')} → sent '{cfg.get('request_text', '')}'", "#0EA5E9")
+                    self._follow(outputs, "next", db)
+                    return
+                if cfg.get("clear_before_read"):
+                    # A failed read then leaves the variable empty, so a following gate can tell
+                    # "no reading" apart from the previous product's value.
+                    self._write_internal_variable(destination, "")
                 result = self._execute_read_communication(cfg)
                 value = result.get("value", result.get("response", ""))
                 if isinstance(value, (dict, list, tuple)):
                     value = json.dumps(value, ensure_ascii=False)
                 else:
                     value = str(value if value is not None else "")
+                value = self._store_response_fields(cfg, self._shape_read_value(value, cfg))
                 if not self._write_internal_variable(destination, value):
                     raise ValueError(f"Read Communication: failed to write Internal Variable '{destination}'")
                 self._log(
@@ -1796,9 +2007,9 @@ class FlowExecutor:
                     f"→ '{value}' → Internal Variable '{destination}'",
                     "#0EA5E9",
                 )
-                self._follow(outputs, "next", db)
             except Exception as e:
                 self._log(f"Read Communication error: {e}", "#EF4444")
+            # Continue exactly once, whether the read worked or not (this used to run twice on success).
             self._follow(outputs, "next", db)
             return
 
@@ -1839,10 +2050,25 @@ class FlowExecutor:
 
             for w in writes:
                 target = w.get("target", "device")
-                value = self._resolve_source(
-                    w.get("value_source", "static"), w,
-                    static_value=w.get("value", ""), field_key=w.get("value_field_key", ""),
-                )
+                if w.get("value_source") == "increment" and target == "internal":
+                    # Counter: current value of the target Internal Variable + step (the Value field, default 1).
+                    current = self._read_internal_variable(w.get("variable_name", ""))
+                    try:
+                        base = float(current) if str(current or "").strip() else 0.0
+                        step = float(w.get("value", 1) if str(w.get("value", "")).strip() else 1)
+                    except (TypeError, ValueError):
+                        base, step = 0.0, 1.0
+                    total = base + step
+                    value = str(int(total)) if total == int(total) else str(total)
+                elif w.get("value_source") == "datetime":
+                    # prefix (the Value field) + the current time, e.g. "TO_" + 20261002143015
+                    from datetime import datetime
+                    value = str(w.get("value", "") or "") + datetime.now().strftime(str(w.get("datetime_format") or "%Y%m%d%H%M%S"))
+                else:
+                    value = self._resolve_source(
+                        w.get("value_source", "static"), w,
+                        static_value=w.get("value", ""), field_key=w.get("value_field_key", ""),
+                    )
 
                 if target == "internal":
                     var_name = w.get("variable_name", "")
@@ -2014,6 +2240,12 @@ class FlowExecutor:
         #     separate from Write SN Database.
         if ntype == "read_sn_database":
             cfg = node.get("config", {}) or {}
+            try:
+                node_db = self._select_db(cfg, db)
+            except Exception as exc:
+                self._log(f"Database connection error: {exc}", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
             source_table = str(cfg.get("source_table", "") or "").strip()
             target_database_column = str(
                 cfg.get("target_database_column", "sn") or "sn"
@@ -2071,7 +2303,7 @@ class FlowExecutor:
                 return
 
             try:
-                if db is None:
+                if node_db is None:
                     raise ValueError("database is disconnected")
 
                 # Table/column identifiers cannot be bound as SQL parameters,
@@ -2106,7 +2338,7 @@ class FlowExecutor:
                     destination_variables.append(variable_name)
 
                 # Validate that the configured table and source columns exist.
-                meta = db.fetch_all(f"SHOW COLUMNS FROM `{source_table}`")
+                meta = node_db.fetch_all(f"SHOW COLUMNS FROM `{source_table}`")
                 if not meta:
                     raise ValueError(
                         f"source MySQL table '{source_table}' not found or database is disconnected"
@@ -2195,7 +2427,7 @@ class FlowExecutor:
                 else:
                     # No date_time: table is treated as a simple lookup table.
                     sql += "LIMIT 1"
-                row = db.fetch_one(sql, (str(target_value),))
+                row = node_db.fetch_one(sql, (str(target_value),))
 
                 if not row:
                     self._log(
@@ -2239,6 +2471,12 @@ class FlowExecutor:
         #     mapped values can come from Internal Variable or Fixed Value.
         if ntype == "write_sn_database":
             cfg = node.get("config", {}) or {}
+            try:
+                node_db = self._select_db(cfg, db)
+            except Exception as exc:
+                self._log(f"Database connection error: {exc}", "#EF4444")
+                self._follow(outputs, "next", db)
+                return
             mappings = cfg.get("mappings")
             if not isinstance(mappings, list):
                 mappings = cfg.get("db_mappings")
@@ -2268,12 +2506,12 @@ class FlowExecutor:
                 from routes.snlist import get_snlist_conn, get_table_name
                 import re as _re
 
-                if not db:
+                if not node_db:
                     raise ValueError("MySQL database connection is not available")
                 if not _re.fullmatch(r"[A-Za-z0-9_]+", destination_table):
                     raise ValueError("invalid destination database table name")
 
-                dest_meta = db.fetch_all(f"SHOW COLUMNS FROM `{destination_table}`")
+                dest_meta = node_db.fetch_all(f"SHOW COLUMNS FROM `{destination_table}`")
                 if not dest_meta:
                     raise ValueError(
                         f"destination MySQL table '{destination_table}' not found or database is disconnected"
@@ -2346,7 +2584,7 @@ class FlowExecutor:
                     q_cols = ", ".join("`" + c.replace("`", "``") + "`" for c in insert_columns)
                     placeholders = ", ".join(["%s"] * len(insert_columns))
                     sql = f"INSERT INTO {q_table} ({q_cols}) VALUES ({placeholders})"
-                    affected = db.execute(sql, insert_values)
+                    affected = node_db.execute(sql, insert_values)
                     if affected <= 0:
                         raise ValueError("MySQL INSERT returned 0 affected rows")
 
@@ -2451,7 +2689,7 @@ class FlowExecutor:
                     # distinguishes 'row not found' from MySQL rowcount=0 because
                     # the new value is identical to the old value.
                     check_sql = f"SELECT 1 AS _exists FROM {q_table} WHERE {q_key} = %s LIMIT 1"
-                    existing = db.fetch_one(check_sql, (target_value,))
+                    existing = node_db.fetch_one(check_sql, (target_value,))
                     if not existing:
                         raise ValueError(
                             f"Primary Key value '{target_value}' was not found in MySQL table "
@@ -2472,9 +2710,9 @@ class FlowExecutor:
                     # original helper catches SQL exceptions and returns 0.
                     # Execute directly on the same live MySQL connection so any
                     # real MySQL error is visible and the transaction is committed.
-                    if not db.is_connected() and not db.connect():
+                    if not node_db.is_connected() and not node_db.connect():
                         raise RuntimeError("MySQL connection unavailable")
-                    conn = getattr(db, "conn", None)
+                    conn = getattr(node_db, "conn", None)
                     if conn is None:
                         raise RuntimeError("MySQL connection object unavailable")
 
@@ -2500,7 +2738,7 @@ class FlowExecutor:
                     # Read the row back after commit so the operation is verified,
                     # not merely assumed successful.
                     verify_sql = f"SELECT * FROM {q_table} WHERE {q_key} = %s LIMIT 1"
-                    verified = db.fetch_one(verify_sql, (target_value,))
+                    verified = node_db.fetch_one(verify_sql, (target_value,))
                     if not verified:
                         raise ValueError("UPDATE committed but target row could not be read back")
 
@@ -2530,6 +2768,70 @@ class FlowExecutor:
         # ─── TIMER: pause execution for a fixed duration, then continue — plain
         #     fire-and-forget delay, distinct from Multi-Condition Gate's "Wait
         #     Until Match" (which polls a condition, not a fixed clock). ──
+        # ─── COUNTDOWN: count `seconds` down one second at a time. After EVERY second each check is evaluated again
+        #     (an Internal Variable or a Modbus TCP register compared with a fixed value); the first check that fails
+        #     stops the countdown and takes the ✗ port. All checks held for the whole time -> the ✓ port. The remaining
+        #     seconds are written to `variable_name` after each second (for a big number on screen) and the label of the
+        #     check that failed is written to `reason_variable`, so the ✗ branch can react differently per reason. ──
+        if ntype == "countdown":
+            cfg = node.get("config", {})
+            import time
+            try:
+                total = int(min(max(float(cfg.get("seconds", 5)), 0), 120))
+            except (TypeError, ValueError):
+                total = 5
+            show_var = str(cfg.get("variable_name", "") or "").strip()
+            reason_var = str(cfg.get("reason_variable", "") or "").strip()
+            checks = [ch for ch in (cfg.get("checks") or []) if isinstance(ch, dict)]
+
+            def check_once(ch):
+                """(ok, shown value). A value that cannot be read counts as NOT ok, like the Multi-Condition Gate."""
+                source = str(ch.get("source_type", "internal_variable") or "internal_variable").strip().lower()
+                try:
+                    if source == "internal_variable":
+                        value = self._read_internal_variable(str(ch.get("variable_name", "") or "").strip())
+                        if value is None:
+                            raise ValueError("Internal Variable not found")
+                    elif source == "tcpip":
+                        value = self._resolve_device_value({
+                            "protocol": ch.get("protocol", "tcp"), "device_name": ch.get("device_name", ""),
+                            "address_type": ch.get("address_type", "holding_register"), "address": ch.get("address", "0"),
+                            "data_type": ch.get("data_type", ""),
+                        })
+                        if value == "":
+                            raise ValueError("TCP/IP value could not be read")
+                    else:
+                        raise ValueError(f"unsupported source '{source}'")
+                    ok = self._compare_values(value, str(ch.get("operator", "equals") or "equals").strip().lower(),
+                                              ch.get("value", ""), ch.get("value2", ""))
+                    return ok, str(value)
+                except Exception as e:
+                    return False, str(e)
+
+            if reason_var:
+                self._write_internal_variable(reason_var, "")
+            if show_var:
+                self._write_internal_variable(show_var, str(total))
+            started = time.monotonic()
+            for second in range(1, total + 1):
+                # tick on a fixed schedule: the PLC reads of the checks must not stretch the 5 seconds (and make the
+                # displayed number skip or stall)
+                time.sleep(max(0.0, started + second - time.monotonic()))
+                for idx, ch in enumerate(checks):
+                    ok, shown = check_once(ch)
+                    if not ok:
+                        label = str(ch.get("label") or "").strip() or f"check {idx + 1}"
+                        if reason_var:
+                            self._write_internal_variable(reason_var, label)
+                        self._log(f"Countdown: stopped at {second}/{total}s — '{label}' failed ({shown})", "#EF4444")
+                        self._follow(outputs, "false", db)
+                        return
+                if show_var:
+                    self._write_internal_variable(show_var, str(total - second))
+            self._log(f"Countdown: {total}s finished, all checks held", "#3B82F6")
+            self._follow(outputs, "true", db)
+            return
+
         if ntype == "timer":
             cfg = node.get("config", {})
             try:
@@ -2649,6 +2951,12 @@ def get_settings_schema():
 
 
 # ─── RUN LOGIC ENDPOINT ──────────────────────────────────────────
+@logic_engine_bp.get("/api/db-connections")
+def list_db_connections():
+    from db_connections import list_connections
+    return jsonify({"success": True, "connections": list_connections()})
+
+
 @logic_engine_bp.post("/api/logic-run/<cp>")
 def run_logic(cp):
     from db_manager import db

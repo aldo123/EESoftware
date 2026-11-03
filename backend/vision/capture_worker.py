@@ -41,6 +41,10 @@ def _run(camera_id: str, cfg: dict, stop_event: threading.Event):
                 time.sleep(0.05)
                 continue
 
+            size = cfg.get("resize")
+            if size and (frame.shape[1], frame.shape[0]) != (int(size[0]), int(size[1])):
+                frame = cv2.resize(frame, (int(size[0]), int(size[1])))   # ROI + contour areas are tuned for 640 x 480
+
             store_raw_frame(camera_id, frame)
             ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
             if ok:
