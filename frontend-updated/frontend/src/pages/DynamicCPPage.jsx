@@ -4,6 +4,7 @@ import { usePlcRuntime } from "../hooks/usePlcRuntime";
 import { TAG_ADDRESS_TYPE, findDevice, normalizeFinsArea } from "../lib/comm";
 import { useInternalVariables } from "../hooks/useInternalVariables";
 import { POLL } from "../config/polling";
+import { widgetIsVisible } from "../widgets/stateStyle";
 import {
   RuntimeButton,
   RuntimeLight,
@@ -18,7 +19,11 @@ import {
   RuntimeProgressBar,
   RuntimeSelectorSwitch,
   RuntimeMessage,
+  RuntimeSlider,
+  RuntimeLogTable,
+  RuntimeShiftSchedule,
 } from "../widgets";
+import { pageBackgroundCss, isCustomBackground } from "../widgets/pageBackground";
 
 // ──────────────────────────────────────────────────────────────────
 // Every widget's live/runtime rendering now lives in its own file under
@@ -277,6 +282,17 @@ function DynamicCPPage({ cpNumber, user }) {
     () => getPopupContentBounds(popupWidgets, popupDesignCanvas),
     [popupWidgets, popupDesignCanvas]
   );
+
+  // A popup page whose lowest widget is a shape covering the whole canvas (e.g. a dark panel) gets that colour as its
+  // window background too, so the area around the scaled content matches the page instead of showing light margins.
+  const popupBackground = useMemo(() => {
+    if (popupPage?.background?.mode) return pageBackgroundCss(popupPage.background);
+    const full = popupWidgets.find(w =>
+      w?.type === "shape" && Number(w.x || 0) <= 0 && Number(w.y || 0) <= 0 &&
+      Number(w.props?.width || 0) >= popupDesignCanvas.width && Number(w.props?.height || 0) >= popupDesignCanvas.height &&
+      w.props?.fill && w.props.fill !== "transparent");
+    return full ? full.props.fill : null;
+  }, [popupPage?.background, popupWidgets, popupDesignCanvas]);
 
   const popupScale = useMemo(() => {
     const availableWidth = Math.max(1, popupViewport.width - 24);
@@ -1440,6 +1456,7 @@ function DynamicCPPage({ cpNumber, user }) {
           kind: "dynamic",
           canvasWidth: 1920,
           canvasHeight: 1080,
+          background: savedPages.dynamic?.background,
           widgets: Array.isArray(savedPages.dynamic?.widgets)
             ? savedPages.dynamic.widgets
             : legacyDynamic,
@@ -1456,6 +1473,7 @@ function DynamicCPPage({ cpNumber, user }) {
             kind: page.kind === "popup" ? "popup" : "custom",
             canvasWidth: Number(page.canvasWidth || (page.kind === "popup" ? 800 : 1920)),
             canvasHeight: Number(page.canvasHeight || (page.kind === "popup" ? 500 : 1080)),
+            background: page.background,
             widgets: Array.isArray(page.widgets) ? page.widgets : [],
           };
         });
@@ -1532,6 +1550,13 @@ function DynamicCPPage({ cpNumber, user }) {
 
     const configuredIds = new Set(popupWidgets.map(w => String(w.id)));
 
+    // Several Popup widgets may open the same page (e.g. one per trigger value); a page stays open while ANY of them is active.
+    const activeTargets = new Set(popupWidgets.filter(w => {
+      const pr = w?.props || {};
+      const vn = String(pr.triggerVariable || "").trim();
+      return vn && activeCPInternalMap.get(vn) && valuesEqualRuntime(getInternalValue(vn), pr.triggerValue ?? 1);
+    }).map(w => String(w?.props?.targetPage || "").trim()));
+
     // Remove stale trigger/reopen states.
     Object.keys(popupTriggerStateRef.current).forEach(id => {
       if (!configuredIds.has(id)) delete popupTriggerStateRef.current[id];
@@ -1555,7 +1580,7 @@ function DynamicCPPage({ cpNumber, user }) {
         popupTriggerStateRef.current[id] = false;
         popupClosedByUserRef.current[id] = false;
 
-        if (String(activePopupPage || "") === target && target) {
+        if (String(activePopupPage || "") === target && target && !activeTargets.has(target)) {
           setActivePopupPage(null);
           setPopupMaximized(false);
         }
@@ -1570,7 +1595,7 @@ function DynamicCPPage({ cpNumber, user }) {
         popupTriggerStateRef.current[id] = false;
         popupClosedByUserRef.current[id] = false;
 
-        if (String(activePopupPage || "") === target && target) {
+        if (String(activePopupPage || "") === target && target && !activeTargets.has(target)) {
           setActivePopupPage(null);
           setPopupMaximized(false);
         }
@@ -3750,6 +3775,7 @@ function DynamicCPPage({ cpNumber, user }) {
 
   const renderRuntimeWidget = useCallback((widget) => {
     const { type, id } = widget;
+    if (!widgetIsVisible(widget?.props, getInternalValue)) return null;
     // Avoid resolving PLC/Internal Variable/field values for visual widgets
     // that do not consume runtimeValue. This does not alter acquisition or
     // trigger evaluation; it only skips redundant render-time lookups.
@@ -3775,6 +3801,9 @@ function DynamicCPPage({ cpNumber, user }) {
     if (type === "image") return <RuntimeImage key={id} widget={widget} />;
     if (type === "alarmbanner") return <RuntimeAlarmBanner key={id} widget={widget} value={runtimeValue} />;
     if (type === "progressbar") return <RuntimeProgressBar key={id} widget={widget} value={runtimeValue} />;
+    if (type === "slider") return <RuntimeSlider key={id} widget={widget} />;
+    if (type === "logtable") return <RuntimeLogTable key={id} widget={widget} cpNumber={cpNumber} />;
+    if (type === "shiftschedule") return <RuntimeShiftSchedule key={id} widget={widget} cpNumber={cpNumber} />;
     if (type === "selectorswitch") return <RuntimeSelectorSwitch key={id} widget={widget} value={runtimeValue} onChange={(value) => handleSelectorSwitchChange(widget, value)} />;
     if (type === "message") return (
       <RuntimeMessage
@@ -3910,7 +3939,7 @@ function DynamicCPPage({ cpNumber, user }) {
     <div
       ref={containerRef}
       className="relative flex-1 bg-[var(--bg-canvas)] overflow-hidden font-sans flex items-center justify-center"
-      style={{ minWidth: 0, minHeight: 0 }}
+      style={{ minWidth: 0, minHeight: 0, ...(isCustomBackground(pages?.dynamic?.background) ? { background: pages.dynamic.background.color } : {}) }}
     >
       <div
         style={{
@@ -4106,7 +4135,7 @@ function DynamicCPPage({ cpNumber, user }) {
               className="absolute inset-x-0 bottom-[28px] top-[80px] overflow-hidden flex items-center justify-center"
               style={{
                 background:
-                  "linear-gradient(145deg, #f3f7fa 0%, #fbfcfd 48%, #f5f1e7 100%)",
+                  popupBackground || "linear-gradient(145deg, #f3f7fa 0%, #fbfcfd 48%, #f5f1e7 100%)",
               }}
             >
               {popupWidgets.length === 0 ? (

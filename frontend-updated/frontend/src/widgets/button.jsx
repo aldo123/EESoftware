@@ -15,6 +15,7 @@ import { useEffect, useState } from "react";
 import { useInternalVariables } from "../hooks/useInternalVariables";
 import { API } from "../service/api";
 import { PlcBindingFields } from "./plcBinding";
+import { StateStylesEditor, evalStateStyle } from "./stateStyle";
 import {
   addressKind,
   findDevice,
@@ -1243,7 +1244,29 @@ export function ButtonPropertyPanel({
           value={p.offTextColor || "var(--panel-line)"}
           onChange={(v) => set("offTextColor", v)}
         />
+
+        <PropInput
+          label="Label Case"
+          options={[
+            { value: "uppercase", label: "UPPERCASE (default)" },
+            { value: "none", label: "As typed" },
+          ]}
+          value={p.textTransform || "uppercase"}
+          onChange={(v) => set("textTransform", v)}
+        />
       </PropSection>
+
+      <StateStylesEditor
+        rules={p.stateStyles}
+        onChange={(rules) => set("stateStyles", rules)}
+        fields={[
+          { key: "label", label: "Label (use {Variable})" },
+          { key: "backgroundColor", label: "Background", type: "color" },
+          { key: "borderColor", label: "Border", type: "color" },
+          { key: "textColor", label: "Text Color", type: "color" },
+          { key: "disabled", label: "Disabled (ignore clicks)", type: "checkbox" },
+        ]}
+      />
     </>
   );
 }
@@ -1297,6 +1320,9 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
     getValue: getInternalValue,
     setValue: setInternalValue,
   } = useInternalVariables();
+  // State Styles: first matching rule overrides label / colours / enabled state.
+  const stateOverride = evalStateStyle(p.stateStyles, getInternalValue);
+  const stateDisabled = stateOverride?.disabled === true;
 
   const visibilityEnabled = p.visibilityEnabled === true;
   const visibilityVariableName = String(p.visibilityVariable || "").trim();
@@ -1512,6 +1538,7 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
   };
 
   const handleToggle = async () => {
+    if (stateDisabled) return;
     if (action === "navigate") {
       const targetPage = String(p.targetPage || "").trim();
       if (targetPage) onNavigate?.(targetPage);
@@ -1533,6 +1560,7 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
   };
 
   const handleMomentaryDown = async () => {
+    if (stateDisabled) return;
     if (action !== "write" || buttonType !== "momentary") {
       return;
     }
@@ -1541,6 +1569,7 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
   };
 
   const handleMomentaryUp = async () => {
+    if (stateDisabled) return;
     if (action !== "write" || buttonType !== "momentary") {
       return;
     }
@@ -1568,6 +1597,9 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
         : p.labelOff || "OFF";
 
   const fontSize = p.fontSize || 18;
+  const shownLabel = stateOverride?.label !== undefined && stateOverride.label !== ""
+    ? stateOverride.label
+    : label;
 
   let btnStyle = {
     background: isOn ? onBgTransparent : offBgTransparent,
@@ -1585,6 +1617,17 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
     btnStyle.background = `linear-gradient(135deg, ${
       v.backgroundColor || "var(--panel-canvas)"
     }, ${isOn ? onBgTransparent : offBgTransparent})`;
+  }
+
+  if (stateOverride) {
+    if (stateOverride.backgroundColor) {
+      btnStyle.background = stateOverride.backgroundColor;
+      btnStyle.border = `${v.borderWidth || 1}px solid ${stateOverride.borderColor || stateOverride.backgroundColor}`;
+      btnStyle.boxShadow = "none";
+    } else if (stateOverride.borderColor) {
+      btnStyle.border = `${v.borderWidth || 1}px solid ${stateOverride.borderColor}`;
+    }
+    if (stateOverride.textColor) btnStyle.textColor = stateOverride.textColor;
   }
 
   // Remove the widget from runtime rendering when visibility says Hide.
@@ -1677,12 +1720,14 @@ export function RuntimeButton({ widget, value, onChange, onNavigate }) {
             style={{
               color: btnStyle.textColor,
               fontSize,
+              textTransform: p.textTransform === "none" ? "none" : undefined,
+              letterSpacing: p.textTransform === "none" ? "0.02em" : undefined,
               textShadow: isOn
                 ? `0 0 12px ${onBgTransparent}`
                 : "none",
             }}
           >
-            {resetting ? "RESETTING..." : label}
+            {resetting ? "RESETTING..." : shownLabel}
           </span>
         )}
 

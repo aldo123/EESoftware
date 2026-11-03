@@ -118,6 +118,7 @@ def _normalize_pages(body):
 
 
     normalized["dynamic"] = {
+        **{k: v for k, v in dynamic_raw.items() if k != "widgets"},
         "name": (
             dynamic_raw.get("name")
             or "Dynamic Page"
@@ -158,6 +159,10 @@ def _normalize_pages(body):
 
 
         normalized[str(key)] = {
+            # Keep the page's own settings (kind = "popup", canvasWidth / canvasHeight, ...):
+            # dropping them turned every popup page into a 1920 x 1080 full page at runtime.
+            **{k: v for k, v in value.items() if k != "widgets"},
+
             "name": (
                 value.get("name")
                 or str(key)

@@ -14,6 +14,7 @@ import React from "react";
 import { useInternalVariables } from "../hooks/useInternalVariables";
 import { API } from "../service/api";
 import { PlcBindingFields, mapPatch } from "./plcBinding";
+import { StateStylesEditor, useStateStyle, hasStateStyles } from "./stateStyle";
 
 import {
   PropInput,
@@ -1027,6 +1028,14 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [], cpNumber =
           />
         )}
 
+        {(p.textMode === "calculation" || p.textMode === "read") && (
+          <PropInput
+            label="Suffix (e.g. % or °C)"
+            value={p.suffix ?? ""}
+            onChange={(v) => set("suffix", v)}
+          />
+        )}
+
         {(p.textMode === "write" || p.textMode === "inputdata") && (
           <PropInput
             label={p.textMode === "inputdata" ? "Input Data Type" : "Write Data Type"}
@@ -1914,6 +1923,17 @@ export function TextBoxPropertyPanel({ p, set, availableDevices = [], cpNumber =
           onChange={(v) => set("rotation", (v === "" ? "" : Number(v)))}
         />
       </PropSection>
+
+      <StateStylesEditor
+        rules={p.stateStyles}
+        onChange={(rules) => set("stateStyles", rules)}
+        fields={[
+          { key: "text", label: "Text (use {Variable})" },
+          { key: "textColor", label: "Text Color", type: "color" },
+          { key: "backgroundColor", label: "Background", type: "color" },
+          { key: "borderColor", label: "Border", type: "color" },
+        ]}
+      />
     </>
   );
 }
@@ -2946,7 +2966,7 @@ function ReferenceDBInputPicker({ widget, value, onSelect }) {
   );
 }
 
-export function RuntimeTextBox({ widget, value, onWrite }) {
+function RuntimeTextBoxBase({ widget, value, onWrite }) {
   const p = widget.props || {};
   const mode = p.textMode || "read";
   const fallback = p.defaultText ?? p.text ?? "TEXT";
@@ -3238,4 +3258,48 @@ export function RuntimeTextBox({ widget, value, onWrite }) {
       )}
     </>
   )
+}
+
+// State Styles (conditional text / colours driven by Internal Variables). Only text boxes that
+// define rules subscribe to the live variables; every other text box renders exactly as before.
+function StyledRuntimeTextBox(props) {
+  const { widget, value } = props;
+  const rule = useStateStyle(widget.props?.stateStyles);
+  if (!rule) return <RuntimeTextBoxBase {...props} />;
+
+  const p = { ...widget.props };
+  if (rule.textColor) p.textColor = rule.textColor;
+  if (rule.backgroundColor) p.backgroundColor = rule.backgroundColor;
+  if (rule.text !== undefined && rule.text !== "") {
+    p.text = rule.text;          // Static mode shows the widget's own text,
+    p.defaultText = rule.text;   // so the override has to land on the props too
+  }
+  if (rule.borderColor) {
+    p.borderColor = rule.borderColor;
+    p.borderWidth = Math.max(1, Number(p.borderWidth ?? 0));
+  }
+
+  return (
+    <RuntimeTextBoxBase
+      {...props}
+      widget={{ ...widget, props: p }}
+      value={rule.text !== undefined && rule.text !== "" ? rule.text : value}
+    />
+  );
+}
+
+export function RuntimeTextBox(props) {
+  const p = props.widget?.props;
+
+  // Optional unit/suffix ("87.5%"): format first (decimal places), then append.
+  let next = props;
+  if (p?.suffix && props.value !== undefined && props.value !== null && props.value !== "") {
+    const numeric = p.textMode === "calculation" || (p.textMode === "read" && p.dataType === "number");
+    const shown = numeric ? formatTextBoxNumber(props.value, p.decimalPlaces) : String(props.value);
+    next = { ...props, value: `${shown}${p.suffix}` };
+  }
+
+  return hasStateStyles(p)
+    ? <StyledRuntimeTextBox {...next} />
+    : <RuntimeTextBoxBase {...next} />;
 }

@@ -19,6 +19,9 @@ import { progressBarDef, ProgressBarPreview, ProgressBarPropertyPanel, RuntimePr
 import { selectorSwitchDef, SelectorSwitchPreview, SelectorSwitchPropertyPanel, RuntimeSelectorSwitch } from "./selectorswitch";
 import { messageDef, MessagePreview, MessagePropertyPanel, RuntimeMessage } from "./message";
 import { popupDef, PopupPreview, PopupPropertyPanel, RuntimePopup } from "./popup";
+import { sliderDef, SliderPreview, SliderPropertyPanel, RuntimeSlider } from "./slider";
+import { logTableDef, LogTablePreview, LogTablePropertyPanel, RuntimeLogTable } from "./logtable";
+import { shiftScheduleDef, ShiftSchedulePreview, ShiftSchedulePropertyPanel, RuntimeShiftSchedule } from "./shiftschedule";
 
 
 
@@ -63,6 +66,9 @@ export const COMPONENT_TYPES = [
   selectorSwitchDef,
   messageDef,
   popupDef,
+  sliderDef,
+  logTableDef,
+  shiftScheduleDef,
 ];
 
 // type -> canvas preview component (Page Builder, design-time)
@@ -81,6 +87,9 @@ export const WIDGET_PREVIEWS = {
   selectorswitch: SelectorSwitchPreview,
   message: MessagePreview,
   popup: PopupPreview,
+  slider: SliderPreview,
+  logtable: LogTablePreview,
+  shiftschedule: ShiftSchedulePreview,
 };
 
 // type -> property panel component (Page Builder, right sidebar)
@@ -99,6 +108,9 @@ export const WIDGET_PROPERTY_PANELS = {
   selectorswitch: SelectorSwitchPropertyPanel,
   message: MessagePropertyPanel,
   popup: PopupPropertyPanel,
+  slider: SliderPropertyPanel,
+  logtable: LogTablePropertyPanel,
+  shiftschedule: ShiftSchedulePropertyPanel,
 };
 
 // type -> runtime component (Dynamic CP Page, live/production)
@@ -117,6 +129,9 @@ export const WIDGET_RUNTIME = {
   selectorswitch: RuntimeSelectorSwitch,
   message: RuntimeMessage,
   popup: RuntimePopup,
+  slider: RuntimeSlider,
+  logtable: RuntimeLogTable,
+  shiftschedule: RuntimeShiftSchedule,
 };
 
 // Also re-export each runtime component by name, since DynamicCPPage.jsx
@@ -137,6 +152,9 @@ export {
   RuntimeSelectorSwitch,
   RuntimeMessage,
   RuntimePopup,
+  RuntimeSlider,
+  RuntimeLogTable,
+  RuntimeShiftSchedule,
 };
 
 export * from "./shared";

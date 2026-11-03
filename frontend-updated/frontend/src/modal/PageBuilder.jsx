@@ -3,6 +3,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { API } from "../service/api";
 import { ModalBackdrop, ModalPanel } from "../components/motion";
 import { useInternalVariables } from "../hooks/useInternalVariables";
+import { VisibleWhenEditor, PreviewFilter, widgetVisibleInPreview } from "../widgets/stateStyle";
+import { PageBackgroundControl, pageBackgroundCss } from "../widgets/pageBackground";
 import {
   COMPONENT_TYPES,
   WIDGET_PREVIEWS,
@@ -159,6 +161,8 @@ function PropertyPanel({ widget, onChange, onDelete, onDuplicate, onLayerAction,
       return <Panel p={p} set={set} availableDevices={availableDevices} availablePages={availablePages} availableInternalVariables={availableInternalVariables} cpNumber={cpNumber} />;
     })()}
 
+    {type !== "button" && <VisibleWhenEditor p={p} set={set} />}
+
 
   </div></div>);
 }
@@ -214,6 +218,7 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
   }, []);
 
   const [canUndo, setCanUndo] = useState(false);
+  const [previewAssumed, setPreviewAssumed] = useState({});
   const [canRedo, setCanRedo] = useState(false);
   const syncUndoRedoFlags = useCallback(() => {
     setCanUndo(undoStackRef.current.length > 0);
@@ -295,6 +300,10 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
   const isPopupPage = pageType !== "dynamic" && currentPage?.kind === "popup";
   const CANVAS_W = isPopupPage ? Math.max(240, Number(currentPage?.canvasWidth || 800)) : canvasPreset.width;
   const CANVAS_H = isPopupPage ? Math.max(160, Number(currentPage?.canvasHeight || 500)) : canvasPreset.height;
+
+  const setPageBackground = useCallback((background) => {
+    setPages(prev => ({ ...prev, [pageType]: { ...(prev[pageType] || {}), background } }));
+  }, [pageType]);
 
   const setPopupCanvasSize = useCallback((key, value) => {
     if (!isPopupPage) return;
@@ -531,6 +540,7 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
           kind: "dynamic",
           canvasWidth: 1920,
           canvasHeight: 1080,
+          background: savedDynamic?.background,
           widgets: normalizePage(
             savedDynamic?.widgets ??
             legacyDynamic ??
@@ -549,6 +559,7 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
             kind: value.kind === "popup" ? "popup" : "custom",
             canvasWidth: Number(value.canvasWidth || (value.kind === "popup" ? 800 : 1920)),
             canvasHeight: Number(value.canvasHeight || (value.kind === "popup" ? 500 : 1080)),
+            background: value.background,
             widgets: normalizePage(value.widgets || []),
           };
         });
@@ -870,6 +881,7 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
             kind: value?.kind === "popup" ? "popup" : "custom",
             canvasWidth: value?.kind === "popup" ? Math.max(240, Number(value?.canvasWidth || 800)) : 1920,
             canvasHeight: value?.kind === "popup" ? Math.max(160, Number(value?.canvasHeight || 500)) : 1080,
+            ...(value?.background ? { background: value.background } : {}),
             widgets: normalizePage(value?.widgets || []),
           },
         ])
@@ -1239,10 +1251,12 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
                 </div>
               )}
             </div>
+            <PageBackgroundControl background={currentPage?.background} onChange={setPageBackground} />
             {saveMsg && <span className={`text-[11px] font-bold px-3 py-1 rounded-full ${saveMsg.startsWith("✓") ? "text-[var(--accent-green)] bg-[var(--accent-green)]/10" : "text-[var(--accent-red)] bg-[var(--accent-red)]/10"}`}>{saveMsg}</span>}
             {pageType && pageType !== "dynamic" && (
               <button onClick={deleteCurrentPage} className="h-7 px-3 rounded-lg border border-[var(--accent-red)]/30 text-[var(--accent-red)] hover:bg-[var(--accent-red)]/10 text-[10px] font-bold transition-colors">Delete Page</button>
             )}
+            <PreviewFilter widgets={widgets} assumed={previewAssumed} onChange={setPreviewAssumed} />
             <button onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)" className="w-7 h-7 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xs font-bold">↶</button>
             <button onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)" className="w-7 h-7 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] hover:text-[var(--text-primary)] transition-colors disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-xs font-bold">↷</button>
             <button onClick={clearCanvas} className="h-7 px-3 rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--border-soft)] text-[10px] font-bold transition-colors">Clear</button>
@@ -1293,10 +1307,11 @@ export default function PageBuilder({ cpNumber, onClose, onSaved, availableDevic
           <div ref={canvasContainerRef} className="flex-1 min-w-0 min-h-0 overflow-hidden flex items-center justify-center px-4 py-3" style={{ background: "var(--panel-canvas)" }}>
             {loading ? (<div className="flex items-center gap-2 text-[var(--accent-green)] text-xs mt-20"><div className="w-4 h-4 border-2 border-[var(--accent-green)] border-t-transparent rounded-full animate-spin" /> Loading layout…</div>) : (
               <div style={{ width: displayWidth, height: displayHeight, position: "relative", flex: "0 0 auto", overflow: "hidden" }}>
-                <div ref={canvasRef} onMouseDown={startMarquee} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={e => { if (justMarqueedRef.current) { justMarqueedRef.current = false; return; } if (e.target === canvasRef.current && !marquee) clearSelection(); }} className="relative origin-top-left overflow-hidden" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: "var(--bg-canvas)", border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
+                <div ref={canvasRef} onMouseDown={startMarquee} onDragOver={e => e.preventDefault()} onDrop={handleCanvasDrop} onClick={e => { if (justMarqueedRef.current) { justMarqueedRef.current = false; return; } if (e.target === canvasRef.current && !marquee) clearSelection(); }} className="relative origin-top-left overflow-hidden" style={{ width: CANVAS_W, height: CANVAS_H, transform: `scale(${scale})`, background: pageBackgroundCss(currentPage?.background), border: "1px solid var(--border-soft)", borderRadius: 8, backgroundImage: "radial-gradient(circle, var(--border-soft) 1px, transparent 1px)", backgroundSize: `${GRID * 2}px ${GRID * 2}px` }}>
                   {marquee && <div className="absolute pointer-events-none" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height, border: "1px dashed var(--accent-green)", background: "var(--accent-green)", opacity: 0.12, zIndex: 999999 }} /> }
                   {widgets.length === 0 && (<div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none"><span className="text-4xl opacity-10 mb-2">{pageType ? "🖱" : "📄"}</span><p className="text-[var(--border-soft)] text-sm font-mono">{pageType ? "Drag components here" : "Create a Page to start designing"}</p></div>)}
                   {widgets.map(widget => {
+                    if (!widgetVisibleInPreview(widget, previewAssumed)) return null;
                     const isSel = selected.includes(widget.id);
                     return (<div key={widget.id} id={`widget-${widget.id}`} onMouseDown={e => startDrag(e, widget.id)} onClick={e => { e.stopPropagation(); }} className="absolute select-none" style={{ left: widget.x, top: widget.y, width: widget.props.width, height: widget.props.height, cursor: dragInfo?.id === widget.id ? "grabbing" : "grab", outline: isSel ? "2px solid var(--accent-green)" : "1px solid transparent", outlineOffset: 2, borderRadius: 6, zIndex: Number.isFinite(Number(widget.zIndex)) ? Number(widget.zIndex) : 1 }}><div className="w-full h-full overflow-hidden" style={{ borderRadius: 6 }}><WidgetPreview widget={widget} onUpdate={handleWidgetUpdate} /></div>{isSel && <div className="absolute -top-5 left-0 flex items-center gap-1 pointer-events-none"><span className="text-[var(--accent-green)] text-[9px] font-bold bg-[var(--panel-canvas)] px-1.5 py-0.5 rounded font-mono capitalize">{widget.type}</span></div>}{isSel && <div onMouseDown={e => startResize(e, widget.id)} className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize" style={{ background: "var(--accent-green)", borderRadius: "2px 0 4px 0", zIndex: 20 }} />}</div>);
                   })}

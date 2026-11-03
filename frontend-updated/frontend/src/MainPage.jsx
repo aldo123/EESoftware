@@ -85,7 +85,12 @@ const IconMenu = () => (
 );
 
 // ── Menu items ────────────────────────────────────────────────
-const MENU_ITEMS = ["Main", "OEE", "Dashboard", "Downtime", "Top Defect", "SN List", "Reference", "CPK Analyzer"];
+// Sidebar menu, grouped by purpose (a title + a divider line per group).
+const MENU_GROUPS = [
+  { title: "Production", items: ["Main", "OEE", "Dashboard"] },
+  { title: "Analysis", items: ["Downtime", "Top Defect", "CPK Analyzer"] },
+  { title: "Data", items: ["SN List", "Reference"] },
+];
 
 // ── Field (reused) ─────────────────────────────────────────────
 function Field({ icon, placeholder, value, onChange, onKeyDown, type = "text" }) {
@@ -1130,7 +1135,10 @@ export default function MainPage({ user: initialUser, onLogout }) {
         >
           <div className="w-[150px] h-full flex flex-col">
             <nav className="pt-2 flex flex-col gap-0.5">
-              {MENU_ITEMS.map(label => {
+              {MENU_GROUPS.map((group, gi) => (
+              <div key={group.title} className={gi ? "mt-2 pt-1 border-t border-[var(--border-soft)]" : ""}>
+              <p className="px-4 pt-2 pb-1 text-[9px] font-bold tracking-widest uppercase text-[var(--text-faint)]">{group.title}</p>
+              {group.items.map(label => {
                 const disabled = (label === "Downtime" || label === "Reference") && !isEngineer;
                 const active = activeMenu === label;
                 return (
@@ -1158,6 +1166,8 @@ export default function MainPage({ user: initialUser, onLogout }) {
                   </button>
                 );
               })}
+              </div>
+              ))}
             </nav>
             <div className="flex-1" />
             {/* COMM DEVICE di sidebar kiri */}

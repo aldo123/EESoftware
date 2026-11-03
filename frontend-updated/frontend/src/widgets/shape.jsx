@@ -7,6 +7,7 @@
 //   - RuntimeShape        how it looks/behaves on the live Dynamic CP Page
 //
 import { PropInput, PropSection, DEFAULT_VISUAL } from "./shared";
+import { StateStylesEditor, useStateStyle, hasStateStyles } from "./stateStyle";
 
 // ────────────────────────────────────────────────────────────────
 //  PALETTE DEFINITION
@@ -173,6 +174,8 @@ function ShapeSurface({ p }) {
         border: `${borderWidth}px solid ${borderColor}`,
         borderRadius: `${radius}px`,
         boxSizing: "border-box",
+        boxShadow: p.shadow || undefined,
+        transition: "background 0.6s ease-out, border-color 0.35s",
       }}
     />
   );
@@ -274,6 +277,15 @@ export function ShapePropertyPanel({ p, set }) {
         />
       )}
     </PropSection>
+
+    <StateStylesEditor
+      rules={p.stateStyles}
+      onChange={(rules) => set("stateStyles", rules)}
+      fields={[
+        { key: "fill", label: "Fill", type: "color" },
+        { key: "borderColor", label: "Border", type: "color" },
+      ]}
+    />
   </>
   );
 }
@@ -282,6 +294,22 @@ export function ShapePropertyPanel({ p, set }) {
 //  DYNAMIC CP PAGE — RUNTIME
 // ────────────────────────────────────────────────────────────────
 
+// Conditional appearance (State Styles) needs the live Internal Variables, so only widgets that
+// actually define rules subscribe to them.
+function StyledShapeSurface({ p }) {
+  const rule = useStateStyle(p.stateStyles);
+  if (!rule) return <ShapeSurface p={p} />;
+  return (
+    <ShapeSurface
+      p={{
+        ...p,
+        fill: rule.fill || p.fill,
+        borderColor: rule.borderColor || p.borderColor,
+      }}
+    />
+  );
+}
+
 export function RuntimeShape({ widget }) {
   const p = widget.props || {};
   return (
@@ -289,7 +317,7 @@ export function RuntimeShape({ widget }) {
       className="absolute"
       style={{ left: widget.x, top: widget.y, width: p.width, height: p.height }}
     >
-      <ShapeSurface p={p} />
+      {hasStateStyles(p) ? <StyledShapeSurface p={p} /> : <ShapeSurface p={p} />}
     </div>
   );
 }
