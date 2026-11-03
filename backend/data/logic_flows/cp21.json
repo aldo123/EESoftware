@@ -1,0 +1,994 @@
+{
+  "cp": "21",
+  "nodes": [
+    {
+      "id": "bt_detect",
+      "type": "write_output",
+      "x": 155.0,
+      "y": 700.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "DETECTING",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Countdown",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "holding_register",
+            "address": "1"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_count",
+      "type": "count_over_time",
+      "x": 155.0,
+      "y": 810.0,
+      "config": {
+        "camera_id": "0",
+        "duration": "5",
+        "max_count": "4",
+        "method": "contour_blob",
+        "roi_mode": "center",
+        "method_params": {
+          "threshold": 197,
+          "min_contour": 250,
+          "max_contour": 3000,
+          "match_dist": 70,
+          "debounce_seconds": 0.5
+        },
+        "param_variables": {
+          "threshold": "BT_Threshold",
+          "max_count": "BT_MaxBubbles",
+          "min_contour": "BT_MinArea",
+          "max_contour": "BT_MaxArea",
+          "roi_x": "BT_RoiX",
+          "roi_y": "BT_RoiY",
+          "roi_w": "BT_RoiW",
+          "roi_h": "BT_RoiH"
+        },
+        "roi_x": 0,
+        "roi_y": 269,
+        "roi_w": 639,
+        "roi_h": 94,
+        "target_field": "bubble_count"
+      }
+    },
+    {
+      "id": "bt_trig_plc",
+      "type": "device_trigger",
+      "x": 40.0,
+      "y": 40.0,
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "connection_type": "modbus_tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "holding_register",
+            "address": "9",
+            "data_type": "",
+            "trigger_value": "1",
+            "device": "",
+            "variable_name": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_idle_plc",
+      "type": "multi_condition_gate",
+      "x": 40.0,
+      "y": 150.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_State",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "IDLE",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "bt_start_plc",
+      "type": "write_output",
+      "x": 40.0,
+      "y": 260.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_Result",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Message",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_BubbleCount",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Countdown",
+            "value_source": "static",
+            "value": "5",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "COUNTDOWN",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "coil",
+            "address": "8417"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_cd_plc",
+      "type": "subflow_call",
+      "x": 40.0,
+      "y": 370.0,
+      "config": {
+        "template_id": "bt_countdown_plc",
+        "template_name": "Bubble Tester - 5 s countdown (PLC sensor)",
+        "expose_check": true
+      }
+    },
+    {
+      "id": "bt_trig_manual",
+      "type": "device_trigger",
+      "x": 270.0,
+      "y": 40.0,
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "connection_type": "internal",
+            "variable_name": "BT_Start",
+            "trigger_value": "1",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "device": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_manual_rearm",
+      "type": "write_output",
+      "x": 270.0,
+      "y": 150.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_Start",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_idle_manual",
+      "type": "multi_condition_gate",
+      "x": 270.0,
+      "y": 260.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_State",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "IDLE",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "bt_start_manual",
+      "type": "write_output",
+      "x": 270.0,
+      "y": 370.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_Result",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Message",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_BubbleCount",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Countdown",
+            "value_source": "static",
+            "value": "5",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "COUNTDOWN",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "coil",
+            "address": "8417"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_cd_manual",
+      "type": "subflow_call",
+      "x": 270.0,
+      "y": 480.0,
+      "config": {
+        "template_id": "bt_countdown_manual",
+        "template_name": "Bubble Tester - 5 s countdown (manual Start)",
+        "expose_check": true
+      }
+    },
+    {
+      "id": "bt_abort_fail",
+      "type": "subflow_call",
+      "x": 615.0,
+      "y": 920.0,
+      "config": {
+        "template_id": "bt_abort_fail",
+        "template_name": "Bubble Tester - emergency pressed (FAIL for a moment, then idle)",
+        "expose_check": false
+      }
+    },
+    {
+      "id": "bt_result_hold",
+      "type": "timer",
+      "x": 615.0,
+      "y": 1250.0,
+      "config": {
+        "duration_seconds": "2.5"
+      }
+    },
+    {
+      "id": "bt_back_idle",
+      "type": "write_output",
+      "x": 615.0,
+      "y": 1360.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "IDLE",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Result",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_BubbleCount",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Countdown",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_emg_after_ok",
+      "type": "multi_condition_gate",
+      "x": 385.0,
+      "y": 920.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "tcpip",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "holding_register",
+            "address": "8",
+            "data_type": "",
+            "operator": "not_equals",
+            "compare_source": "fixed",
+            "value": "0",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "bt_result_ok",
+      "type": "write_output",
+      "x": 385.0,
+      "y": 1030.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_Result",
+            "value_source": "static",
+            "value": "OK",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_BubbleCount",
+            "value_source": "field_key",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "value_field_key": "bubble_count"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "RESULT",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "holding_register",
+            "address": "1"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "coil",
+            "address": "8417"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_handle_ok",
+      "type": "subflow_call",
+      "x": 385.0,
+      "y": 1140.0,
+      "config": {
+        "template_id": "bt_result_ok",
+        "template_name": "Bubble Tester - handle an OK result (count + log, or Dummy Check)",
+        "expose_check": false
+      }
+    },
+    {
+      "id": "bt_emg_after_ng",
+      "type": "multi_condition_gate",
+      "x": 845.0,
+      "y": 920.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "tcpip",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "holding_register",
+            "address": "8",
+            "data_type": "",
+            "operator": "not_equals",
+            "compare_source": "fixed",
+            "value": "0",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "bt_result_ng",
+      "type": "write_output",
+      "x": 845.0,
+      "y": 1030.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_Result",
+            "value_source": "static",
+            "value": "NG",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_BubbleCount",
+            "value_source": "field_key",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "value_field_key": "bubble_count"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "RESULT",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "2",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "holding_register",
+            "address": "1"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "coil",
+            "address": "8417"
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_handle_ng",
+      "type": "subflow_call",
+      "x": 845.0,
+      "y": 1140.0,
+      "config": {
+        "template_id": "bt_result_ng",
+        "template_name": "Bubble Tester - handle an NG result (count + log, or Dummy Check)",
+        "expose_check": false
+      }
+    },
+    {
+      "id": "bt_trig_dummystart",
+      "type": "device_trigger",
+      "x": 600.0,
+      "y": 40.0,
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "connection_type": "internal",
+            "variable_name": "BT_DummyStart",
+            "trigger_value": "1",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "device": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_btn_dummystart",
+      "type": "subflow_call",
+      "x": 600.0,
+      "y": 150.0,
+      "config": {
+        "template_id": "bt_btn_dummystart",
+        "template_name": "Bubble Tester - START DUMMY CHECK (only while LOCKED)",
+        "expose_check": false
+      }
+    },
+    {
+      "id": "bt_trig_prodstart",
+      "type": "device_trigger",
+      "x": 830.0,
+      "y": 40.0,
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "connection_type": "internal",
+            "variable_name": "BT_ProdStart",
+            "trigger_value": "1",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "device": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_btn_prodstart",
+      "type": "subflow_call",
+      "x": 830.0,
+      "y": 150.0,
+      "config": {
+        "template_id": "bt_btn_prodstart",
+        "template_name": "Bubble Tester - START PRODUCTION (after both dummy tests passed)",
+        "expose_check": false
+      }
+    },
+    {
+      "id": "bt_trig_retry",
+      "type": "device_trigger",
+      "x": 1060.0,
+      "y": 40.0,
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "connection_type": "internal",
+            "variable_name": "BT_DummyRetry",
+            "trigger_value": "1",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "device": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_btn_retry",
+      "type": "subflow_call",
+      "x": 1060.0,
+      "y": 150.0,
+      "config": {
+        "template_id": "bt_btn_retry",
+        "template_name": "Bubble Tester - RETRY the dummy test after the maintenance alarm",
+        "expose_check": false
+      }
+    },
+    {
+      "id": "bt_trig_shift",
+      "type": "device_trigger",
+      "x": 1290.0,
+      "y": 40.0,
+      "config": {
+        "fieldKey": "",
+        "sources": [
+          {
+            "connection_type": "internal",
+            "variable_name": "BT_ShiftReset",
+            "trigger_value": "1",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0",
+            "device": ""
+          }
+        ]
+      }
+    },
+    {
+      "id": "bt_btn_shift",
+      "type": "subflow_call",
+      "x": 1290.0,
+      "y": 150.0,
+      "config": {
+        "template_id": "bt_btn_shift",
+        "template_name": "Bubble Tester - new shift (counters to 0, Dummy Check required again)",
+        "expose_check": false
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_001",
+      "fromId": "bt_detect",
+      "fromPort": "next",
+      "toId": "bt_count"
+    },
+    {
+      "id": "c_002",
+      "fromId": "bt_trig_plc",
+      "fromPort": "next",
+      "toId": "bt_idle_plc"
+    },
+    {
+      "id": "c_003",
+      "fromId": "bt_idle_plc",
+      "fromPort": "true",
+      "toId": "bt_start_plc"
+    },
+    {
+      "id": "c_004",
+      "fromId": "bt_start_plc",
+      "fromPort": "next",
+      "toId": "bt_cd_plc"
+    },
+    {
+      "id": "c_005",
+      "fromId": "bt_cd_plc",
+      "fromPort": "true",
+      "toId": "bt_detect"
+    },
+    {
+      "id": "c_006",
+      "fromId": "bt_trig_manual",
+      "fromPort": "next",
+      "toId": "bt_manual_rearm"
+    },
+    {
+      "id": "c_007",
+      "fromId": "bt_manual_rearm",
+      "fromPort": "next",
+      "toId": "bt_idle_manual"
+    },
+    {
+      "id": "c_008",
+      "fromId": "bt_idle_manual",
+      "fromPort": "true",
+      "toId": "bt_start_manual"
+    },
+    {
+      "id": "c_009",
+      "fromId": "bt_start_manual",
+      "fromPort": "next",
+      "toId": "bt_cd_manual"
+    },
+    {
+      "id": "c_010",
+      "fromId": "bt_cd_manual",
+      "fromPort": "true",
+      "toId": "bt_detect"
+    },
+    {
+      "id": "c_011",
+      "fromId": "bt_result_hold",
+      "fromPort": "next",
+      "toId": "bt_back_idle"
+    },
+    {
+      "id": "c_012",
+      "fromId": "bt_count",
+      "fromPort": "true",
+      "toId": "bt_emg_after_ok"
+    },
+    {
+      "id": "c_013",
+      "fromId": "bt_emg_after_ok",
+      "fromPort": "false",
+      "toId": "bt_abort_fail"
+    },
+    {
+      "id": "c_014",
+      "fromId": "bt_emg_after_ok",
+      "fromPort": "true",
+      "toId": "bt_result_ok"
+    },
+    {
+      "id": "c_015",
+      "fromId": "bt_result_ok",
+      "fromPort": "next",
+      "toId": "bt_handle_ok"
+    },
+    {
+      "id": "c_016",
+      "fromId": "bt_handle_ok",
+      "fromPort": "next",
+      "toId": "bt_result_hold"
+    },
+    {
+      "id": "c_017",
+      "fromId": "bt_count",
+      "fromPort": "false",
+      "toId": "bt_emg_after_ng"
+    },
+    {
+      "id": "c_018",
+      "fromId": "bt_emg_after_ng",
+      "fromPort": "false",
+      "toId": "bt_abort_fail"
+    },
+    {
+      "id": "c_019",
+      "fromId": "bt_emg_after_ng",
+      "fromPort": "true",
+      "toId": "bt_result_ng"
+    },
+    {
+      "id": "c_020",
+      "fromId": "bt_result_ng",
+      "fromPort": "next",
+      "toId": "bt_handle_ng"
+    },
+    {
+      "id": "c_021",
+      "fromId": "bt_handle_ng",
+      "fromPort": "next",
+      "toId": "bt_result_hold"
+    },
+    {
+      "id": "c_022",
+      "fromId": "bt_trig_dummystart",
+      "fromPort": "next",
+      "toId": "bt_btn_dummystart"
+    },
+    {
+      "id": "c_023",
+      "fromId": "bt_trig_prodstart",
+      "fromPort": "next",
+      "toId": "bt_btn_prodstart"
+    },
+    {
+      "id": "c_024",
+      "fromId": "bt_trig_retry",
+      "fromPort": "next",
+      "toId": "bt_btn_retry"
+    },
+    {
+      "id": "c_025",
+      "fromId": "bt_trig_shift",
+      "fromPort": "next",
+      "toId": "bt_btn_shift"
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_01",
+      "x": 25,
+      "y": 0,
+      "w": 210,
+      "h": 550,
+      "title": "START: SENSOR PLC",
+      "text": "PLC sensor (holding 9 = 1) turns on, only while IDLE, then a 5 s countdown. The sensor must stay ON.",
+      "color": "blue"
+    },
+    {
+      "id": "note_02",
+      "x": 255,
+      "y": 0,
+      "w": 210,
+      "h": 660,
+      "title": "START: MANUAL BUTTON",
+      "text": "Run Test button on screen (BT_Start). Same as the sensor path, without the sensor check.",
+      "color": "blue"
+    },
+    {
+      "id": "note_03",
+      "x": 135,
+      "y": 660,
+      "w": 210,
+      "h": 320,
+      "title": "COUNT BUBBLES",
+      "text": "The camera counts bubbles for 5 s inside the ROI. Count <= Max Bubbles = OK, otherwise NG.",
+      "color": "orange"
+    },
+    {
+      "id": "note_04",
+      "x": 365,
+      "y": 880,
+      "w": 210,
+      "h": 440,
+      "title": "RESULT OK",
+      "text": "Check emergency, write OK to the PLC and the screen. OK group: production = count + log, dummy = compare with the requested test.",
+      "color": "green"
+    },
+    {
+      "id": "note_05",
+      "x": 825,
+      "y": 880,
+      "w": 210,
+      "h": 440,
+      "title": "RESULT NG",
+      "text": "Check emergency, write NG to the PLC and the screen. NG group: production = count + log, dummy = compare with the requested test.",
+      "color": "red"
+    },
+    {
+      "id": "note_06",
+      "x": 595,
+      "y": 880,
+      "w": 210,
+      "h": 220,
+      "title": "EMERGENCY",
+      "text": "Emergency pressed during the test: FAIL screen for a moment, then back to IDLE.",
+      "color": "red"
+    },
+    {
+      "id": "note_07",
+      "x": 595,
+      "y": 1210,
+      "w": 210,
+      "h": 290,
+      "title": "SHOW RESULT",
+      "text": "The result stays on screen for 2.5 s, then back to IDLE.",
+      "color": "gray"
+    },
+    {
+      "id": "note_08",
+      "x": 585,
+      "y": 0,
+      "w": 210,
+      "h": 350,
+      "title": "DUMMY: START",
+      "text": "Start Dummy Check button in the wizard. Only while LOCKED. Starts the Dummy OK test.",
+      "color": "purple"
+    },
+    {
+      "id": "note_09",
+      "x": 815,
+      "y": 0,
+      "w": 210,
+      "h": 350,
+      "title": "PRODUCTION: START",
+      "text": "Start Production button after both dummy tests passed. Counting and logging begin.",
+      "color": "green"
+    },
+    {
+      "id": "note_10",
+      "x": 1045,
+      "y": 0,
+      "w": 210,
+      "h": 350,
+      "title": "DUMMY: RETRY",
+      "text": "Retry button after the ALARM (3 wrong results). Maintenance has checked the machine; repeat the same test.",
+      "color": "purple"
+    },
+    {
+      "id": "note_11",
+      "x": 1275,
+      "y": 0,
+      "w": 210,
+      "h": 350,
+      "title": "SHIFT RESET",
+      "text": "Triggered by the shift schedule. Counters go to 0 and the Dummy Check is required again.",
+      "color": "orange"
+    }
+  ]
+}

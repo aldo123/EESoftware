@@ -1,0 +1,304 @@
+{
+  "id": "bt_countdown_plc",
+  "name": "Bubble Tester - 5 s countdown (PLC sensor)",
+  "description": "Part of the Bubble Tester flow (CP 21).",
+  "nodes": [
+    {
+      "id": "gi",
+      "type": "group_input",
+      "x": 60.0,
+      "y": 40.0,
+      "config": {
+        "read_source": "none",
+        "protocol": "tcp",
+        "device_name": "",
+        "address_type": "holding_register",
+        "address": "0",
+        "variable_name": "",
+        "field_key": ""
+      }
+    },
+    {
+      "id": "cd",
+      "type": "countdown",
+      "x": 60.0,
+      "y": 150.0,
+      "config": {
+        "seconds": "5",
+        "variable_name": "BT_Countdown",
+        "reason_variable": "BT_AbortReason",
+        "checks": [
+          {
+            "source_type": "tcpip",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "holding_register",
+            "address": "9",
+            "data_type": "",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "1",
+            "value2": "",
+            "label": "Sensor lost"
+          },
+          {
+            "source_type": "tcpip",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "holding_register",
+            "address": "8",
+            "data_type": "",
+            "operator": "not_equals",
+            "compare_source": "fixed",
+            "value": "0",
+            "value2": "",
+            "label": "Emergency stop"
+          }
+        ]
+      }
+    },
+    {
+      "id": "ot",
+      "type": "group_output",
+      "x": 60.0,
+      "y": 260.0,
+      "config": {
+        "port": "true",
+        "write_target": "none",
+        "protocol": "tcp",
+        "device_name": "",
+        "address_type": "holding_register",
+        "address": "0",
+        "variable_name": "",
+        "value_source": "static",
+        "value": "1",
+        "value_field_key": ""
+      }
+    },
+    {
+      "id": "reason",
+      "type": "multi_condition_gate",
+      "x": 320.0,
+      "y": 260.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_AbortReason",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "Emergency stop",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "abort_idle",
+      "type": "write_output",
+      "x": 580.0,
+      "y": 370.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "IDLE",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Countdown",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "coil",
+            "address": "8417"
+          }
+        ]
+      }
+    },
+    {
+      "id": "abort_fail",
+      "type": "write_output",
+      "x": 320.0,
+      "y": 370.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "FAIL",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Message",
+            "value_source": "static",
+            "value": "EMERGENCY STOP",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Countdown",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "coil",
+            "address": "8417"
+          }
+        ]
+      }
+    },
+    {
+      "id": "abort_hold",
+      "type": "timer",
+      "x": 320.0,
+      "y": 480.0,
+      "config": {
+        "duration_seconds": "2.5"
+      }
+    },
+    {
+      "id": "abort_back",
+      "type": "write_output",
+      "x": 320.0,
+      "y": 590.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "IDLE",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Message",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_001",
+      "fromId": "gi",
+      "fromPort": "next",
+      "toId": "cd"
+    },
+    {
+      "id": "c_002",
+      "fromId": "cd",
+      "fromPort": "true",
+      "toId": "ot"
+    },
+    {
+      "id": "c_003",
+      "fromId": "cd",
+      "fromPort": "false",
+      "toId": "reason"
+    },
+    {
+      "id": "c_004",
+      "fromId": "reason",
+      "fromPort": "false",
+      "toId": "abort_idle"
+    },
+    {
+      "id": "c_005",
+      "fromId": "reason",
+      "fromPort": "true",
+      "toId": "abort_fail"
+    },
+    {
+      "id": "c_006",
+      "fromId": "abort_fail",
+      "fromPort": "next",
+      "toId": "abort_hold"
+    },
+    {
+      "id": "c_007",
+      "fromId": "abort_hold",
+      "fromPort": "next",
+      "toId": "abort_back"
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_01",
+      "x": 40,
+      "y": 110,
+      "w": 220,
+      "h": 320,
+      "title": "COUNTDOWN 5 s",
+      "text": "Every second the PLC sensor and the emergency button are checked again. The seconds left go to BT_Countdown. If a check fails, its label is written to BT_AbortReason.",
+      "color": "blue"
+    },
+    {
+      "id": "note_02",
+      "x": 560,
+      "y": 330,
+      "w": 220,
+      "h": 200,
+      "title": "SENSOR LOST",
+      "text": "The PLC sensor dropped during the countdown: the test is cancelled and the line goes back to IDLE.",
+      "color": "orange"
+    },
+    {
+      "id": "note_03",
+      "x": 300,
+      "y": 330,
+      "w": 220,
+      "h": 410,
+      "title": "EMERGENCY",
+      "text": "Emergency pressed: FAIL screen for a moment, then back to IDLE.",
+      "color": "red"
+    }
+  ]
+}

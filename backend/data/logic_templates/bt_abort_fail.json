@@ -1,0 +1,131 @@
+{
+  "id": "bt_abort_fail",
+  "name": "Bubble Tester - emergency pressed (FAIL for a moment, then idle)",
+  "description": "Part of the Bubble Tester flow (CP 21).",
+  "nodes": [
+    {
+      "id": "gi",
+      "type": "group_input",
+      "x": 60.0,
+      "y": 40.0,
+      "config": {
+        "read_source": "none",
+        "protocol": "tcp",
+        "device_name": "",
+        "address_type": "holding_register",
+        "address": "0",
+        "variable_name": "",
+        "field_key": ""
+      }
+    },
+    {
+      "id": "w",
+      "type": "write_output",
+      "x": 60.0,
+      "y": 150.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "FAIL",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Message",
+            "value_source": "static",
+            "value": "EMERGENCY STOP",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Countdown",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "coil",
+            "address": "8417"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hold",
+      "type": "timer",
+      "x": 60.0,
+      "y": 260.0,
+      "config": {
+        "duration_seconds": "2.5"
+      }
+    },
+    {
+      "id": "idle",
+      "type": "write_output",
+      "x": 60.0,
+      "y": 370.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_State",
+            "value_source": "static",
+            "value": "IDLE",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Message",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_001",
+      "fromId": "gi",
+      "fromPort": "next",
+      "toId": "w"
+    },
+    {
+      "id": "c_002",
+      "fromId": "w",
+      "fromPort": "next",
+      "toId": "hold"
+    },
+    {
+      "id": "c_003",
+      "fromId": "hold",
+      "fromPort": "next",
+      "toId": "idle"
+    }
+  ],
+  "notes": []
+}

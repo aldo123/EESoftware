@@ -1,0 +1,154 @@
+{
+  "id": "bt_btn_retry",
+  "name": "Bubble Tester - RETRY the dummy test after the maintenance alarm",
+  "description": "Part of the Bubble Tester flow (CP 21).",
+  "nodes": [
+    {
+      "id": "gi",
+      "type": "group_input",
+      "x": 60.0,
+      "y": 40.0,
+      "config": {
+        "read_source": "none",
+        "protocol": "tcp",
+        "device_name": "",
+        "address_type": "holding_register",
+        "address": "0",
+        "variable_name": "",
+        "field_key": ""
+      }
+    },
+    {
+      "id": "rearm",
+      "type": "write_output",
+      "x": 60.0,
+      "y": 150.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyRetry",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "guard",
+      "type": "multi_condition_gate",
+      "x": 60.0,
+      "y": 260.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_Mode",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "ALARM",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "act",
+      "type": "write_output",
+      "x": 60.0,
+      "y": 370.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_Mode",
+            "value_source": "static",
+            "value": "DUMMY",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyAttempts",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyMsg",
+            "value_source": "static",
+            "value": "Retry - run the dummy test again",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyNotice",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyTry",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "coil",
+            "address": "8416"
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_001",
+      "fromId": "gi",
+      "fromPort": "next",
+      "toId": "rearm"
+    },
+    {
+      "id": "c_002",
+      "fromId": "rearm",
+      "fromPort": "next",
+      "toId": "guard"
+    },
+    {
+      "id": "c_003",
+      "fromId": "guard",
+      "fromPort": "true",
+      "toId": "act"
+    }
+  ],
+  "notes": []
+}

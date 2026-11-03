@@ -1,0 +1,10 @@
+{
+  "21": {
+    "enabled": true,
+    "variable": "BT_ShiftReset",
+    "times": [
+      "08:57",
+      "20:00"
+    ]
+  }
+}

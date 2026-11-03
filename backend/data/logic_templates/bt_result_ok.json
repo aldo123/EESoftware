@@ -1,0 +1,429 @@
+{
+  "id": "bt_result_ok",
+  "name": "Bubble Tester - handle an OK result (count + log, or Dummy Check)",
+  "description": "Part of the Bubble Tester flow (CP 21).",
+  "nodes": [
+    {
+      "id": "gi",
+      "type": "group_input",
+      "x": 60.0,
+      "y": 40.0,
+      "config": {
+        "read_source": "none",
+        "protocol": "tcp",
+        "device_name": "",
+        "address_type": "holding_register",
+        "address": "0",
+        "variable_name": "",
+        "field_key": ""
+      }
+    },
+    {
+      "id": "isprod",
+      "type": "multi_condition_gate",
+      "x": 60.0,
+      "y": 150.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_Mode",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "PRODUCTION",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "count",
+      "type": "write_output",
+      "x": 60.0,
+      "y": 260.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_OK",
+            "value_source": "increment",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Total",
+            "value_source": "increment",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_TestID",
+            "value_source": "datetime",
+            "value": "BT_",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "log",
+      "type": "write_sn_list",
+      "x": 60.0,
+      "y": 370.0,
+      "config": {
+        "mappings": [
+          {
+            "variable_name": "BT_TestID",
+            "column_key": "sn"
+          },
+          {
+            "variable_name": "BT_BubbleCount",
+            "column_key": "bubble_count"
+          },
+          {
+            "variable_name": "BT_Result",
+            "column_key": "result"
+          }
+        ]
+      }
+    },
+    {
+      "id": "isdummy",
+      "type": "multi_condition_gate",
+      "x": 320.0,
+      "y": 260.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_Mode",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "DUMMY",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "expect",
+      "type": "multi_condition_gate",
+      "x": 320.0,
+      "y": 370.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_DummyStep",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "OK",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "pass",
+      "type": "write_output",
+      "x": 320.0,
+      "y": 480.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyStep",
+            "value_source": "static",
+            "value": "NG",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyAttempts",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyMsg",
+            "value_source": "static",
+            "value": "Dummy OK passed - now run the Dummy NG test",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Step",
+            "value_source": "static",
+            "value": "DUMMY_NG",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyNotice",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyTry",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "miss",
+      "type": "write_output",
+      "x": 580.0,
+      "y": 370.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyAttempts",
+            "value_source": "increment",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyMsg",
+            "value_source": "static",
+            "value": "Result did not match the expected dummy test (max 3 tries) - try again",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyNotice",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyTry",
+            "value_source": "increment",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "limit",
+      "type": "multi_condition_gate",
+      "x": 580.0,
+      "y": 480.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_DummyAttempts",
+            "operator": "greater_equal",
+            "compare_source": "fixed",
+            "value": "3",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "alarm",
+      "type": "write_output",
+      "x": 580.0,
+      "y": 590.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_Mode",
+            "value_source": "static",
+            "value": "ALARM",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyMsg",
+            "value_source": "static",
+            "value": "ALARM: dummy test failed 3 times - call Maintenance, then press RETRY",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyNotice",
+            "value_source": "static",
+            "value": "2",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyTry",
+            "value_source": "static",
+            "value": "3",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "device",
+            "value_source": "static",
+            "value": "1",
+            "protocol": "tcp",
+            "device_name": "PLC_Bubble",
+            "address_type": "coil",
+            "address": "8416"
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_001",
+      "fromId": "gi",
+      "fromPort": "next",
+      "toId": "isprod"
+    },
+    {
+      "id": "c_002",
+      "fromId": "isprod",
+      "fromPort": "true",
+      "toId": "count"
+    },
+    {
+      "id": "c_003",
+      "fromId": "count",
+      "fromPort": "next",
+      "toId": "log"
+    },
+    {
+      "id": "c_004",
+      "fromId": "isprod",
+      "fromPort": "false",
+      "toId": "isdummy"
+    },
+    {
+      "id": "c_005",
+      "fromId": "isdummy",
+      "fromPort": "true",
+      "toId": "expect"
+    },
+    {
+      "id": "c_006",
+      "fromId": "expect",
+      "fromPort": "true",
+      "toId": "pass"
+    },
+    {
+      "id": "c_007",
+      "fromId": "expect",
+      "fromPort": "false",
+      "toId": "miss"
+    },
+    {
+      "id": "c_008",
+      "fromId": "miss",
+      "fromPort": "next",
+      "toId": "limit"
+    },
+    {
+      "id": "c_009",
+      "fromId": "limit",
+      "fromPort": "true",
+      "toId": "alarm"
+    }
+  ],
+  "notes": [
+    {
+      "id": "note_01",
+      "x": 40,
+      "y": 120,
+      "w": 210,
+      "h": 430,
+      "title": "PRODUCTION: count + log",
+      "text": "PRODUCTION mode: the OK/NG and Total counters go up, then one row is saved to the SN List.",
+      "color": "green"
+    },
+    {
+      "id": "note_02",
+      "x": 300,
+      "y": 220,
+      "w": 540,
+      "h": 540,
+      "title": "DUMMY CHECK: compare the result with the requested test",
+      "text": "DUMMY mode: the result is compared with the requested test (OK first, then NG). Match = continue. Mismatch = attempt +1, the 3rd one raises the ALARM.",
+      "color": "purple"
+    }
+  ]
+}

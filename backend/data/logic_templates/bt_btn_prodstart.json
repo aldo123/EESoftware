@@ -1,0 +1,125 @@
+{
+  "id": "bt_btn_prodstart",
+  "name": "Bubble Tester - START PRODUCTION (after both dummy tests passed)",
+  "description": "Part of the Bubble Tester flow (CP 21).",
+  "nodes": [
+    {
+      "id": "gi",
+      "type": "group_input",
+      "x": 60.0,
+      "y": 40.0,
+      "config": {
+        "read_source": "none",
+        "protocol": "tcp",
+        "device_name": "",
+        "address_type": "holding_register",
+        "address": "0",
+        "variable_name": "",
+        "field_key": ""
+      }
+    },
+    {
+      "id": "rearm",
+      "type": "write_output",
+      "x": 60.0,
+      "y": 150.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_ProdStart",
+            "value_source": "static",
+            "value": "0",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    },
+    {
+      "id": "guard",
+      "type": "multi_condition_gate",
+      "x": 60.0,
+      "y": 260.0,
+      "config": {
+        "conditions": [
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_Mode",
+            "operator": "equals",
+            "compare_source": "fixed",
+            "value": "DUMMY_DONE",
+            "value2": ""
+          }
+        ],
+        "wait_mode": "instant",
+        "timeout_seconds": "10",
+        "change_timeout_seconds": "0",
+        "race_group": ""
+      }
+    },
+    {
+      "id": "act",
+      "type": "write_output",
+      "x": 60.0,
+      "y": 370.0,
+      "config": {
+        "writes": [
+          {
+            "target": "internal",
+            "variable_name": "BT_Mode",
+            "value_source": "static",
+            "value": "PRODUCTION",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_DummyMsg",
+            "value_source": "static",
+            "value": "",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          },
+          {
+            "target": "internal",
+            "variable_name": "BT_Step",
+            "value_source": "static",
+            "value": "PRODUCTION",
+            "protocol": "tcp",
+            "device_name": "",
+            "address_type": "holding_register",
+            "address": "0"
+          }
+        ]
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "c_001",
+      "fromId": "gi",
+      "fromPort": "next",
+      "toId": "rearm"
+    },
+    {
+      "id": "c_002",
+      "fromId": "rearm",
+      "fromPort": "next",
+      "toId": "guard"
+    },
+    {
+      "id": "c_003",
+      "fromId": "guard",
+      "fromPort": "true",
+      "toId": "act"
+    }
+  ],
+  "notes": []
+}
