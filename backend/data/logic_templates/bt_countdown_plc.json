@@ -33,7 +33,7 @@
             "protocol": "tcp",
             "device_name": "PLC_Bubble",
             "address_type": "holding_register",
-            "address": "9",
+            "address": "80",
             "data_type": "",
             "operator": "equals",
             "compare_source": "fixed",
@@ -46,13 +46,14 @@
             "protocol": "tcp",
             "device_name": "PLC_Bubble",
             "address_type": "holding_register",
-            "address": "8",
+            "address": "8412",
             "data_type": "",
             "operator": "not_equals",
             "compare_source": "fixed",
             "value": "0",
             "value2": "",
-            "label": "Emergency stop"
+            "label": "Emergency stop",
+            "edge_only": true
           }
         ]
       }

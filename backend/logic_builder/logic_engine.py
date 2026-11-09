@@ -2785,7 +2785,8 @@ class FlowExecutor:
             checks = [ch for ch in (cfg.get("checks") or []) if isinstance(ch, dict)]
 
             def check_once(ch):
-                """(ok, shown value). A value that cannot be read counts as NOT ok, like the Multi-Condition Gate."""
+                """(ok, shown value). A value that cannot be read counts as NOT ok, like the Multi-Condition Gate
+                (ok is None then, so a check that only reacts to a CHANGE can tell "unreadable" from "not ok")."""
                 source = str(ch.get("source_type", "internal_variable") or "internal_variable").strip().lower()
                 try:
                     if source == "internal_variable":
@@ -2806,20 +2807,52 @@ class FlowExecutor:
                                               ch.get("value", ""), ch.get("value2", ""))
                     return ok, str(value)
                 except Exception as e:
-                    return False, str(e)
+                    return None, str(e)
 
             if reason_var:
                 self._write_internal_variable(reason_var, "")
             if show_var:
                 self._write_internal_variable(show_var, str(total))
+            if not hasattr(self, "_edge_state"):
+                self._edge_state = {}   # (device, area, address) -> last known "ok"; shared by every Countdown of this run
+
+            def check_failed(idx, ch):
+                """(failed, shown). Normal check: fails while it is not ok. "Fail only on a change" (edge_only): like the
+                original Buble Tester's emergency stop it fails only when the value goes from ok to not ok AFTER it was
+                seen ok — a value that is already "pressed" at the start, or cannot be read, never aborts the test."""
+                ok, shown = check_once(ch)
+                if not ch.get("edge_only"):
+                    return (not ok), shown
+                if ok is None:
+                    return False, shown
+                key = (str(ch.get("source_type", "")), str(ch.get("variable_name", "")), ch.get("device_name", ""), ch.get("address_type", ""), str(ch.get("address", "")))   # the SAME signal in different Countdown nodes shares one state
+                previous = self._edge_state.get(key)
+                self._edge_state[key] = ok
+                return (previous is True and not ok), shown
+
+            if total == 0 and any(ch.get("edge_only") for ch in checks):
+                # zero seconds + a change check = "has it changed since the countdown?" — a single evaluation
+                for idx, ch in enumerate(checks):
+                    failed, shown = check_failed(idx, ch)
+                    if failed:
+                        label = str(ch.get("label") or "").strip() or f"check {idx + 1}"
+                        if reason_var:
+                            self._write_internal_variable(reason_var, label)
+                        self._log(f"Countdown: '{label}' changed ({shown})", "#EF4444")
+                        self._follow(outputs, "false", db)
+                        return
+
             started = time.monotonic()
+            for idx, ch in enumerate(checks):   # baseline for the change checks: the value when the countdown begins
+                if ch.get("edge_only"):
+                    check_failed(idx, ch)
             for second in range(1, total + 1):
                 # tick on a fixed schedule: the PLC reads of the checks must not stretch the 5 seconds (and make the
                 # displayed number skip or stall)
                 time.sleep(max(0.0, started + second - time.monotonic()))
                 for idx, ch in enumerate(checks):
-                    ok, shown = check_once(ch)
-                    if not ok:
+                    failed, shown = check_failed(idx, ch)
+                    if failed:
                         label = str(ch.get("label") or "").strip() or f"check {idx + 1}"
                         if reason_var:
                             self._write_internal_variable(reason_var, label)

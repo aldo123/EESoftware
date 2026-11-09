@@ -29,6 +29,7 @@ from flask import Blueprint, request, jsonify
 # ============================================================
 
 DEFAULT_TIMEOUT = 0.35
+MISS_SYNC_SECONDS = 2.0       # minimum gap between settings re-reads caused by an unknown device name
 CONNECT_RETRY_SECONDS = 2.0   # wait this long after a failed connect before trying the same device again
 DEFAULT_RECONNECT_INTERVAL = 1.0
 CONFIG_SYNC_INTERVAL = 1.0
@@ -797,6 +798,7 @@ class ModbusTCPClient:
 
 _clients = {}
 _clients_lock = threading.RLock()
+_last_miss_sync = 0.0
 _last_good_tcp_devices = None
 _settings_lock = threading.RLock()
 
@@ -977,7 +979,13 @@ def _get_client(device_name):
         client = _clients.get(device_name)
 
     if not client:
-        sync_devices()
+        # A name that is not in setting.json (e.g. a flow of another CP that is polled too) would re-read the settings
+        # file on EVERY poll (20x per second). Re-sync at most once every few seconds instead.
+        global _last_miss_sync
+        now = time.monotonic()
+        if now - _last_miss_sync >= MISS_SYNC_SECONDS:
+            _last_miss_sync = now
+            sync_devices()
 
         with _clients_lock:
             client = _clients.get(device_name)
@@ -1522,6 +1530,24 @@ def read_batch():
             "success": False,
             "message": str(e),
         }), 400
+
+
+@tcp_ip_bp.get("/api/tcp/peek")
+def peek_address():
+    """Read ONE address from the browser for quick PLC checks, e.g.
+    /api/tcp/peek?device=PLC_Bubble&type=holding_register&address=8"""
+    try:
+        area = _normalize_area(request.args.get("type", "holding_register"))
+        address = _validate_address(request.args.get("address", "0"))
+        client = _get_client(request.args.get("device", ""))
+        function_code = AREA_MAP[area]
+        if function_code in (1, 2):
+            value = bool(_read_bits(client, function_code, address, 1)[0])
+        else:
+            value = _read_registers(client, function_code, address, 1)[0]
+        return jsonify({"device": client.name, "type": area, "address": address, "value": value})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
 
 
 @tcp_ip_bp.post("/api/tcp/read")

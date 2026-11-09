@@ -2456,6 +2456,10 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
                       <Input value={ch.value ?? ""} onChange={v => updateCheck(i, { value: v })} placeholder="Value" />
                     </div>
                   </Field>
+                  <label className="flex items-start gap-2 text-[10px] text-[var(--text-secondary)] cursor-pointer">
+                    <input type="checkbox" checked={ch.edge_only === true} onChange={e => updateCheck(i, { edge_only: e.target.checked })} className="mt-0.5" />
+                    <span>Fail only when it <b>changes</b> (e.g. a NEW emergency press). A value that is already failing when the countdown starts, or cannot be read, does not stop the test.</span>
+                  </label>
                 </div>
               );
             })}
@@ -2469,7 +2473,7 @@ const ConfigPanel = memo(function ConfigPanel({ node, onChange, onApply, tcpDevi
               {variableSelect(c.reason_variable, v => setLocal("reason_variable", v), "(none)")}
             </Field>
             <p className="text-[var(--text-muted)] text-[9px] mt-1">
-              Counts down the configured number of seconds. After <b>every second</b> all checks are evaluated again. If a check fails (or its value cannot be read), the countdown stops and the flow continues through <b style={{ color: "#EF4444" }}>✗ False</b>; the failing check's label is written to the abort reason variable. If every check holds until the end, the flow continues through <b style={{ color: "#22C55E" }}>✓ True</b>. The remaining seconds are written to the remaining-time variable after each second.
+              Counts down the configured number of seconds. After <b>every second</b> all checks are evaluated again. If a check fails (or its value cannot be read — unless it is set to fail only on a change), the countdown stops and the flow continues through <b style={{ color: "#EF4444" }}>✗ False</b>; the failing check's label is written to the abort reason variable. If every check holds until the end, the flow continues through <b style={{ color: "#22C55E" }}>✓ True</b>. The remaining seconds are written to the remaining-time variable after each second.
             </p>
           </>);
         })()}

@@ -35,7 +35,7 @@
             "protocol": "tcp",
             "device_name": "PLC_Bubble",
             "address_type": "holding_register",
-            "address": "1"
+            "address": "82"
           }
         ]
       }
@@ -48,11 +48,11 @@
       "config": {
         "camera_id": "0",
         "duration": "5",
-        "max_count": "4",
+        "max_count": "2",
         "method": "contour_blob",
-        "roi_mode": "center",
+        "roi_mode": "crop",
         "method_params": {
-          "threshold": 197,
+          "threshold": 147,
           "min_contour": 250,
           "max_contour": 3000,
           "match_dist": 70,
@@ -87,7 +87,7 @@
             "connection_type": "modbus_tcp",
             "device_name": "PLC_Bubble",
             "address_type": "holding_register",
-            "address": "9",
+            "address": "80",
             "data_type": "",
             "trigger_value": "1",
             "device": "",
@@ -412,28 +412,29 @@
     },
     {
       "id": "bt_emg_after_ok",
-      "type": "multi_condition_gate",
+      "type": "countdown",
       "x": 385.0,
       "y": 920.0,
       "config": {
-        "conditions": [
+        "seconds": "0",
+        "variable_name": "",
+        "reason_variable": "BT_AbortReason",
+        "checks": [
           {
             "source_type": "tcpip",
             "protocol": "tcp",
             "device_name": "PLC_Bubble",
             "address_type": "holding_register",
-            "address": "8",
+            "address": "8412",
             "data_type": "",
             "operator": "not_equals",
             "compare_source": "fixed",
             "value": "0",
-            "value2": ""
+            "value2": "",
+            "label": "Emergency stop",
+            "edge_only": true
           }
-        ],
-        "wait_mode": "instant",
-        "timeout_seconds": "10",
-        "change_timeout_seconds": "0",
-        "race_group": ""
+        ]
       }
     },
     {
@@ -481,7 +482,7 @@
             "protocol": "tcp",
             "device_name": "PLC_Bubble",
             "address_type": "holding_register",
-            "address": "1"
+            "address": "82"
           },
           {
             "target": "device",
@@ -508,28 +509,29 @@
     },
     {
       "id": "bt_emg_after_ng",
-      "type": "multi_condition_gate",
+      "type": "countdown",
       "x": 845.0,
       "y": 920.0,
       "config": {
-        "conditions": [
+        "seconds": "0",
+        "variable_name": "",
+        "reason_variable": "BT_AbortReason",
+        "checks": [
           {
             "source_type": "tcpip",
             "protocol": "tcp",
             "device_name": "PLC_Bubble",
             "address_type": "holding_register",
-            "address": "8",
+            "address": "8412",
             "data_type": "",
             "operator": "not_equals",
             "compare_source": "fixed",
             "value": "0",
-            "value2": ""
+            "value2": "",
+            "label": "Emergency stop",
+            "edge_only": true
           }
-        ],
-        "wait_mode": "instant",
-        "timeout_seconds": "10",
-        "change_timeout_seconds": "0",
-        "race_group": ""
+        ]
       }
     },
     {
@@ -577,7 +579,7 @@
             "protocol": "tcp",
             "device_name": "PLC_Bubble",
             "address_type": "holding_register",
-            "address": "1"
+            "address": "82"
           },
           {
             "target": "device",
@@ -629,7 +631,7 @@
       "y": 150.0,
       "config": {
         "template_id": "bt_btn_dummystart",
-        "template_name": "Bubble Tester - START DUMMY CHECK (only while LOCKED)",
+        "template_name": "Bubble Tester - START DUMMY CHECK (not while PRODUCTION or ALARM)",
         "expose_check": false
       }
     },
