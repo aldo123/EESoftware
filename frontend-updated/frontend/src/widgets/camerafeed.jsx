@@ -189,6 +189,17 @@ function useLiveBlobs(cameraId, active, p, getValue) {
   return data;
 }
 
+// The Frame / Threshold toggle: with ROI variables configured only the ROI box is shown thresholded, like the counting sees it.
+const thresholdStreamUrl = (cameraId, threshold, p, read) => {
+  const q = new URLSearchParams({ threshold: String(threshold) });
+  const roi = p.roiVariables || {};
+  const vals = [roi.x, roi.y, roi.w, roi.h].map((n) => (n ? Number(read(n)) : NaN));
+  if (vals.every((v) => Number.isFinite(v)) && vals[2] > 0 && vals[3] > 0) {
+    ["roi_x", "roi_y", "roi_w", "roi_h"].forEach((k, i) => q.set(k, String(vals[i])));
+  }
+  return `${API}/api/vision/stream-threshold/${encodeURIComponent(cameraId)}?${q.toString()}`;
+};
+
 // Blobs only exist inside the ROI. No ROI variables configured = no restriction; a configured ROI that is not valid
 // (empty / zero size, e.g. while the variables load) draws nothing instead of every blob of the frame.
 const blobsInRoi = (blobs, roi) => {
@@ -359,6 +370,7 @@ function LiveBlobSection({ p, set }) {
         value={p.roiMode === "center" ? "center" : "crop"}
         onChange={(v) => set("roiMode", v)}
       />
+      <PropInput label="Resize frame to 640 x 480 (like Buble Tester)" type="checkbox" value={p.resize640 === true} onChange={(v) => set("resize640", v)} />
       <div className="grid grid-cols-2 gap-2">
         <VariableSelect label="Threshold" value={bp.threshold} onChange={(v) => setBp("threshold", v)} variables={variables} />
         <VariableSelect label="Min contour" value={bp.min_contour} onChange={(v) => setBp("min_contour", v)} variables={variables} />
@@ -499,7 +511,7 @@ export function RuntimeCameraFeed({ widget, cpNumber }) {
     const cfg = p.sourceType === "gige"
       ? { source_type: "gige", ip_address: p.ipAddress || "" }
       : { source_type: "webcam", device_index: p.deviceIndex || "0" };
-    if (p.roiMode === "center") cfg.resize = [640, 480];   // the original Buble Tester programs always work on a 640 x 480 frame
+    if (p.roiMode === "center" || p.resize640 === true) cfg.resize = [640, 480];   // the original Buble Tester programs always work on a 640 x 480 frame
 
     fetch(`${API}/api/vision/cameras/${encodeURIComponent(cameraId)}/start`, {
       method: "POST",
@@ -634,7 +646,7 @@ export function RuntimeCameraFeed({ widget, cpNumber }) {
       <img
         ref={imgRef}
         src={showThreshold && liveThreshold !== null
-          ? `${API}/api/vision/stream-threshold/${encodeURIComponent(cameraId)}?threshold=${liveThreshold}`
+          ? thresholdStreamUrl(cameraId, liveThreshold, p, getInternalValue)
           : `${API}/api/vision/stream/${encodeURIComponent(cameraId)}`}
         alt={cameraId}
         className="w-full h-full object-contain"
@@ -771,7 +783,7 @@ function InspectionFeed({
   const progress = countStatus && countStatus.duration > 0 ? Math.min(100, (remaining / countStatus.duration) * 100) : 0;
 
   const streamUrl = showThreshold && threshold !== null
-    ? `${API}/api/vision/stream-threshold/${encodeURIComponent(cameraId)}?threshold=${threshold}`
+    ? thresholdStreamUrl(cameraId, threshold, p, getValue)
     : `${API}/api/vision/stream/${encodeURIComponent(cameraId)}`;
   const showImage = running && !failed && !cameraError;
 

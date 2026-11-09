@@ -85,22 +85,41 @@ def stream_camera_threshold(camera_id):
     """Same live view, but run through the exact grayscale+blur+binary-threshold
     step the 'Contour Blob' method uses — lets you see precisely what counts as
     'bright enough' before tuning the threshold value, same idea as Buble Tester's
-    Frame/Threshold toggle."""
+    Frame/Threshold toggle. With roi_x/roi_y/roi_w/roi_h only that box is shown thresholded (as the 'crop' counting
+    sees it) and the rest of the frame stays the normal picture."""
     try:
         threshold = int(request.args.get("threshold", 165))
     except (TypeError, ValueError):
         threshold = 165
+    try:
+        roi = [int(float(request.args[k])) for k in ("roi_x", "roi_y", "roi_w", "roi_h")]
+    except (KeyError, TypeError, ValueError):
+        roi = None
 
     def generate():
         boundary = b"--frame"
         while True:
             frame = get_raw_frame(camera_id)
             if frame is not None:
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                blurred = cv2.GaussianBlur(gray, (9, 9), 2)
-                _, thresh = cv2.threshold(blurred, threshold, 255, cv2.THRESH_BINARY)
-                thresh_bgr = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
-                ok, jpg = cv2.imencode(".jpg", thresh_bgr, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                out = frame
+                x1 = y1 = 0
+                if roi:
+                    x1, y1 = max(0, roi[0]), max(0, roi[1])
+                    x2, y2 = x1 + max(0, roi[2]), y1 + max(0, roi[3])
+                    area = frame[y1:y2, x1:x2]
+                    out = frame.copy()
+                else:
+                    area = frame
+                if area.size:
+                    gray = cv2.cvtColor(area, cv2.COLOR_BGR2GRAY)
+                    blurred = cv2.GaussianBlur(gray, (9, 9), 2)
+                    _, thresh = cv2.threshold(blurred, threshold, 255, cv2.THRESH_BINARY)
+                    thresh_bgr = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+                    if roi:
+                        out[y1:y1 + thresh_bgr.shape[0], x1:x1 + thresh_bgr.shape[1]] = thresh_bgr
+                    else:
+                        out = thresh_bgr
+                ok, jpg = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 75])
                 if ok:
                     jpg_bytes = jpg.tobytes()
                     yield (boundary + b"\r\nContent-Type: image/jpeg\r\nContent-Length: "
