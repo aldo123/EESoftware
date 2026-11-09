@@ -1,6 +1,6 @@
 {
   "id": "bt_btn_dummystart",
-  "name": "Bubble Tester - START DUMMY CHECK (only while LOCKED)",
+  "name": "Bubble Tester - START DUMMY CHECK (not while PRODUCTION or ALARM)",
   "description": "Part of the Bubble Tester flow (CP 21).",
   "nodes": [
     {
@@ -48,9 +48,17 @@
           {
             "source_type": "internal_variable",
             "variable_name": "BT_Mode",
-            "operator": "equals",
+            "operator": "not_equals",
             "compare_source": "fixed",
-            "value": "LOCKED",
+            "value": "PRODUCTION",
+            "value2": ""
+          },
+          {
+            "source_type": "internal_variable",
+            "variable_name": "BT_Mode",
+            "operator": "not_equals",
+            "compare_source": "fixed",
+            "value": "ALARM",
             "value2": ""
           }
         ],
