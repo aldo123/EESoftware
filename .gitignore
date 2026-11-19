@@ -1,0 +1,21 @@
+# Node modules
+node_modules/
+**/node_modules/
+
+# Electron
+electron/dist/
+
+# Python build
+**/build/
+**/dist/
+
+# Electron release
+release/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.env.*
